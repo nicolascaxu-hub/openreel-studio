@@ -48,6 +48,38 @@ async def test_media_ffmpeg_uses_hidden_window_subprocess_options(monkeypatch) -
     assert captured["kwargs"]["creationflags"] == 123
 
 
+@pytest.mark.asyncio
+async def test_media_ffmpeg_fallback_runs_when_primary_returns_an_empty_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "tail.png"
+    calls: list[list[str]] = []
+
+    async def fake_run(
+        args: list[str],
+        *,
+        timeout: int = media_operations.FFMPEG_TIMEOUT_SECONDS,
+    ) -> None:
+        del timeout
+        calls.append(args)
+        if args == ["primary"]:
+            target.write_bytes(b"")
+        else:
+            target.write_bytes(b"frame")
+
+    monkeypatch.setattr(media_operations, "_run_ffmpeg", fake_run)
+
+    await media_operations._run_ffmpeg_with_fallback(  # noqa: SLF001
+        ["primary"],
+        ["fallback"],
+        output_path=target,
+    )
+
+    assert calls == [["primary"], ["fallback"]]
+    assert target.read_bytes() == b"frame"
+
+
 async def _setup_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'media-ops.db'}"
     engine = create_async_engine(database_url, echo=False, future=True, connect_args={"timeout": 30})

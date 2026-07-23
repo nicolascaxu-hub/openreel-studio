@@ -113,11 +113,25 @@ async def _run_ffmpeg(args: list[str], *, timeout: int = FFMPEG_TIMEOUT_SECONDS)
     raise MediaOperationError(detail or "媒体处理失败")
 
 
-async def _run_ffmpeg_with_fallback(primary: list[str], fallback: list[str]) -> None:
+async def _run_ffmpeg_with_fallback(
+    primary: list[str],
+    fallback: list[str],
+    *,
+    output_path: Path | None = None,
+) -> None:
+    primary_failed = False
     try:
         await _run_ffmpeg(primary)
     except MediaOperationError:
-        await _run_ffmpeg(fallback)
+        primary_failed = True
+    if not primary_failed and (
+        output_path is None
+        or (output_path.exists() and output_path.stat().st_size > 0)
+    ):
+        return
+    if output_path is not None:
+        output_path.unlink(missing_ok=True)
+    await _run_ffmpeg(fallback)
 
 
 async def _download_remote_media(project_id: str, ref: str, kind: str) -> Path:
@@ -201,6 +215,7 @@ async def export_video_frame(
     await _run_ffmpeg_with_fallback(
         args,
         ["-y", "-sseof", "-1", "-i", str(source), "-frames:v", "1", str(target)],
+        output_path=target,
     )
     if not target.exists() or target.stat().st_size <= 0:
         raise MediaOperationError("没有导出到有效画面")
