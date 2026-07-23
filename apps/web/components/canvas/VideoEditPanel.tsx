@@ -515,6 +515,25 @@ function clipEndFrame(clip: TimelineClipState): number {
   return clip.startFrame + clip.durationFrames
 }
 
+function visibleVideoClipAtFrame(
+  frame: number,
+  tracks: TimelineTrackState[],
+  clips: TimelineClipState[],
+): TimelineClipState | undefined {
+  const visibleTracks = tracks
+    .filter((track) => track.kind === "video" && track.visible)
+    .sort((left, right) => right.order - left.order)
+  for (const track of visibleTracks) {
+    const clip = clips.find((candidate) => (
+      candidate.trackId === track.id &&
+      frame >= candidate.startFrame &&
+      frame < clipEndFrame(candidate)
+    ))
+    if (clip) return clip
+  }
+  return undefined
+}
+
 function transitionFrameRange(transition: TimelineTransitionState, cutFrame: number) {
   const outgoingFrames = Math.floor(transition.durationFrames / 2)
   return {
@@ -1666,6 +1685,7 @@ export default function VideoEditPanel({
   })
   const [busy, setBusy] = useState<BusyAction>(null)
   const [error, setError] = useState<string | null>(null)
+  const [frameExportNotice, setFrameExportNotice] = useState<string | null>(null)
   const [renderJob, setRenderJob] = useState<VideoEditorSequenceRenderJob | null>(null)
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(() => new Set())
@@ -2086,18 +2106,10 @@ export default function VideoEditPanel({
     updateSelectedVisualTransform(defaultVisualTransform())
   }, [recordUndoSnapshot, selectedVideoClip, updateSelectedVisualTransform])
   const currentFrame = Math.round(currentTime * framesPerSecond)
-  const currentVideoClip = useMemo(() => {
-    for (const track of videoTracks) {
-      if (!track.visible) continue
-      const clip = videoClips.find((candidate) => (
-        candidate.trackId === track.id &&
-        currentFrame >= candidate.startFrame &&
-        currentFrame < clipEndFrame(candidate)
-      ))
-      if (clip) return clip
-    }
-    return undefined
-  }, [currentFrame, videoClips, videoTracks])
+  const currentVideoClip = useMemo(
+    () => visibleVideoClipAtFrame(currentFrame, videoTracks, videoClips),
+    [currentFrame, videoClips, videoTracks],
+  )
   const currentAudioClip = useMemo(() => {
     const hasSolo = audioTracks.some((track) => track.solo)
     for (const track of audioTracks) {
@@ -3396,13 +3408,51 @@ export default function VideoEditPanel({
     return () => window.cancelAnimationFrame(frame)
   }, [activeAudioTransition, activeTransitionAudioClockClip, activeVideoTransition, currentAudioClip, currentVideoClip, effectiveLoopOutFrame, framesPerSecond, loopEnabled, loopRange.inFrame, playAudioThroughVideo, playbackClockSource, playbackDirection, playbackEnd, playing, reportPreviewAudioPlaybackFailure, reportPreviewPlaybackFailure, updatePlaybackChrome])
 
-  const runOperation = async (action: BusyAction, input: Parameters<typeof runProjectMediaOperation>[1]) => {
-    if (!action || busy) return
-    setBusy(action)
+  const exportCurrentFrame = async () => {
+    if (busy || !sequenceLoaded || sequenceEndFrame <= 0) return
+    const liveTimelineTime = clampPlaybackTimelineTime(currentTimeRef.current, playbackEnd)
+    const timelineFrame = clamp(
+      Math.round(liveTimelineTime * framesPerSecond),
+      0,
+      Math.max(0, sequenceEndFrame - 1),
+    )
+    const clip = visibleVideoClipAtFrame(timelineFrame, tracksRef.current, videoClipsRef.current)
+    const item = clip ? mediaById.get(clip.mediaId) : undefined
+    if (!clip || item?.type !== "video") {
+      setFrameExportNotice(null)
+      setError("当前播放头没有可导出的视频画面")
+      return
+    }
+    const snappedTimelineTime = timelineFrame / framesPerSecond
+    const sourceFrame = clip.sourceInFrame + clamp(
+      timelineFrame - clip.startFrame,
+      0,
+      Math.max(0, clip.durationFrames - 1),
+    )
+    const frameTimecode = formatFrameTimecode(timelineFrame, framesPerSecond)
+    setPlaying(false)
+    currentTimeRef.current = snappedTimelineTime
+    setCurrentTime(snappedTimelineTime)
+    updatePlaybackChrome(snappedTimelineTime)
+    setBusy("frame")
     setError(null)
+    setFrameExportNotice(null)
     try {
-      await runProjectMediaOperation(projectId, input)
+      const result = await runProjectMediaOperation<{
+        nodes?: Array<{ id?: string; display_id?: string | number }>
+      }>(projectId, {
+        operation: "video.export_frame",
+        source_node_id: clip.mediaId,
+        frame_mode: "time",
+        time_seconds: sourceFrame / framesPerSecond,
+        title: `${title || item.title || "视频"} ${frameTimecode} 帧`,
+      })
       await onCommitted()
+      const created = result.nodes?.[0]
+      const nodeLabel = created?.display_id !== undefined && created?.display_id !== null
+        ? ` · 节点 #${created.display_id}`
+        : ""
+      setFrameExportNotice(`${frameTimecode} 已导出到画布${nodeLabel}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败")
     } finally {
@@ -4777,6 +4827,16 @@ export default function VideoEditPanel({
         </div>
       </div>
 
+      {frameExportNotice && (
+        <div
+          role="status"
+          data-openreel-frame-export-notice="true"
+          className="absolute right-3 top-11 z-[96] border border-[#3d735c] bg-[#1f3d31]/95 px-3 py-2 text-[10px] font-medium text-[#c9f1dc] shadow-lg"
+        >
+          {frameExportNotice}
+        </div>
+      )}
+
       <div className="openreel-editor-workspace grid h-[calc(100%-2.25rem)] w-full min-w-0 grid-rows-[minmax(360px,70%)_minmax(260px,30%)] bg-[#111316]">
         <div className="grid min-h-0 w-full min-w-0 grid-cols-[238px_minmax(420px,1fr)_320px] border-b border-[#34383f] max-xl:grid-cols-[210px_minmax(360px,1fr)_300px] max-lg:grid-cols-1 max-lg:overflow-y-auto">
           <aside data-openreel-media-bin="true" className="openreel-editor-media flex min-h-0 flex-col border-r border-[#34383f] bg-[#191b1f]">
@@ -5065,24 +5125,15 @@ export default function VideoEditPanel({
                 <span ref={programFrameRef} className="font-mono text-[7px] tabular-nums text-[#6d737b]">{currentFrame}f</span>
                 <button
                   type="button"
-                  disabled={isBusy || currentVideoItem?.type !== "video"}
-                  onClick={() => void runOperation("frame", {
-                    operation: "video.export_frame",
-                    source_node_id: currentVideoClip?.mediaId || nodeId,
-                    frame_mode: "time",
-                    time_seconds: Math.max(0,
-                      (currentVideoClip?.sourceInFrame || 0) / framesPerSecond +
-                      currentTime -
-                      (currentVideoClip?.startFrame || 0) / framesPerSecond,
-                    ),
-                    title: `${title || "视频"} ${formatTime(currentTime)} 画面`,
-                  })}
-                  className="flex h-6 w-6 items-center justify-center rounded-[2px] text-[#9298a1] transition hover:bg-[#30343a] hover:text-white disabled:opacity-30"
-                  title="导出当前帧"
-                  aria-label="导出当前帧"
+                  disabled={isBusy || !sequenceLoaded || currentVideoItem?.type !== "video"}
+                  onClick={() => void exportCurrentFrame()}
+                  className="flex h-6 items-center justify-center gap-1 rounded-[2px] border border-[#3b596d] bg-[#223642] px-2 text-[9px] font-medium text-[#bcd9ec] transition hover:border-[#5686a5] hover:bg-[#2b485a] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                  title="把当前播放头画面导出为图片节点并加入画布"
+                  aria-label="导出当前播放头帧到画布"
                   data-openreel-export-frame-control="true"
                 >
                   <EditorIcon name="frame" className="h-3 w-3" />
+                  <span>{busy === "frame" ? "导出中…" : "导出帧"}</span>
                 </button>
                 <button
                   type="button"

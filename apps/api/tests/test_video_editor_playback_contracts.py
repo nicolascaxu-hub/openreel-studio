@@ -70,6 +70,22 @@ def test_playhead_is_hard_clamped_to_the_visible_timeline() -> None:
     assert 'window.removeEventListener("pointercancel", onEnd)' in editor
 
 
+def test_current_playhead_frame_can_be_exported_to_the_canvas() -> None:
+    editor = _editor_source()
+
+    assert "function visibleVideoClipAtFrame" in editor
+    assert "const liveTimelineTime = clampPlaybackTimelineTime(currentTimeRef.current, playbackEnd)" in editor
+    assert "const sourceFrame = clip.sourceInFrame + clamp(" in editor
+    assert 'operation: "video.export_frame"' in editor
+    assert 'frame_mode: "time"' in editor
+    assert "time_seconds: sourceFrame / framesPerSecond" in editor
+    assert 'data-openreel-export-frame-control="true"' in editor
+    assert 'aria-label="导出当前播放头帧到画布"' in editor
+    assert 'busy === "frame" ? "导出中…" : "导出帧"' in editor
+    assert 'data-openreel-frame-export-notice="true"' in editor
+    assert "已导出到画布" in editor
+
+
 def test_full_source_sequences_adopt_the_indexed_media_frame_rate() -> None:
     editor = _editor_source()
 
