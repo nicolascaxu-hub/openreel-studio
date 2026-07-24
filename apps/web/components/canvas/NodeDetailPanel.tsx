@@ -437,6 +437,7 @@ interface ReferenceItem {
 
 interface ReferenceMentionCandidate {
   mention: string
+  aliases?: string[]
   label: string
   ref: string
   source: "node" | "reference"
@@ -811,6 +812,16 @@ function safeReferenceMentionLabel(value: string, fallback: string): string {
   const raw = (value || fallback || "参考图")
     .replace(/^[@#]+/, "")
     .replace(/\.(png|jpe?g|webp|gif|bmp|svg)$/i, "")
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  return raw || fallback.trim() || "参考图"
+}
+
+function legacyReferenceMentionLabel(value: string, fallback: string): string {
+  const raw = (value || fallback || "参考图")
+    .replace(/^[@#]+/, "")
+    .replace(/\.(png|jpe?g|webp|gif|bmp|svg)$/i, "")
     .replace(/[^\p{L}\p{N}_\-\u4e00-\u9fa5]+/gu, "")
     .trim()
   const base = raw || fallback || "参考图"
@@ -858,6 +869,8 @@ function buildReferenceMentionCandidates(
   const candidates: ReferenceMentionCandidate[] = []
   const seenRefs = new Set<string>()
   const usedMentions = new Set<string>()
+  const usedLegacyMentions = new Set<string>()
+  const legacyMentionsByRef = new Map<string, string>()
 
   const addCandidate = (
     labelSource: string,
@@ -870,9 +883,16 @@ function buildReferenceMentionCandidates(
     const key = stripNodeReferenceMarker(normalizedRef).toLowerCase()
     if (seenRefs.has(key)) return
     seenRefs.add(key)
-    const label = safeReferenceMentionLabel(labelSource, `参考图${candidates.length + 1}`)
+    const fallback = `参考图${candidates.length + 1}`
+    const label = safeReferenceMentionLabel(labelSource, fallback)
+    const mention = uniqueReferenceMention(label, usedMentions)
+    const legacyMention = uniqueReferenceMention(
+      legacyReferenceMentionLabel(labelSource, fallback),
+      usedLegacyMentions,
+    )
+    legacyMentionsByRef.set(key, legacyMention)
     candidates.push({
-      mention: uniqueReferenceMention(label, usedMentions),
+      mention,
       label,
       ref: normalizedRef,
       source,
@@ -915,7 +935,35 @@ function buildReferenceMentionCandidates(
     addCandidate(fallback, value, "reference", previewUrl)
   })
 
-  return candidates
+  const canonicalMentions = new Set(candidates.map((candidate) => candidate.mention))
+  return candidates.map((candidate) => {
+    const legacyMention = legacyMentionsByRef.get(referenceMentionCandidateKey(candidate))
+    if (
+      !legacyMention
+      || legacyMention === candidate.mention
+      || canonicalMentions.has(legacyMention)
+    ) {
+      return candidate
+    }
+    return { ...candidate, aliases: [legacyMention] }
+  })
+}
+
+function referenceMentionTokens(candidate: ReferenceMentionCandidate): string[] {
+  return Array.from(new Set([
+    candidate.mention,
+    ...(candidate.aliases || []),
+  ].map((item) => item.trim()).filter(Boolean)))
+}
+
+function referenceMentionOccurs(prompt: string, mention: string): boolean {
+  let start = prompt.indexOf(mention)
+  while (start >= 0) {
+    const nextCharacter = prompt.slice(start + mention.length, start + mention.length + 1)
+    if (!nextCharacter || !/[A-Za-z0-9_-]/.test(nextCharacter)) return true
+    start = prompt.indexOf(mention, start + 1)
+  }
+  return false
 }
 
 function referenceImageMentionsFromPrompt(
@@ -931,12 +979,15 @@ function referenceImageMentionsFromPrompt(
     refOrder.set(stripNodeReferenceMarker(ref).toLowerCase(), index + 1)
   })
   for (const candidate of candidates) {
-    if (!candidate.mention || !prompt.includes(candidate.mention)) continue
-    const key = `${candidate.mention}:${referenceMentionCandidateKey(candidate)}`
+    const matchedMention = referenceMentionTokens(candidate)
+      .sort((left, right) => right.length - left.length)
+      .find((mention) => referenceMentionOccurs(prompt, mention))
+    if (!matchedMention) continue
+    const key = `${matchedMention}:${referenceMentionCandidateKey(candidate)}`
     if (seen.has(key)) continue
     seen.add(key)
     result.push({
-      mention: candidate.mention,
+      mention: matchedMention,
       label: candidate.label,
       ref: candidate.ref,
       source: candidate.source,
@@ -4136,7 +4187,7 @@ function textSegmentHtml(value: string): string {
 
 function mentionEditorHtml(value: string, candidates: ReferenceMentionCandidate[]): string {
   if (!value) return ""
-  const mentions = Array.from(new Set(candidates.map((item) => item.mention).filter(Boolean)))
+  const mentions = Array.from(new Set(candidates.flatMap(referenceMentionTokens)))
     .sort((a, b) => b.length - a.length)
   if (mentions.length === 0) return textSegmentHtml(value)
   let html = ""
@@ -4257,14 +4308,35 @@ function setCaretTextOffset(root: HTMLElement, offset: number) {
   selection.addRange(range)
 }
 
-function mentionQueryAtCaret(root: HTMLElement): { start: number; end: number; query: string } | null {
+function mentionQueryAtCaret(
+  root: HTMLElement,
+  candidates: ReferenceMentionCandidate[],
+): { start: number; end: number; query: string } | null {
   const offset = caretTextOffset(root)
   const text = mentionEditorPlainText(root).slice(0, offset)
-  const at = text.lastIndexOf("@")
-  if (at < 0) return null
-  const query = text.slice(at + 1)
-  if (/[\s\n\r@]/.test(query)) return null
-  return { start: at, end: offset, query }
+  const lineStart = Math.max(text.lastIndexOf("\n"), text.lastIndexOf("\r")) + 1
+  const markerOffsets: number[] = []
+  for (let index = text.indexOf("@", lineStart); index >= 0; index = text.indexOf("@", index + 1)) {
+    markerOffsets.push(index)
+  }
+  let containsFallback: { start: number; end: number; query: string } | null = null
+  const candidateTokens = candidates.flatMap(referenceMentionTokens)
+  for (let index = markerOffsets.length - 1; index >= 0; index -= 1) {
+    const start = markerOffsets[index]
+    const query = text.slice(start + 1)
+    const normalized = query.toLowerCase()
+    if (!normalized) return { start, end: offset, query }
+    if (candidateTokens.some((mention) => mention.slice(1).toLowerCase().startsWith(normalized))) {
+      return { start, end: offset, query }
+    }
+    if (
+      !containsFallback
+      && candidateTokens.some((mention) => mention.slice(1).toLowerCase().includes(normalized))
+    ) {
+      containsFallback = { start, end: offset, query }
+    }
+  }
+  return containsFallback
 }
 
 function filteredMentionCandidates(candidates: ReferenceMentionCandidate[], query: string): ReferenceMentionCandidate[] {
@@ -4275,6 +4347,7 @@ function filteredMentionCandidates(candidates: ReferenceMentionCandidate[], quer
       item.mention.toLowerCase().includes(normalized)
       || item.label.toLowerCase().includes(normalized)
       || item.ref.toLowerCase().includes(normalized)
+      || (item.aliases || []).some((alias) => alias.toLowerCase().includes(normalized))
     )
     .slice(0, 8)
 }
@@ -4335,7 +4408,9 @@ function PromptMentionEditor({
   const editorRef = useRef<HTMLDivElement | null>(null)
   const focusedRef = useRef(false)
   const [query, setQuery] = useState<{ start: number; end: number; query: string } | null>(null)
-  const candidateKey = candidates.map((item) => `${item.mention}:${item.ref}`).join("|")
+  const candidateKey = candidates
+    .map((item) => `${item.mention}:${(item.aliases || []).join(",")}:${item.ref}`)
+    .join("|")
   const visibleCandidates = useMemo(
     () => query ? filteredMentionCandidates(candidates, query.query) : [],
     [candidates, query],
@@ -4365,14 +4440,14 @@ function PromptMentionEditor({
     if (!editor) return
     const text = mentionEditorPlainText(editor)
     onChange(text)
-    setQuery(mentionQueryAtCaret(editor))
+    setQuery(mentionQueryAtCaret(editor, candidates))
   }
 
   const insertMention = (candidate: ReferenceMentionCandidate) => {
     const editor = editorRef.current
     if (!editor) return
     const current = mentionEditorPlainText(editor)
-    const currentQuery = query || mentionQueryAtCaret(editor)
+    const currentQuery = query || mentionQueryAtCaret(editor, candidates)
     const start = currentQuery?.start ?? current.length
     const end = currentQuery?.end ?? current.length
     const suffix = current.slice(end)
@@ -4397,7 +4472,7 @@ function PromptMentionEditor({
         onFocus={() => {
           focusedRef.current = true
           const editor = editorRef.current
-          if (editor) setQuery(mentionQueryAtCaret(editor))
+          if (editor) setQuery(mentionQueryAtCaret(editor, candidates))
         }}
         onBlur={() => {
           focusedRef.current = false
@@ -4408,11 +4483,11 @@ function PromptMentionEditor({
         onInput={emitInput}
         onKeyUp={() => {
           const editor = editorRef.current
-          if (editor) setQuery(mentionQueryAtCaret(editor))
+          if (editor) setQuery(mentionQueryAtCaret(editor, candidates))
         }}
         onMouseUp={() => {
           const editor = editorRef.current
-          if (editor) setQuery(mentionQueryAtCaret(editor))
+          if (editor) setQuery(mentionQueryAtCaret(editor, candidates))
         }}
         onKeyDown={(event) => {
           if (!query || visibleCandidates.length === 0) return

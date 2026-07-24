@@ -35,19 +35,19 @@ def test_reference_mention_parser_requires_an_exact_candidate_token() -> None:
         {"ref": "node:storyboard", "label": "宫格分镜图", "source": "node"},
     ])
 
-    assert [item["mention"] for item in candidates] == ["@凌澈人物参考图", "@宫格分镜图"]
+    assert [item["mention"] for item in candidates] == ["@凌澈 · 人物参考图", "@宫格分镜图"]
     matched, unknown, missing = parse_reference_mentions(
-        "镜头人物沿用@凌澈人物参考图，构图沿用@宫格分镜图。",
+        "镜头人物沿用@凌澈 · 人物参考图，构图沿用@宫格分镜图。",
         candidates,
     )
     assert [(item["mention"], item["ref"]) for item in matched] == [
-        ("@凌澈人物参考图", "node:character"),
+        ("@凌澈 · 人物参考图", "node:character"),
         ("@宫格分镜图", "node:storyboard"),
     ]
     assert unknown == []
     assert missing == []
 
-    matched, unknown, missing = parse_reference_mentions("连续中文也会绑定@凌澈人物参考图保持一致。", candidates)
+    matched, unknown, missing = parse_reference_mentions("连续中文也会绑定@凌澈 · 人物参考图保持一致。", candidates)
     assert [item["ref"] for item in matched] == ["node:character"]
     assert unknown == []
     assert missing == ["@宫格分镜图"]
@@ -55,11 +55,52 @@ def test_reference_mention_parser_requires_an_exact_candidate_token() -> None:
     matched, unknown, missing = parse_reference_mentions("不要误认@不存在的图片。", candidates)
     assert matched == []
     assert unknown == ["@不存在的图片"]
-    assert missing == ["@凌澈人物参考图", "@宫格分镜图"]
+    assert missing == ["@凌澈 · 人物参考图", "@宫格分镜图"]
 
     matched, unknown, _missing = parse_reference_mentions("@宫格分镜图2不是已有标签。", candidates)
     assert matched == []
     assert unknown == ["@宫格分镜图2不是已有标签"]
+
+
+def test_reference_mention_parser_preserves_special_characters_and_legacy_aliases() -> None:
+    candidates = build_reference_mention_candidates([
+        {"ref": "node:character", "label": "《回头》主角|15岁少年", "source": "node"},
+        {"ref": "node:scene", "label": "《回头》场景｜宽敞 孩子卧室｜四机位", "source": "node"},
+    ])
+
+    assert [(item["mention"], item["label"], item.get("aliases")) for item in candidates] == [
+        ("@《回头》主角|15岁少年", "《回头》主角|15岁少年", ["@回头主角15岁少年图片"]),
+        (
+            "@《回头》场景｜宽敞 孩子卧室｜四机位",
+            "《回头》场景｜宽敞 孩子卧室｜四机位",
+            ["@回头场景宽敞孩子卧室四机位图片"],
+        ),
+    ]
+
+    matched, unknown, missing = parse_reference_mentions(
+        "人物沿用@《回头》主角|15岁少年，场景沿用@《回头》场景｜宽敞 孩子卧室｜四机位。",
+        candidates,
+    )
+    assert [(item["mention"], item["label"], item["ref"]) for item in matched] == [
+        ("@《回头》主角|15岁少年", "《回头》主角|15岁少年", "node:character"),
+        (
+            "@《回头》场景｜宽敞 孩子卧室｜四机位",
+            "《回头》场景｜宽敞 孩子卧室｜四机位",
+            "node:scene",
+        ),
+    ]
+    assert unknown == []
+    assert missing == []
+
+    matched, unknown, missing = parse_reference_mentions(
+        "兼容旧提示词：@回头主角15岁少年图片。",
+        candidates,
+    )
+    assert [(item["mention"], item["ref"]) for item in matched] == [
+        ("@回头主角15岁少年图片", "node:character"),
+    ]
+    assert unknown == []
+    assert missing == ["@《回头》场景｜宽敞 孩子卧室｜四机位"]
 
 
 @pytest.mark.asyncio
@@ -161,6 +202,53 @@ async def test_user_node_detail_save_uses_the_same_backend_mention_parser(
     assert input_data["reference_image_mentions"] == [{
         "mention": "@雨夜场景图",
         "label": "雨夜场景图",
+        "ref": f"node:{image['id']}",
+        "source": "node",
+        "index": 1,
+    }]
+
+
+@pytest.mark.asyncio
+async def test_user_node_detail_save_binds_a_title_with_special_characters(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    await _setup_db(monkeypatch, tmp_path)
+    image = await canvas_tools.create_node(
+        project_id="project-mentions",
+        node_type="image",
+        title="《回头》场景｜宽敞孩子卧室|四机位",
+        input_data={"title": "《回头》场景｜宽敞孩子卧室|四机位"},
+    )
+    video = await canvas_tools.create_node(
+        project_id="project-mentions",
+        node_type="video",
+        title="成片",
+        input_data={},
+    )
+
+    async with db_session.session_scope() as session:
+        await routes_projects.update_project_canvas_node_detail(
+            project_id="project-mentions",
+            node_id=video["id"],
+            req=routes_projects.CanvasNodeUpdateRequest(
+                prompt="画面沿用@《回头》场景｜宽敞孩子卧室|四机位。",
+                input={
+                    "references": [
+                        {"ref": f"node:{image['id']}", "role": "visual_reference"},
+                    ],
+                },
+            ),
+            db=session,
+        )
+
+    async with db_session.session_scope() as session:
+        stored = await session.get(WorkflowNode, video["id"])
+        assert stored is not None
+        input_data = json.loads(stored.input_json or "{}")
+    assert input_data["reference_image_mentions"] == [{
+        "mention": "@《回头》场景｜宽敞孩子卧室|四机位",
+        "label": "《回头》场景｜宽敞孩子卧室|四机位",
         "ref": f"node:{image['id']}",
         "source": "node",
         "index": 1,

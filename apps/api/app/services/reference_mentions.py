@@ -12,9 +12,19 @@ from app.db.models import WorkflowNode
 
 
 REFERENCE_MENTION_TOKEN_RE = re.compile(r"@[A-Za-z0-9_\-\u4e00-\u9fff]+")
+REFERENCE_MENTION_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]+")
 
 
 def safe_reference_mention_label(value: Any, fallback: str) -> str:
+    raw = re.sub(r"^[@#]+", "", str(value or fallback or "参考图").strip())
+    raw = re.sub(r"\.(?:png|jpe?g|webp|gif|bmp|svg)$", "", raw, flags=re.IGNORECASE)
+    raw = REFERENCE_MENTION_CONTROL_RE.sub(" ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw or str(fallback or "参考图").strip() or "参考图"
+
+
+def _legacy_reference_mention_label(value: Any, fallback: str) -> str:
+    """Return the pre-special-character label for persisted prompt compatibility."""
     raw = re.sub(r"^[@#]+", "", str(value or fallback or "参考图").strip())
     raw = re.sub(r"\.(?:png|jpe?g|webp|gif|bmp|svg)$", "", raw, flags=re.IGNORECASE)
     raw = "".join(char for char in raw if char.isalnum() or char in {"_", "-"})
@@ -30,13 +40,16 @@ def build_reference_mention_candidates(
     result: list[dict[str, Any]] = []
     seen_refs: set[str] = set()
     used_mentions: set[str] = set()
+    used_legacy_mentions: set[str] = set()
+    legacy_mentions_by_ref: dict[str, str] = {}
     for item in references:
         ref = str(item.get("ref") or "").strip()
         if not ref or ref in seen_refs:
             continue
         seen_refs.add(ref)
         fallback = f"参考图{len(result) + 1}"
-        label = safe_reference_mention_label(item.get("label") or item.get("title"), fallback)
+        label_source = item.get("label") or item.get("title")
+        label = safe_reference_mention_label(label_source, fallback)
         mention = f"@{label}"
         if mention in used_mentions:
             suffix = 2
@@ -44,6 +57,14 @@ def build_reference_mention_candidates(
                 suffix += 1
             mention = f"{mention}{suffix}"
         used_mentions.add(mention)
+        legacy_mention = f"@{_legacy_reference_mention_label(label_source, fallback)}"
+        if legacy_mention in used_legacy_mentions:
+            suffix = 2
+            while f"{legacy_mention}{suffix}" in used_legacy_mentions:
+                suffix += 1
+            legacy_mention = f"{legacy_mention}{suffix}"
+        used_legacy_mentions.add(legacy_mention)
+        legacy_mentions_by_ref[ref] = legacy_mention
         result.append({
             "mention": mention,
             "label": label,
@@ -51,6 +72,18 @@ def build_reference_mention_candidates(
             "source": str(item.get("source") or "node").strip() or "node",
             "index": len(result) + 1,
         })
+    canonical_mentions = {
+        str(candidate.get("mention") or "").strip()
+        for candidate in result
+    }
+    for candidate in result:
+        legacy_mention = legacy_mentions_by_ref.get(str(candidate.get("ref") or "").strip(), "")
+        if (
+            legacy_mention
+            and legacy_mention != candidate["mention"]
+            and legacy_mention not in canonical_mentions
+        ):
+            candidate["aliases"] = [legacy_mention]
     return result
 
 
@@ -59,43 +92,71 @@ def parse_reference_mentions(
     candidates: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     prompt_text = str(prompt or "")
-    by_mention = {
-        str(candidate.get("mention") or "").strip(): candidate
+    canonical_entries = [
+        (str(candidate.get("mention") or "").strip(), candidate)
         for candidate in candidates
         if str(candidate.get("mention") or "").strip()
+    ]
+    token_entries: dict[str, dict[str, Any]] = {
+        mention: candidate
+        for mention, candidate in canonical_entries
     }
-    occurrences: list[tuple[int, int, str]] = []
-    for mention in by_mention:
+    for _mention, candidate in canonical_entries:
+        aliases = candidate.get("aliases")
+        alias_values = aliases if isinstance(aliases, list) else []
+        for alias in alias_values:
+            token = str(alias or "").strip()
+            if token:
+                token_entries.setdefault(token, candidate)
+
+    occurrences: list[tuple[int, int, str, dict[str, Any]]] = []
+    for mention, candidate in token_entries.items():
         start = prompt_text.find(mention)
         while start >= 0:
             end = start + len(mention)
             next_char = prompt_text[end:end + 1]
             if not next_char or not re.match(r"[A-Za-z0-9_-]", next_char):
-                occurrences.append((start, end, mention))
+                occurrences.append((start, end, mention, candidate))
             start = prompt_text.find(mention, start + 1)
     occurrences.sort(key=lambda item: (item[0], -(item[1] - item[0])))
 
-    selected: list[tuple[int, int, str]] = []
+    selected: list[tuple[int, int, str, dict[str, Any]]] = []
     for occurrence in occurrences:
-        start, end, _mention = occurrence
-        if any(start < selected_end and end > selected_start for selected_start, selected_end, _ in selected):
+        start, end, _mention, _candidate = occurrence
+        if any(
+            start < selected_end and end > selected_start
+            for selected_start, selected_end, _token, _selected_candidate in selected
+        ):
             continue
         selected.append(occurrence)
     selected.sort(key=lambda item: item[0])
 
-    matched_mentions = list(dict.fromkeys(item[2] for item in selected))
-    matched = [deepcopy(by_mention[mention]) for mention in matched_mentions]
+    matched: list[dict[str, Any]] = []
+    matched_candidate_ids: set[int] = set()
+    for _start, _end, token, candidate in selected:
+        candidate_id = id(candidate)
+        if candidate_id in matched_candidate_ids:
+            continue
+        matched_candidate_ids.add(candidate_id)
+        stored_candidate = deepcopy(candidate)
+        stored_candidate.pop("aliases", None)
+        stored_candidate["mention"] = token
+        matched.append(stored_candidate)
     unknown: list[str] = []
     for token_match in REFERENCE_MENTION_TOKEN_RE.finditer(prompt_text):
         if any(
             token_match.start() <= selected_start < token_match.end()
-            for selected_start, _selected_end, _mention in selected
+            for selected_start, _selected_end, _mention, _candidate in selected
         ):
             continue
         token = token_match.group(0)
         if token not in unknown:
             unknown.append(token)
-    missing = [mention for mention in by_mention if mention not in matched_mentions]
+    missing = [
+        mention
+        for mention, candidate in canonical_entries
+        if id(candidate) not in matched_candidate_ids
+    ]
     return matched, unknown, missing
 
 
