@@ -11,7 +11,7 @@
 
 OpenReel Studio 是一个开源的聊天式 AI 视频创作工作台。你可以从一句自然语言需求开始，让 Agent 直接创建和运行文本、图片、视频、音频节点；也可以进入流程编辑器搭建可复用生产线，最后在内置时间线上完成剪辑与导出。
 
-[快速开始](./docs/zh-CN/getting-started.md) · [使用指南](./docs/zh-CN/user-guide.md) · [工作流](./docs/zh-CN/workflows.md) · [项目结构](./docs/zh-CN/architecture.md)
+[快速开始](./docs/zh-CN/getting-started.md) · [使用指南](./docs/zh-CN/user-guide.md) · [工作流](./docs/zh-CN/workflows.md) · [外部智能体](./docs/zh-CN/agent-integrations.md) · [项目结构](./docs/zh-CN/architecture.md)
 
 ![OpenReel Studio 新版创作画布：聊天、节点产物与依赖关系位于同一工作区](./docs/assets/screenshots/creation-canvas.png)
 
@@ -83,6 +83,18 @@ OpenReel Studio 用三个原则组织这条链路：
 
 OpenReel Studio 不内置模型额度。实际调用 LLM 或生成图片、视频、音频时，需要配置你自己的服务商账号和 API Key。
 
+## 用 Codex 或其他智能体操作画布
+
+[OpenReel Agent Plugin](https://github.com/yutianxiao6/openreel-agent-plugin)
+提供操作 Skill 和本地 MCP 工具桥。Codex 可以直接从
+marketplace 安装；Claude Code、Cursor、VS Code/Copilot、Gemini CLI 和
+Windsurf 等支持本地 stdio MCP 的客户端，可以单独连接底层工具桥。
+
+不同智能体不一定支持同一种插件安装格式；直接 MCP 客户端获得同一组工具，但不会
+自动加载安装包中的 Skill。宿主有图片生成服务时优先使用宿主生成，没有时使用
+OpenReel 图片节点。安装命令、通用 MCP 配置、支持级别和安全限制见
+[外部智能体与 Agent Plugin](./docs/zh-CN/agent-integrations.md)。
+
 ## 开始使用
 
 - 桌面安装：前往 [最新 Release](https://github.com/yutianxiao6/openreel-studio/releases/latest) 下载当前平台安装包。
@@ -107,6 +119,7 @@ npx openreel-studio-installer
 | 项目结构 | [打开](./docs/zh-CN/architecture.md) | [Open](./docs/en/architecture.md) |
 | 工作流 | [打开](./docs/zh-CN/workflows.md) | [Open](./docs/en/workflows.md) |
 | 模型接入 | [打开](./docs/zh-CN/model-providers.md) | [Open](./docs/en/model-providers.md) |
+| 外部智能体 | [打开](./docs/zh-CN/agent-integrations.md) | [Open](./docs/en/agent-integrations.md) |
 | 开发与测试 | [打开](./docs/zh-CN/development.md) | [Open](./docs/en/development.md) |
 
 ## 开源仓库边界

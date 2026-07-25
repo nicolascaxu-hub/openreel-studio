@@ -11,7 +11,7 @@ English · [简体中文](./README.md)
 
 OpenReel Studio is an open-source, conversational workspace for AI video production. Start with a natural-language request and let the agent create and run visible text, image, video, and audio nodes. Build reusable production systems in the workflow editor, then finish the result in the built-in timeline.
 
-[Quick start](./docs/en/getting-started.md) · [User guide](./docs/en/user-guide.md) · [Workflows](./docs/en/workflows.md) · [Architecture](./docs/en/architecture.md)
+[Quick start](./docs/en/getting-started.md) · [User guide](./docs/en/user-guide.md) · [Workflows](./docs/en/workflows.md) · [External agents](./docs/en/agent-integrations.md) · [Architecture](./docs/en/architecture.md)
 
 ![The new OpenReel Studio creation canvas with chat, visible deliverables, and dependency edges in one workspace](./docs/assets/screenshots/creation-canvas.png)
 
@@ -83,6 +83,21 @@ The built-in editor provides a media pool, program monitor, frame-based tracks, 
 
 OpenReel Studio does not include model credits. LLM, image, video, and audio operations require accounts and API keys from the providers you choose.
 
+## Control the canvas with Codex or another agent
+
+The [OpenReel Agent Plugin](https://github.com/yutianxiao6/openreel-agent-plugin)
+provides an operating skill and a local MCP tool bridge.
+Codex can install it directly from a marketplace. Claude Code, Cursor, VS
+Code/Copilot, Gemini CLI, Windsurf, and other clients that support local stdio
+MCP servers can connect to the underlying bridge separately.
+
+Different agents do not necessarily support the same plugin packaging format.
+Direct MCP clients receive the same tools but do not automatically load the
+bundled skill. Prefer host image generation when it exists and use an OpenReel
+image node otherwise. See
+[External agents and Agent Plugin](./docs/en/agent-integrations.md) for
+installation, generic MCP configuration, support levels, and safety limits.
+
 ## Get started
 
 - Desktop builds: download the current package from the [latest release](https://github.com/yutianxiao6/openreel-studio/releases/latest).
@@ -107,6 +122,7 @@ Start with [docs/README.en.md](./docs/README.en.md) for English documentation or
 | Architecture | [Open](./docs/en/architecture.md) | [打开](./docs/zh-CN/architecture.md) |
 | Workflows | [Open](./docs/en/workflows.md) | [打开](./docs/zh-CN/workflows.md) |
 | Model providers | [Open](./docs/en/model-providers.md) | [打开](./docs/zh-CN/model-providers.md) |
+| External agents | [Open](./docs/en/agent-integrations.md) | [打开](./docs/zh-CN/agent-integrations.md) |
 | Development | [Open](./docs/en/development.md) | [打开](./docs/zh-CN/development.md) |
 
 ## Public repository boundary

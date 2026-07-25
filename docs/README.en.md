@@ -8,6 +8,7 @@ English · [中文文档](./README.md) · [Project home](../README.en.md)
 2. [User guide](./en/user-guide.md): configure providers, create projects, run nodes, manage history, and edit video.
 3. [Workflow guide](./en/workflows.md): use built-in templates or build reusable flows.
 4. [Model configuration and protocols](./en/model-providers.md): configure LLM/media Providers, understand the video UMA submodule boundary, and open the detailed submodule protocol guide.
+5. [External agents and Agent Plugin](./en/agent-integrations.md): install the complete package in Codex or connect another stdio MCP-capable agent to OpenReel.
 
 ## Developer documentation
 

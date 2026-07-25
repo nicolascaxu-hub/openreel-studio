@@ -86,6 +86,7 @@ const requiredPairs = [
   ["docs/zh-CN/architecture.md", "docs/en/architecture.md"],
   ["docs/zh-CN/workflows.md", "docs/en/workflows.md"],
   ["docs/zh-CN/model-providers.md", "docs/en/model-providers.md"],
+  ["docs/zh-CN/agent-integrations.md", "docs/en/agent-integrations.md"],
   ["docs/zh-CN/development.md", "docs/en/development.md"],
   ["apps/api/README.zh-CN.md", "apps/api/README.md"],
   ["packages/installer/README.zh-CN.md", "packages/installer/README.md"],

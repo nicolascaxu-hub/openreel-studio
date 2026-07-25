@@ -8,6 +8,7 @@
 2. [使用指南](./zh-CN/user-guide.md)：配置模型、创建项目、运行节点、管理历史和剪辑视频。
 3. [工作流指南](./zh-CN/workflows.md)：使用内置模板或搭建可复用流程。
 4. [模型配置与协议接入](./zh-CN/model-providers.md)：配置 LLM/媒体 Provider，理解视频 UMA 子仓边界，并进入子仓详细协议指南。
+5. [外部智能体与 Agent Plugin](./zh-CN/agent-integrations.md)：在 Codex 中完整安装，或让其他支持 stdio MCP 的智能体连接 OpenReel。
 
 ## 开发者文档
 
