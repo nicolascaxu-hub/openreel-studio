@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v* tag to rebuild and publish
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -36,7 +41,16 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.release_tag || github.ref }}
           submodules: recursive
+
+      - name: Validate release version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          test "$RELEASE_TAG" = "v${version}"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -81,7 +95,7 @@ jobs:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
 
     steps:
       - name: Download installer artifacts
@@ -93,7 +107,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           mapfile -d '' files < <(find release-artifacts -type f \( \
