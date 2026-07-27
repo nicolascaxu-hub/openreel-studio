@@ -18,6 +18,7 @@ export const DIRECTOR_MANNEQUIN_JOINTS = [
 ] as const
 
 export type DirectorMannequinJoint = typeof DIRECTOR_MANNEQUIN_JOINTS[number]
+export type DirectorMannequinAnatomy = "masculine" | "feminine"
 export type DirectorMannequinBodyPreset = "compact" | "standard" | "slender" | "athletic" | "broad" | "custom"
 export type DirectorMannequinPosePreset = "relaxed" | "attention" | "a-pose" | "t-pose" | "walk" | "run" | "sit" | "crouch" | "wave" | "point" | "hands-hips" | "custom"
 
@@ -33,6 +34,7 @@ export interface DirectorMannequinProportions {
 }
 
 export interface DirectorMannequinState {
+  anatomy: DirectorMannequinAnatomy
   body_preset: DirectorMannequinBodyPreset
   pose_preset: DirectorMannequinPosePreset
   proportions: DirectorMannequinProportions
@@ -267,6 +269,7 @@ export function defaultDirectorMannequin(): DirectorMannequinState {
   const body = DIRECTOR_MANNEQUIN_BODY_PRESETS.find((item) => item.id === "standard")!
   const posture = DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === "relaxed")!
   return {
+    anatomy: "masculine",
     body_preset: body.id,
     pose_preset: posture.id,
     proportions: { ...body.proportions },
@@ -289,7 +292,9 @@ export function normalizeDirectorMannequin(value: unknown): DirectorMannequinSta
     : {}
   const bodyPreset = String(source.body_preset || fallback.body_preset)
   const posePreset = String(source.pose_preset || fallback.pose_preset)
+  const anatomy = source.anatomy === "feminine" ? "feminine" : "masculine"
   return {
+    anatomy,
     body_preset: (bodyPreset === "custom" || BODY_PRESET_IDS.has(bodyPreset) ? bodyPreset : fallback.body_preset) as DirectorMannequinBodyPreset,
     pose_preset: (posePreset === "custom" || POSE_PRESET_IDS.has(posePreset) ? posePreset : fallback.pose_preset) as DirectorMannequinPosePreset,
     proportions: {

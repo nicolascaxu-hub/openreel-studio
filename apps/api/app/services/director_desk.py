@@ -112,6 +112,9 @@ def _validate_mannequin(value: Any, *, name: str) -> None:
         return
     if not isinstance(value, dict):
         raise DirectorDeskError(f"{name} 必须是对象")
+    anatomy = value.get("anatomy")
+    if anatomy is not None and anatomy not in {"masculine", "feminine"}:
+        raise DirectorDeskError(f"{name}.anatomy 必须是 masculine 或 feminine")
     proportions = value.get("proportions")
     if proportions is not None:
         if not isinstance(proportions, dict):

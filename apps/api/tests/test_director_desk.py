@@ -203,6 +203,7 @@ async def test_director_persists_mannequin_proportions_and_rejects_invalid_joint
         service = DirectorDeskService(session)
         scene = _scene()
         scene["objects"][0]["mannequin"] = {
+            "anatomy": "feminine",
             "body_preset": "custom",
             "pose_preset": "custom",
             "proportions": {
@@ -222,6 +223,7 @@ async def test_director_persists_mannequin_proportions_and_rejects_invalid_joint
         }
         saved = await service.save_scene("director-project", scene, expected_revision=0)
         mannequin = saved["scene"]["objects"][0]["mannequin"]
+        assert mannequin["anatomy"] == "feminine"
         assert mannequin["proportions"]["height"] == 1.88
         assert mannequin["joints"]["rightShoulder"] == [-88, 0, 5]
 
@@ -232,4 +234,9 @@ async def test_director_persists_mannequin_proportions_and_rejects_invalid_joint
         }
         with pytest.raises(DirectorDeskError, match="超出旋转范围"):
             await service.save_scene("director-project", invalid, expected_revision=1)
+
+        invalid_anatomy = _scene()
+        invalid_anatomy["objects"][0]["mannequin"] = {"anatomy": "robot"}
+        with pytest.raises(DirectorDeskError, match="anatomy"):
+            await service.save_scene("director-project", invalid_anatomy, expected_revision=1)
     await db_session.engine.dispose()

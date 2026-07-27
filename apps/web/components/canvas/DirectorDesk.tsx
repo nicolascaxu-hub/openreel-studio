@@ -1465,12 +1465,28 @@ export default function DirectorDesk({
                 <div className="flex items-center justify-between border-b border-white/[0.065] px-3 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-300/[0.09] text-violet-100/80"><DirectorIcon name="sparkles" className="h-3.5 w-3.5" /></span>
-                    <div><div className="text-[10px] font-medium text-zinc-200">人物塑形与姿态</div><div className="text-[8px] text-zinc-600">体型、长度和 16 个关节</div></div>
+                    <div><div className="text-[10px] font-medium text-zinc-200">人物塑形与姿态</div><div className="text-[8px] text-zinc-600">男女体态、人体比例和 16 个关节</div></div>
                   </div>
                   <span className="rounded-full border border-white/[0.07] bg-black/20 px-2 py-0.5 text-[8px] text-zinc-500">{Math.round(selectedMannequin.proportions.height * 100)} cm</span>
                 </div>
 
                 <div className="space-y-4 p-3">
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">人体类型</span><span className="text-[8px] text-zinc-700">解剖轮廓</span></div>
+                    <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1">
+                      {([{"id":"masculine","label":"男性素模"},{"id":"feminine","label":"女性素模"}] as const).map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => updateSelectedMannequin((current) => normalizeDirectorMannequin({ ...current, anatomy: option.id }))}
+                          className={cn("h-7 rounded-lg text-[8px] font-medium transition", selectedMannequin.anatomy === option.id ? "bg-violet-300/[0.13] text-violet-100" : "text-zinc-600 hover:text-zinc-300")}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div>
                     <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">体型预设</span><span className="text-[8px] text-zinc-700">选择后仍可微调</span></div>
                     <div className="grid grid-cols-2 gap-1.5">
