@@ -275,19 +275,96 @@ type DirectorMannequinJointValues = Partial<
   Record<DirectorMannequinJoint, [number, number, number]>
 >
 
-function handCurl(
+type DirectorHandShape =
+  | "relaxed"
+  | "straight"
+  | "open"
+  | "soft-fist"
+  | "fist"
+  | "point"
+  | "waist"
+  | "clasp"
+
+function fingerShape(
   side: "left" | "right",
-  base = 5,
-  middle = 8,
-  tip = 5,
+  finger: "Thumb" | "Index" | "Middle" | "Ring" | "Pinky",
+  curl: [number, number, number],
+  spread = 0,
 ): DirectorMannequinJointValues {
-  const values: DirectorMannequinJointValues = {}
-  for (const finger of ["Index", "Middle", "Ring", "Pinky"] as const) {
-    values[`${side}${finger}1`] = [base, 0, 0]
-    values[`${side}${finger}2`] = [middle, 0, 0]
-    values[`${side}${finger}3`] = [tip, 0, 0]
+  return {
+    [`${side}${finger}1`]: [curl[0], 0, spread],
+    [`${side}${finger}2`]: [curl[1], 0, 0],
+    [`${side}${finger}3`]: [curl[2], 0, 0],
   }
-  return values
+}
+
+function handShape(
+  side: "left" | "right",
+  shape: DirectorHandShape,
+): DirectorMannequinJointValues {
+  const mirror = side === "left" ? -1 : 1
+  const fingers = (
+    index: [number, number, number],
+    middle: [number, number, number],
+    ring: [number, number, number],
+    pinky: [number, number, number],
+    spread = 0,
+  ): DirectorMannequinJointValues => ({
+    ...fingerShape(side, "Index", index, -spread * mirror),
+    ...fingerShape(side, "Middle", middle, -spread * 0.3 * mirror),
+    ...fingerShape(side, "Ring", ring, spread * 0.35 * mirror),
+    ...fingerShape(side, "Pinky", pinky, spread * mirror),
+  })
+
+  if (shape === "straight") {
+    return {
+      ...fingerShape(side, "Thumb", [2, 3, 2], 2 * mirror),
+      ...fingers([0, 1, 0], [0, 1, 0], [1, 2, 1], [2, 3, 2]),
+    }
+  }
+  if (shape === "open") {
+    return {
+      ...fingerShape(side, "Thumb", [-5, 4, 2], 8 * mirror),
+      ...fingers([0, 1, 1], [0, 1, 1], [1, 2, 1], [2, 3, 2], 5),
+    }
+  }
+  if (shape === "soft-fist") {
+    return {
+      ...fingerShape(side, "Thumb", [18, 18, 10], 3 * mirror),
+      ...fingers([34, 48, 30], [38, 52, 34], [42, 56, 38], [46, 60, 42], 1),
+    }
+  }
+  if (shape === "fist") {
+    return {
+      ...fingerShape(side, "Thumb", [30, 34, 20], 1 * mirror),
+      ...fingers([58, 84, 64], [62, 88, 68], [64, 90, 70], [66, 92, 72]),
+    }
+  }
+  if (shape === "point") {
+    return {
+      ...fingerShape(side, "Thumb", [30, 34, 20], 1 * mirror),
+      ...fingerShape(side, "Index", [0, 1, 1]),
+      ...fingerShape(side, "Middle", [62, 86, 66]),
+      ...fingerShape(side, "Ring", [66, 90, 70]),
+      ...fingerShape(side, "Pinky", [68, 92, 72]),
+    }
+  }
+  if (shape === "waist") {
+    return {
+      ...fingerShape(side, "Thumb", [8, 10, 6], 3 * mirror),
+      ...fingers([12, 20, 12], [14, 23, 14], [16, 25, 16], [18, 28, 18], 1.5),
+    }
+  }
+  if (shape === "clasp") {
+    return {
+      ...fingerShape(side, "Thumb", [20, 24, 14], 1 * mirror),
+      ...fingers([26, 38, 24], [30, 42, 27], [34, 46, 30], [38, 50, 34]),
+    }
+  }
+  return {
+    ...fingerShape(side, "Thumb", [7, 9, 5], 3 * mirror),
+    ...fingers([5, 8, 5], [7, 10, 7], [9, 12, 8], [12, 15, 10], 1.5),
+  }
 }
 
 function pose(
@@ -295,8 +372,8 @@ function pose(
 ): Record<DirectorMannequinJoint, [number, number, number]> {
   return {
     ...emptyJointMap(),
-    ...handCurl("left"),
-    ...handCurl("right"),
+    ...handShape("left", "relaxed"),
+    ...handShape("right", "relaxed"),
     ...values,
   }
 }
@@ -310,224 +387,276 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
   {
     id: "relaxed",
     label: "自然站立",
-    description: "适合对话和构图起点",
+    description: "骨盆轻移、脊柱自然反向平衡，手指保持松弛弧度",
     joints: pose({
-      spine: [0, 0, 1], chest: [0, 0, -1], head: [1, 0, 0],
+      pelvis: [0, -2, 1], spine: [-1, 1, -1], spineMiddle: [1, 1, 1], chest: [0, 0, -1],
+      neck: [0, -1, 0], head: [1, 1, 0],
+      leftClavicle: [0, 0, -1], rightClavicle: [0, 0, 1],
       leftShoulder: [-3, 0, -7], rightShoulder: [-3, 0, 7],
-      leftElbow: [-7, 0, -2], rightElbow: [-7, 0, 2],
+      leftElbow: [-7, 0, -2], rightElbow: [-7, 0, 2], leftWrist: [2, 0, 1], rightWrist: [2, 0, -1],
       leftHip: [2, 0, -2], rightHip: [-3, 0, 2],
       leftKnee: [3, 0, 0], rightKnee: [6, 0, 0],
+      leftAnkle: [-1, 0, 0], rightAnkle: [1, 0, 0], leftToe: [1, 0, 0], rightToe: [0, 0, 0],
     }),
   },
   {
     id: "attention",
     label: "立正",
-    description: "身体挺直、手臂贴近",
-    joints: pose({ leftShoulder: [0, 0, -3], rightShoulder: [0, 0, 3] }),
+    description: "骨盆居中、胸廓展开，掌指并拢贴近裤线",
+    joints: pose({
+      pelvis: [-1, 0, 0], spine: [1, 0, 0], spineMiddle: [-1, 0, 0], chest: [-1, 0, 0],
+      neck: [1, 0, 0], head: [0, 0, 0],
+      leftClavicle: [0, 0, -1], rightClavicle: [0, 0, 1],
+      leftShoulder: [1, 0, -3], rightShoulder: [1, 0, 3],
+      leftElbow: [-2, 0, 0], rightElbow: [-2, 0, 0], leftWrist: [0, 0, 1], rightWrist: [0, 0, -1],
+      leftHip: [0, 0, -1], rightHip: [0, 0, 1], leftKnee: [1, 0, 0], rightKnee: [1, 0, 0],
+      leftAnkle: [-1, 0, 0], rightAnkle: [-1, 0, 0], leftToe: [1, 0, 0], rightToe: [1, 0, 0],
+      ...handShape("left", "straight"), ...handShape("right", "straight"),
+    }),
   },
   {
     id: "a-pose",
     label: "A Pose",
-    description: "手臂自然展开",
+    description: "锁骨带动双臂自然下斜，掌指伸展且双脚稳定",
     joints: pose({
-      leftShoulder: [0, 0, -34], rightShoulder: [0, 0, 34],
-      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
+      spine: [0, 0, 0], spineMiddle: [0, 0, 0], chest: [-1, 0, 0], neck: [1, 0, 0],
+      leftClavicle: [0, 0, -4], rightClavicle: [0, 0, 4],
+      leftShoulder: [0, 0, -30], rightShoulder: [0, 0, 30],
+      leftElbow: [-3, 0, 0], rightElbow: [-3, 0, 0], leftWrist: [0, 0, 1], rightWrist: [0, 0, -1],
+      leftHip: [0, 0, -2], rightHip: [0, 0, 2], leftAnkle: [-1, 0, 0], rightAnkle: [-1, 0, 0],
+      ...handShape("left", "open"), ...handShape("right", "open"),
     }),
   },
   {
     id: "t-pose",
     label: "T Pose",
-    description: "手臂水平展开",
+    description: "锁骨、肩、肘、腕形成水平基准，掌指完全展开",
     joints: pose({
-      leftShoulder: [0, 0, -90], rightShoulder: [0, 0, 90],
-      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
+      pelvis: [0, 0, 0], spine: [0, 0, 0], spineMiddle: [0, 0, 0], chest: [0, 0, 0],
+      leftClavicle: [0, 0, -8], rightClavicle: [0, 0, 8],
+      leftShoulder: [0, 0, -82], rightShoulder: [0, 0, 82],
+      leftElbow: [-2, 0, 0], rightElbow: [-2, 0, 0], leftWrist: [0, 0, 1], rightWrist: [0, 0, -1],
+      leftHip: [0, 0, -1], rightHip: [0, 0, 1], leftAnkle: [-1, 0, 0], rightAnkle: [-1, 0, 0],
+      ...handShape("left", "open"), ...handShape("right", "open"),
     }),
   },
   {
     id: "walk",
     label: "行走",
-    description: "自然迈步与摆臂",
+    description: "骨盆与胸廓反向扭转，摆臂、踝和前脚掌形成完整步态",
     joints: pose({
-      spine: [3, -4, 0], chest: [-2, 5, 0],
+      pelvis: [2, -5, 1], spine: [2, -3, -1], spineMiddle: [1, 2, 1], chest: [-2, 5, 0],
+      neck: [1, -2, 0], head: [0, 1, 0],
+      leftClavicle: [1, 2, -1], rightClavicle: [-1, -2, 1],
       leftShoulder: [27, 0, -7], rightShoulder: [-30, 0, 7],
-      leftElbow: [-18, 0, 0], rightElbow: [-22, 0, 0],
+      leftElbow: [-18, 0, 0], rightElbow: [-22, 0, 0], leftWrist: [4, 0, 1], rightWrist: [3, 0, -1],
       leftHip: [-30, 0, -2], rightHip: [24, 0, 2],
       leftKnee: [34, 0, 0], rightKnee: [8, 0, 0],
-      leftAnkle: [-8, 0, 0], rightAnkle: [9, 0, 0],
+      leftAnkle: [-5, 0, 0], rightAnkle: [7, 0, 0], leftToe: [7, 0, 0], rightToe: [-6, 0, 0],
     }),
   },
   {
     id: "run",
     label: "奔跑",
-    description: "前倾、高抬腿与屈肘",
+    description: "骨盆前倾、胸廓稳定，屈肘握拳并通过踝趾完成离地步态",
     joints: pose({
-      spine: [-12, 0, 0], chest: [-6, 0, 0], neck: [9, 0, 0],
+      pelvis: [-7, -3, 1], spine: [-9, 1, -1], spineMiddle: [-5, 1, 1], chest: [-4, 1, 0], neck: [9, 0, 0], head: [2, 0, 0],
+      leftClavicle: [3, 2, -2], rightClavicle: [-3, -2, 2],
       leftShoulder: [48, 0, -8], rightShoulder: [-55, 0, 8],
-      leftElbow: [-72, 0, 0], rightElbow: [-82, 0, 0],
+      leftElbow: [-72, 0, 0], rightElbow: [-82, 0, 0], leftWrist: [8, 0, 0], rightWrist: [8, 0, 0],
       leftHip: [-58, 0, -3], rightHip: [38, 0, 3],
       leftKnee: [82, 0, 0], rightKnee: [58, 0, 0],
-      leftAnkle: [-22, 0, 0], rightAnkle: [12, 0, 0],
+      leftAnkle: [-18, 0, 0], rightAnkle: [10, 0, 0], leftToe: [12, 0, 0], rightToe: [-16, 0, 0],
+      ...handShape("left", "soft-fist"), ...handShape("right", "soft-fist"),
     }),
   },
   {
     id: "sit",
     label: "坐姿",
-    description: "髋膝约九十度、双脚平放，适合搭配椅凳",
+    description: "骨盆落座、脊柱保持自然曲线，双手落向大腿且双脚平放",
     joints: pose({
-      spine: [5, 0, 0], chest: [-3, 0, 0],
-      leftShoulder: [-8, 0, -10], rightShoulder: [-8, 0, 10],
-      leftElbow: [-18, 0, 0], rightElbow: [-18, 0, 0],
+      pelvis: [7, 0, 0], spine: [4, 0, 0], spineMiddle: [1, 0, 0], chest: [-3, 0, 0], neck: [1, 0, 0], head: [1, 0, 0],
+      leftClavicle: [-1, 0, -1], rightClavicle: [-1, 0, 1],
+      leftShoulder: [-18, 0, -9], rightShoulder: [-18, 0, 9],
+      leftElbow: [-28, 0, 0], rightElbow: [-28, 0, 0], leftWrist: [12, 0, 1], rightWrist: [12, 0, -1],
       leftHip: [-88, 0, 0], rightHip: [-88, 0, 0],
-      leftKnee: [86, 0, 0], rightKnee: [86, 0, 0],
-      leftAnkle: [2, 0, 0], rightAnkle: [2, 0, 0],
+      leftKnee: [88, 0, 0], rightKnee: [88, 0, 0],
+      leftAnkle: [0, 0, 0], rightAnkle: [0, 0, 0], leftToe: [0, 0, 0], rightToe: [0, 0, 0],
+      ...handShape("left", "waist"), ...handShape("right", "waist"),
     }),
   },
   {
     id: "crouch",
     label: "下蹲",
-    description: "重心下沉、双脚完整着地的稳定深蹲",
+    description: "骨盆向后下沉、膝踝联动，双臂前伸平衡且双脚完整着地",
     joints: pose({
-      spine: [-17, 0, 0], chest: [7, 0, 0], neck: [8, 0, 0],
-      leftShoulder: [-25, 0, -14], rightShoulder: [-25, 0, 14],
-      leftElbow: [-24, 0, 0], rightElbow: [-24, 0, 0],
-      leftHip: [-58, 0, -5], rightHip: [-58, 0, 5],
-      leftKnee: [110, 0, 0], rightKnee: [110, 0, 0],
-      leftAnkle: [-50, 0, 0], rightAnkle: [-50, 0, 0],
+      pelvis: [-18, 0, 0], spine: [-12, 0, 0], spineMiddle: [-5, 0, 0], chest: [7, 0, 0], neck: [8, 0, 0], head: [2, 0, 0],
+      leftClavicle: [-2, 0, -2], rightClavicle: [-2, 0, 2],
+      leftShoulder: [-42, 0, -12], rightShoulder: [-42, 0, 12],
+      leftElbow: [-30, 0, 0], rightElbow: [-30, 0, 0], leftWrist: [14, 0, 1], rightWrist: [14, 0, -1],
+      leftHip: [-66, 0, -7], rightHip: [-66, 0, 7],
+      leftKnee: [116, 0, 0], rightKnee: [116, 0, 0],
+      leftAnkle: [-48, 0, 0], rightAnkle: [-48, 0, 0], leftToe: [6, 0, 0], rightToe: [6, 0, 0],
+      ...handShape("left", "open"), ...handShape("right", "open"),
     }),
   },
   {
     id: "wave",
     label: "挥手",
-    description: "右手举起打招呼",
+    description: "重心落在一侧，锁骨抬起右臂，掌指张开形成清晰问候手型",
     joints: pose({
-      chest: [0, -7, 0], head: [0, 8, 0],
-      leftShoulder: [-4, 0, -8], leftElbow: [-8, 0, 0],
-      rightShoulder: [-7, -8, 96], rightElbow: [-18, 0, 82], rightWrist: [0, 10, 2],
+      pelvis: [0, 3, 2], spine: [0, -2, -1], spineMiddle: [0, -2, 1], chest: [0, -5, 0], neck: [0, 3, 0], head: [0, 6, 0],
+      leftClavicle: [0, 0, -1], rightClavicle: [2, -2, 7],
+      leftShoulder: [-4, 0, -8], leftElbow: [-8, 0, 0], leftWrist: [2, 0, 1],
+      rightShoulder: [-7, -8, 89], rightElbow: [-18, 0, 82], rightWrist: [0, 10, 2],
       leftHip: [2, 0, -2], rightHip: [-3, 0, 2],
-      ...handCurl("right", 0, 0, 0),
+      leftKnee: [3, 0, 0], rightKnee: [7, 0, 0], leftAnkle: [-1, 0, 0], rightAnkle: [1, 0, 0],
+      ...handShape("right", "open"),
     }),
   },
   {
     id: "point",
     label: "指向",
-    description: "右臂向前指示",
+    description: "骨盆胸廓共同转向目标，锁骨送肩，食指伸直且其余手指分节收拢",
     joints: pose({
-      chest: [0, -12, 0], head: [0, -8, 0],
-      leftShoulder: [-4, 0, -8], rightShoulder: [-18, -6, 88],
-      rightElbow: [-7, 0, 0], rightWrist: [2, 0, 0],
-      ...handCurl("right", 62, 86, 66),
-      rightIndex1: [0, 0, 0], rightIndex2: [0, 0, 0], rightIndex3: [0, 0, 0],
+      pelvis: [0, -4, 1], spine: [0, -4, -1], spineMiddle: [0, -3, 1], chest: [0, -8, 0], neck: [0, 3, 0], head: [0, -5, 0],
+      leftClavicle: [0, 0, -1], rightClavicle: [-1, -3, 5],
+      leftShoulder: [-4, 0, -8], leftElbow: [-8, 0, 0], leftWrist: [2, 0, 1],
+      rightShoulder: [-18, -5, 83], rightElbow: [-7, 0, 0], rightWrist: [2, 0, -2],
+      leftHip: [2, 0, -2], rightHip: [-4, 0, 3], leftKnee: [3, 0, 0], rightKnee: [7, 0, 0],
+      ...handShape("right", "point"),
     }),
   },
   {
     id: "hands-hips",
     label: "叉腰",
-    description: "抬高双肘，手掌自然落在腰胯外侧",
+    description: "骨盆稳定、双肘外展，掌面贴近腰胯外侧而手指保持在身体之外",
     joints: pose({
-      chest: [0, 0, 1],
+      pelvis: [0, 0, 1], spine: [0, 0, -1], spineMiddle: [0, 0, 1], chest: [0, 0, 1], neck: [0, 0, 0], head: [1, 0, 0],
+      leftClavicle: [0, 0, -3], rightClavicle: [0, 0, 3],
       leftShoulder: [-6, 12, -52], rightShoulder: [-6, -12, 52],
       leftElbow: [-12, 0, 108], rightElbow: [-12, 0, -108],
-      leftWrist: [2, -8, -56], rightWrist: [2, 8, 56],
+      leftWrist: [6, -10, -50], rightWrist: [6, 10, 50],
+      leftHip: [1, 0, -4], rightHip: [-2, 0, 4], leftKnee: [4, 0, 0], rightKnee: [7, 0, 0],
+      leftAnkle: [-1, 0, 0], rightAnkle: [1, 0, 0], leftToe: [1, 0, 0], rightToe: [0, 0, 0],
+      ...handShape("left", "waist"), ...handShape("right", "waist"),
     }),
   },
   {
     id: "open-arms",
     label: "展开双臂",
-    description: "双臂舒展，适合欢迎、展示和开放式交流",
+    description: "锁骨打开胸廓，肘腕形成柔和弧线，双掌与分节手指朝向观众",
     joints: pose({
-      chest: [-2, 0, 0], head: [1, 0, 0],
-      leftShoulder: [-16, 0, -58], rightShoulder: [-16, 0, 58],
+      pelvis: [0, 0, 1], spine: [-1, 0, -1], spineMiddle: [-1, 0, 1], chest: [-2, 0, 0], neck: [1, 0, 0], head: [1, 0, 0],
+      leftClavicle: [1, 0, -4], rightClavicle: [1, 0, 4],
+      leftShoulder: [-16, 0, -54], rightShoulder: [-16, 0, 54],
       leftElbow: [-18, 0, 14], rightElbow: [-18, 0, -14],
       leftWrist: [8, 0, 4], rightWrist: [8, 0, -4],
       leftHip: [2, 0, -3], rightHip: [-3, 0, 3],
-      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
+      leftKnee: [3, 0, 0], rightKnee: [6, 0, 0], leftAnkle: [-1, 0, 0], rightAnkle: [1, 0, 0],
+      ...handShape("left", "open"), ...handShape("right", "open"),
     }),
   },
   {
     id: "explain",
     label: "讲解",
-    description: "一手向前摊开，适合介绍和对话调度",
+    description: "骨盆与胸廓转向听者，一侧掌心摊开，另一侧保持自然松弛",
     joints: pose({
-      chest: [0, -8, 0], head: [0, 7, 0],
-      leftShoulder: [-5, 0, -9], leftElbow: [-10, 0, -2],
-      rightShoulder: [-35, -10, 48], rightElbow: [-35, 0, 35], rightWrist: [20, 12, 5],
+      pelvis: [0, 3, 1], spine: [0, -3, -1], spineMiddle: [0, -2, 1], chest: [0, -5, 0], neck: [0, 3, 0], head: [0, 4, 0],
+      leftClavicle: [0, 0, -1], rightClavicle: [-1, -2, 3],
+      leftShoulder: [-5, 0, -9], leftElbow: [-10, 0, -2], leftWrist: [3, 0, 1],
+      rightShoulder: [-35, -10, 45], rightElbow: [-35, 0, 35], rightWrist: [20, 12, 5],
       leftHip: [2, 0, -2], rightHip: [-4, 0, 3],
-      ...handCurl("right", 0, 0, 0),
+      leftKnee: [3, 0, 0], rightKnee: [7, 0, 0], leftAnkle: [-1, 0, 0], rightAnkle: [1, 0, 0],
+      ...handShape("right", "open"),
     }),
   },
   {
     id: "hands-back",
     label: "背手站立",
-    description: "双手收在身后，适合观察、等待和长辈姿态",
+    description: "肩臂向后展开，双手在腰后交叠，胸廓保持舒展",
     joints: pose({
-      chest: [0, 0, 1], head: [1, 0, 0],
-      leftShoulder: [18, 10, -18], rightShoulder: [18, -10, 18],
-      leftElbow: [-58, 0, 48], rightElbow: [-58, 0, -48],
-      leftWrist: [12, -12, -28], rightWrist: [12, 12, 28],
+      pelvis: [0, 0, 1], spine: [1, 0, -1], spineMiddle: [-1, 0, 1], chest: [-1, 0, 1], neck: [1, 0, 0], head: [1, 0, 0],
+      leftClavicle: [2, 2, -2], rightClavicle: [2, -2, 2],
+      leftShoulder: [28, 10, -18], rightShoulder: [28, -10, 18],
+      leftElbow: [-58, 0, 46], rightElbow: [-58, 0, -46],
+      leftWrist: [8, -10, -20], rightWrist: [8, 10, 20],
       leftHip: [2, 0, -2], rightHip: [-3, 0, 2],
+      leftKnee: [3, 0, 0], rightKnee: [6, 0, 0], leftAnkle: [-1, 0, 0], rightAnkle: [1, 0, 0],
+      ...handShape("left", "clasp"), ...handShape("right", "clasp"),
     }),
   },
   {
     id: "look-back",
     label: "回身看",
-    description: "胸肩与头部错位回望，适合反应镜头",
+    description: "骨盆、三段脊柱、颈部和头部逐级扭转，双脚维持反向支撑",
     joints: pose({
-      spine: [0, 18, 1], chest: [0, 22, -1], neck: [0, 14, 0], head: [0, 18, 0],
+      pelvis: [0, -10, 1], spine: [0, 14, -1], spineMiddle: [0, 14, 1], chest: [0, 16, -1], neck: [0, 12, 0], head: [0, 16, 0],
+      leftClavicle: [1, 2, -1], rightClavicle: [-1, -2, 1],
       leftShoulder: [8, 0, -10], rightShoulder: [-12, 0, 9],
-      leftElbow: [-14, 0, -2], rightElbow: [-18, 0, 2],
+      leftElbow: [-14, 0, -2], rightElbow: [-18, 0, 2], leftWrist: [3, 0, 1], rightWrist: [3, 0, -1],
       leftHip: [5, -8, -3], rightHip: [-8, 8, 3],
       leftKnee: [8, 0, 0], rightKnee: [12, 0, 0],
+      leftAnkle: [-2, 0, -2], rightAnkle: [2, 0, 2], leftToe: [2, 0, 0], rightToe: [-2, 0, 0],
     }),
   },
   {
     id: "salute",
     label: "抬手示意",
-    description: "右手抬至头侧，适合回应、示意停下和报告",
+    description: "锁骨抬肩、肘部外展，手腕校正后五指并拢停在头侧",
     joints: pose({
-      chest: [0, -4, 0], head: [0, 4, 0],
-      leftShoulder: [0, 0, -4], leftElbow: [-6, 0, 0],
-      rightShoulder: [-5, -8, 110], rightElbow: [-15, 0, 115], rightWrist: [0, 10, -45],
-      ...handCurl("right", 0, 0, 0),
+      pelvis: [0, 1, 0], spine: [0, -1, 0], spineMiddle: [0, -1, 0], chest: [0, -2, 0], neck: [0, 2, 0], head: [0, 3, 0],
+      leftClavicle: [0, 0, -1], rightClavicle: [2, -2, 7],
+      leftShoulder: [0, 0, -4], leftElbow: [-6, 0, 0], leftWrist: [1, 0, 1],
+      rightShoulder: [-5, -8, 103], rightElbow: [-15, 0, 112], rightWrist: [0, 10, -45],
+      leftHip: [1, 0, -2], rightHip: [-2, 0, 2], leftKnee: [2, 0, 0], rightKnee: [5, 0, 0],
+      ...handShape("right", "straight"),
     }),
   },
   {
     id: "celebrate",
     label: "举手欢呼",
-    description: "双臂高举并略微屈肘，适合胜利和欢呼",
+    description: "胸廓上提、锁骨参与举臂，双拳分节收紧并由腿部稳定重心",
     joints: pose({
-      spine: [-3, 0, 0], chest: [-5, 0, 0], head: [3, 0, 0],
-      leftShoulder: [6, 0, -142], rightShoulder: [6, 0, 142],
+      pelvis: [-2, 0, 1], spine: [-2, 0, -1], spineMiddle: [-2, 0, 1], chest: [-4, 0, 0], neck: [2, 0, 0], head: [3, 0, 0],
+      leftClavicle: [3, 0, -8], rightClavicle: [3, 0, 8],
+      leftShoulder: [6, 0, -134], rightShoulder: [6, 0, 134],
       leftElbow: [-24, 0, 18], rightElbow: [-24, 0, -18],
       leftWrist: [8, 0, 0], rightWrist: [8, 0, 0],
       leftHip: [4, 0, -3], rightHip: [-5, 0, 3],
       leftKnee: [8, 0, 0], rightKnee: [5, 0, 0],
-      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
+      leftAnkle: [-2, 0, 0], rightAnkle: [1, 0, 0], leftToe: [2, 0, 0], rightToe: [0, 0, 0],
+      ...handShape("left", "fist"), ...handShape("right", "fist"),
     }),
   },
   {
     id: "lunge",
     label: "前弓步",
-    description: "前脚整掌支撑、后脚尖着地，适合对峙和发力",
+    description: "骨盆压向前腿、脊柱保持发力线，后脚踝与前脚掌共同蹬地",
     joints: pose({
-      spine: [-8, 0, 0], chest: [-4, 0, 0], neck: [7, 0, 0],
+      pelvis: [-6, 0, 1], spine: [-6, 0, -1], spineMiddle: [-3, 0, 1], chest: [-3, 0, 0], neck: [7, 0, 0], head: [1, 0, 0],
+      leftClavicle: [-2, 0, -2], rightClavicle: [-2, 0, 2],
       leftShoulder: [-28, 0, -22], rightShoulder: [-34, 0, 22],
-      leftElbow: [-42, 0, 16], rightElbow: [-48, 0, -16],
+      leftElbow: [-42, 0, 16], rightElbow: [-48, 0, -16], leftWrist: [8, 0, 0], rightWrist: [8, 0, 0],
       leftHip: [-35, 0, -6], rightHip: [44, 0, 6],
       leftKnee: [45, 0, 0], rightKnee: [0, 0, 0],
-      leftAnkle: [-10, 0, 0], rightAnkle: [10, 0, 0],
+      leftAnkle: [-9, 0, 0], rightAnkle: [12, 0, 0], leftToe: [5, 0, 0], rightToe: [-18, 0, 0],
+      ...handShape("left", "soft-fist"), ...handShape("right", "soft-fist"),
     }),
   },
   {
     id: "high-step",
     label: "高抬腿",
-    description: "单腿抬起并配合摆臂，适合跨越和动作起势",
+    description: "支撑侧骨盆稳定，抬腿侧髋膝踝趾依次屈曲并配合反向摆臂",
     joints: pose({
-      spine: [-5, 0, 0], chest: [-2, 0, 0], neck: [5, 0, 0],
+      pelvis: [-3, -2, 2], spine: [-3, 1, -1], spineMiddle: [-2, 1, 1], chest: [-2, 1, 0], neck: [5, 0, 0], head: [1, 0, 0],
+      leftClavicle: [2, 1, -1], rightClavicle: [-2, -1, 1],
       leftShoulder: [28, 0, -8], rightShoulder: [-32, 0, 8],
-      leftElbow: [-24, 0, 0], rightElbow: [-28, 0, 0],
+      leftElbow: [-24, 0, 0], rightElbow: [-28, 0, 0], leftWrist: [5, 0, 0], rightWrist: [5, 0, 0],
       leftHip: [-75, 0, -5], rightHip: [3, 0, 4],
       leftKnee: [88, 0, 0], rightKnee: [5, 0, 0],
-      leftAnkle: [-8, 0, 0], rightAnkle: [2, 0, 0],
+      leftAnkle: [-12, 0, 0], rightAnkle: [1, 0, 0], leftToe: [18, 0, 0], rightToe: [0, 0, 0],
+      ...handShape("left", "soft-fist"), ...handShape("right", "soft-fist"),
     }),
   },
 ]

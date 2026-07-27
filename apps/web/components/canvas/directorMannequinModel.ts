@@ -80,6 +80,7 @@ const JOINT_BONES: Record<DirectorMannequinJoint, string> = {
 interface BoneFrame {
   bone: THREE.Bone
   baseWorld: THREE.Quaternion
+  baseLocal: THREE.Quaternion
 }
 
 const templateCache = new Map<DirectorMannequinState["anatomy"], Promise<THREE.Object3D>>()
@@ -203,7 +204,11 @@ function captureBoneFrame(
     restDirection.normalize(),
     baselineDirection.clone().normalize(),
   )
-  return { bone: target, baseWorld: alignment.multiply(restWorld) }
+  return {
+    bone: target,
+    baseWorld: alignment.multiply(restWorld),
+    baseLocal: target.quaternion.clone(),
+  }
 }
 
 function captureRestBoneFrame(
@@ -216,6 +221,7 @@ function captureRestBoneFrame(
   return {
     bone: target,
     baseWorld: worldCorrection.clone().multiply(target.getWorldQuaternion(new THREE.Quaternion())),
+    baseLocal: target.quaternion.clone(),
   }
 }
 
@@ -292,6 +298,15 @@ function applyBoneFrame(frame: BoneFrame | null, control: THREE.Quaternion): voi
   const parentWorld = frame.bone.parent.getWorldQuaternion(new THREE.Quaternion())
   const targetWorld = control.clone().multiply(frame.baseWorld)
   frame.bone.quaternion.copy(parentWorld.invert().multiply(targetWorld))
+  frame.bone.updateWorldMatrix(false, true)
+}
+
+function applyLocalBoneRotation(
+  frame: BoneFrame | null,
+  rotation: [number, number, number],
+): void {
+  if (!frame) return
+  frame.bone.quaternion.copy(frame.baseLocal).multiply(eulerQuaternion(rotation))
   frame.bone.updateWorldMatrix(false, true)
 }
 
@@ -398,11 +413,11 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
     applyBoneFrame(frames[wristJoint], wrist)
 
     for (const finger of ["Thumb", "Index", "Middle", "Ring", "Pinky"] as const) {
-      let fingerControl = wrist
       for (const segment of [1, 2, 3] as const) {
         const fingerJoint = `${side}${finger}${segment}` as DirectorMannequinJoint
-        fingerControl = combineFrames(fingerControl, state.joints[fingerJoint])
-        applyBoneFrame(frames[fingerJoint], fingerControl)
+        // Finger flexion is authored in each phalanx's local rest frame. This
+        // keeps a fist or pointing hand stable as the shoulder and wrist turn.
+        applyLocalBoneRotation(frames[fingerJoint], state.joints[fingerJoint])
       }
     }
 
