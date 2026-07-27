@@ -28,6 +28,23 @@ MAX_DIRECTOR_CAPTURES = 200
 MAX_DIRECTOR_MODELS = 100
 MAX_MODEL_BYTES = 50 * 1024 * 1024
 MAX_CAPTURE_BYTES = 20 * 1024 * 1024
+MANNEQUIN_JOINTS = {
+    "spine", "chest", "neck", "head",
+    "leftShoulder", "leftElbow", "leftWrist",
+    "rightShoulder", "rightElbow", "rightWrist",
+    "leftHip", "leftKnee", "leftAnkle",
+    "rightHip", "rightKnee", "rightAnkle",
+}
+MANNEQUIN_PROPORTION_RANGES = {
+    "height": (1.35, 2.15),
+    "build": (0.68, 1.38),
+    "shoulder_width": (0.72, 1.35),
+    "hip_width": (0.75, 1.30),
+    "torso_length": (0.78, 1.24),
+    "arm_length": (0.75, 1.30),
+    "leg_length": (0.75, 1.30),
+    "head_scale": (0.78, 1.25),
+}
 
 
 class DirectorDeskError(RuntimeError):
@@ -90,6 +107,38 @@ def _finite_vector(value: Any, *, length: int, name: str) -> None:
             raise DirectorDeskError(f"{name} 包含无效数值")
 
 
+def _validate_mannequin(value: Any, *, name: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise DirectorDeskError(f"{name} 必须是对象")
+    proportions = value.get("proportions")
+    if proportions is not None:
+        if not isinstance(proportions, dict):
+            raise DirectorDeskError(f"{name}.proportions 必须是对象")
+        for field, (minimum, maximum) in MANNEQUIN_PROPORTION_RANGES.items():
+            if field not in proportions:
+                continue
+            item = proportions[field]
+            if (
+                not isinstance(item, (int, float))
+                or isinstance(item, bool)
+                or not math.isfinite(float(item))
+                or not minimum <= float(item) <= maximum
+            ):
+                raise DirectorDeskError(f"{name}.proportions.{field} 超出范围")
+    joints = value.get("joints")
+    if joints is not None:
+        if not isinstance(joints, dict):
+            raise DirectorDeskError(f"{name}.joints 必须是对象")
+        for joint, rotation in joints.items():
+            if joint not in MANNEQUIN_JOINTS:
+                continue
+            _finite_vector(rotation, length=3, name=f"{name}.joints.{joint}")
+            if any(abs(float(axis)) > 180 for axis in rotation):
+                raise DirectorDeskError(f"{name}.joints.{joint} 超出旋转范围")
+
+
 def validate_director_scene(scene: Any) -> dict[str, Any]:
     if not isinstance(scene, dict):
         raise DirectorDeskError("scene 必须是对象")
@@ -121,6 +170,8 @@ def validate_director_scene(scene: Any) -> dict[str, Any]:
         _finite_vector(item.get("position"), length=3, name=f"objects[{index}].position")
         _finite_vector(item.get("rotation"), length=3, name=f"objects[{index}].rotation")
         _finite_vector(item.get("scale"), length=3, name=f"objects[{index}].scale")
+        if asset_id == "builtin:mannequin":
+            _validate_mannequin(item.get("mannequin"), name=f"objects[{index}].mannequin")
     return scene
 
 

@@ -6,6 +6,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { TransformControls } from "three/addons/controls/TransformControls.js"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
+import { createDirectorMannequin } from "./directorMannequinModel"
 import {
   createProjectDirectorCapture,
   deleteProjectDirectorCapture,
@@ -35,6 +36,20 @@ import {
   type DirectorSceneState,
   type DirectorTransformMode,
 } from "@/lib/directorDesk"
+import {
+  applyDirectorMannequinBodyPreset,
+  applyDirectorMannequinPosePreset,
+  defaultDirectorMannequin,
+  DIRECTOR_MANNEQUIN_BODY_PRESETS,
+  DIRECTOR_MANNEQUIN_JOINT_INFO,
+  DIRECTOR_MANNEQUIN_POSE_PRESETS,
+  DIRECTOR_MANNEQUIN_SIZE_PRESETS,
+  normalizeDirectorMannequin,
+  type DirectorMannequinBodyPreset,
+  type DirectorMannequinJoint,
+  type DirectorMannequinPosePreset,
+  type DirectorMannequinProportions,
+} from "@/lib/directorMannequin"
 import { cn } from "@/lib/utils"
 
 
@@ -74,6 +89,24 @@ const TRANSFORM_LABELS: Record<DirectorTransformMode, string> = {
   rotate: "旋转",
   scale: "缩放",
 }
+
+const MANNEQUIN_PROPORTION_CONTROLS: Array<{
+  key: keyof DirectorMannequinProportions
+  label: string
+  min: number
+  max: number
+  step: number
+  unit?: string
+}> = [
+  { key: "height", label: "身高", min: 1.35, max: 2.15, step: 0.01, unit: "m" },
+  { key: "build", label: "体量", min: 0.68, max: 1.38, step: 0.01 },
+  { key: "shoulder_width", label: "肩宽", min: 0.72, max: 1.35, step: 0.01 },
+  { key: "hip_width", label: "胯宽", min: 0.75, max: 1.3, step: 0.01 },
+  { key: "torso_length", label: "躯干长度", min: 0.78, max: 1.24, step: 0.01 },
+  { key: "arm_length", label: "手臂长度", min: 0.75, max: 1.3, step: 0.01 },
+  { key: "leg_length", label: "腿部长度", min: 0.75, max: 1.3, step: 0.01 },
+  { key: "head_scale", label: "头部比例", min: 0.78, max: 1.25, step: 0.01 },
+]
 
 type DirectorIconName =
   | "arrow-left"
@@ -173,21 +206,19 @@ function addMesh(
   return mesh
 }
 
-function createBuiltinModel(assetId: string, color: string): THREE.Group {
+function createBuiltinModel(
+  assetId: string,
+  color: string,
+  mannequin = defaultDirectorMannequin(),
+): THREE.Group {
   const group = new THREE.Group()
+  if (assetId === "builtin:mannequin") {
+    group.add(createDirectorMannequin(mannequin, color))
+    return group
+  }
   const shared = material(color)
   const dark = material("#52525b")
-  if (assetId === "builtin:mannequin") {
-    addMesh(group, new THREE.SphereGeometry(0.16, 18, 12), shared, [0, 1.72, 0])
-    addMesh(group, new THREE.CapsuleGeometry(0.18, 0.5, 6, 12), shared, [0, 1.24, 0])
-    addMesh(group, new THREE.BoxGeometry(0.34, 0.2, 0.2), shared, [0, 0.87, 0])
-    addMesh(group, new THREE.CapsuleGeometry(0.07, 0.48, 4, 8), shared, [-0.27, 1.24, 0], [0, 0, 0.12])
-    addMesh(group, new THREE.CapsuleGeometry(0.07, 0.48, 4, 8), shared, [0.27, 1.24, 0], [0, 0, -0.12])
-    addMesh(group, new THREE.CapsuleGeometry(0.085, 0.57, 4, 8), shared, [-0.11, 0.42, 0])
-    addMesh(group, new THREE.CapsuleGeometry(0.085, 0.57, 4, 8), shared, [0.11, 0.42, 0])
-    addMesh(group, new THREE.BoxGeometry(0.18, 0.08, 0.32), dark, [-0.11, 0.04, 0.05])
-    addMesh(group, new THREE.BoxGeometry(0.18, 0.08, 0.32), dark, [0.11, 0.04, 0.05])
-  } else if (assetId === "builtin:cube") {
+  if (assetId === "builtin:cube") {
     addMesh(group, new THREE.BoxGeometry(1, 1, 1), shared, [0, 0.5, 0])
   } else if (assetId === "builtin:cylinder") {
     addMesh(group, new THREE.CylinderGeometry(0.5, 0.5, 1.4, 24), shared, [0, 0.7, 0])
@@ -320,6 +351,7 @@ export default function DirectorDesk({
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene">("library")
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
   const [snapToGrid, setSnapToGrid] = useState(false)
+  const [selectedJoint, setSelectedJoint] = useState<DirectorMannequinJoint>("spine")
 
   const setLocalDirector = useCallback((next: DirectorDeskState) => {
     directorRef.current = next
@@ -406,7 +438,7 @@ export default function DirectorDesk({
       runtime.objectRoots.set(object.id, root)
       runtime.root.add(root)
       if (object.asset_id.startsWith("builtin:")) {
-        root.add(createBuiltinModel(object.asset_id, object.color))
+        root.add(createBuiltinModel(object.asset_id, object.color, object.mannequin))
         continue
       }
       const asset = modelById.get(object.asset_id)
@@ -780,6 +812,12 @@ export default function DirectorDesk({
     () => director.scene.objects.find((item) => item.id === selectedObjectId) || null,
     [director.scene.objects, selectedObjectId],
   )
+  const selectedMannequin = useMemo(
+    () => selectedObject?.asset_id === "builtin:mannequin"
+      ? normalizeDirectorMannequin(selectedObject.mannequin)
+      : null,
+    [selectedObject],
+  )
 
   const addObject = useCallback((assetId: string, defaultName: string) => {
     const scene = cloneDirectorScene(directorRef.current.scene)
@@ -818,6 +856,55 @@ export default function DirectorDesk({
     replaceScene(scene, true)
     setSelectedObjectId(selectedObjectId)
   }, [replaceScene, selectedObjectId])
+
+  const updateSelectedMannequin = useCallback((
+    updater: (current: ReturnType<typeof normalizeDirectorMannequin>) => ReturnType<typeof normalizeDirectorMannequin>,
+  ) => {
+    if (!selectedObject || selectedObject.asset_id !== "builtin:mannequin") return
+    const current = normalizeDirectorMannequin(selectedObject.mannequin)
+    updateSelectedObject({ mannequin: normalizeDirectorMannequin(updater(current)) })
+  }, [selectedObject, updateSelectedObject])
+
+  const applyBodyPreset = useCallback((presetId: Exclude<DirectorMannequinBodyPreset, "custom">) => {
+    updateSelectedMannequin((current) => applyDirectorMannequinBodyPreset(current, presetId))
+  }, [updateSelectedMannequin])
+
+  const applyPosePreset = useCallback((presetId: Exclude<DirectorMannequinPosePreset, "custom">) => {
+    updateSelectedMannequin((current) => applyDirectorMannequinPosePreset(current, presetId))
+  }, [updateSelectedMannequin])
+
+  const updateMannequinProportion = useCallback((
+    key: keyof DirectorMannequinProportions,
+    value: number,
+  ) => {
+    if (!Number.isFinite(value)) return
+    updateSelectedMannequin((current) => ({
+      ...current,
+      body_preset: "custom",
+      proportions: { ...current.proportions, [key]: value },
+    }))
+  }, [updateSelectedMannequin])
+
+  const updateMannequinJoint = useCallback((axis: number, value: number) => {
+    if (!Number.isFinite(value)) return
+    updateSelectedMannequin((current) => {
+      const rotation = [...current.joints[selectedJoint]] as [number, number, number]
+      rotation[axis] = value
+      return {
+        ...current,
+        pose_preset: "custom",
+        joints: { ...current.joints, [selectedJoint]: rotation },
+      }
+    })
+  }, [selectedJoint, updateSelectedMannequin])
+
+  const resetMannequinJoint = useCallback(() => {
+    updateSelectedMannequin((current) => ({
+      ...current,
+      pose_preset: "custom",
+      joints: { ...current.joints, [selectedJoint]: [0, 0, 0] },
+    }))
+  }, [selectedJoint, updateSelectedMannequin])
 
   const changeVectorValue = useCallback((
     field: "position" | "rotation" | "scale",
@@ -1188,7 +1275,7 @@ export default function DirectorDesk({
               <>
                 <div className="mb-2 flex items-center justify-between">
                   <div>
-                    <div className="text-[11px] font-semibold text-zinc-200">基础白模</div>
+                    <div className="text-[11px] font-semibold text-zinc-200">内置模型</div>
                     <div className="mt-0.5 text-[9px] text-zinc-600">点击添加到场景</div>
                   </div>
                   <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2 py-0.5 text-[8px] text-zinc-500">{DIRECTOR_BUILTINS.length} 项</span>
@@ -1254,7 +1341,7 @@ export default function DirectorDesk({
                 </div>
                 <div className="space-y-1.5">
                   {director.scene.objects.length === 0 ? (
-                    <button type="button" onClick={() => setLeftPanelTab("library")} className="flex w-full flex-col items-center rounded-xl border border-dashed border-white/[0.09] px-3 py-6 text-center text-zinc-600 transition hover:border-violet-300/25 hover:text-zinc-300"><DirectorIcon name="layers" className="h-5 w-5" /><span className="mt-2 text-[10px]">场景还是空的</span><span className="mt-1 text-[8px] text-zinc-700">前往素材库添加白模</span></button>
+                    <button type="button" onClick={() => setLeftPanelTab("library")} className="flex w-full flex-col items-center rounded-xl border border-dashed border-white/[0.09] px-3 py-6 text-center text-zinc-600 transition hover:border-violet-300/25 hover:text-zinc-300"><DirectorIcon name="layers" className="h-5 w-5" /><span className="mt-2 text-[10px]">场景还是空的</span><span className="mt-1 text-[8px] text-zinc-700">前往素材库添加模型</span></button>
                   ) : director.scene.objects.map((object, index) => (
                     <button
                       key={object.id}
@@ -1263,7 +1350,7 @@ export default function DirectorDesk({
                       className={cn("group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition", selectedObjectId === object.id ? "border-violet-300/22 bg-violet-300/[0.085] text-violet-50 shadow-[inset_3px_0_rgba(167,139,250,.65)]" : "border-transparent text-zinc-400 hover:border-white/[0.07] hover:bg-white/[0.035] hover:text-zinc-200")}
                     >
                       <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20 text-[9px] font-semibold tabular-nums text-zinc-600"><span className="absolute bottom-1 right-1 h-2 w-2 rounded-full border border-[#11151e]" style={{ backgroundColor: object.color }} />{String(index + 1).padStart(2, "0")}</span>
-                      <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-medium">{object.name}</span><span className="mt-0.5 block truncate text-[8px] text-zinc-600">{object.asset_id.startsWith("builtin:") ? "基础白模" : "自定义模型"}</span></span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-medium">{object.name}</span><span className="mt-0.5 block truncate text-[8px] text-zinc-600">{object.asset_id === "builtin:mannequin" ? "可调骨架人物" : object.asset_id.startsWith("builtin:") ? "内置模型" : "自定义模型"}</span></span>
                       <span className="flex items-center gap-1 text-zinc-700">{object.locked ? <DirectorIcon name="lock" className="h-3 w-3" /> : null}{!object.visible ? <DirectorIcon name="eye-off" className="h-3 w-3" /> : null}</span>
                     </button>
                   ))}
@@ -1354,6 +1441,7 @@ export default function DirectorDesk({
           </div>
 
           {selectedObject ? (
+            <>
             <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018] shadow-[inset_0_1px_rgba(255,255,255,.025)]">
               <div className="flex items-center gap-2.5 border-b border-white/[0.065] p-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-black/20 text-violet-200/60"><BuiltinGlyph assetId={selectedObject.asset_id} /></span>
@@ -1372,11 +1460,93 @@ export default function DirectorDesk({
                 <button type="button" title="删除" onClick={deleteSelectedObject} className="flex h-8 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-red-400/10 hover:text-red-300"><DirectorIcon name="trash" className="h-3.5 w-3.5" /></button>
               </div>
             </section>
+            {selectedMannequin ? (
+              <section className="mt-3 overflow-hidden rounded-2xl border border-violet-300/[0.12] bg-[linear-gradient(145deg,rgba(139,124,255,.055),rgba(255,255,255,.012))]">
+                <div className="flex items-center justify-between border-b border-white/[0.065] px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-300/[0.09] text-violet-100/80"><DirectorIcon name="sparkles" className="h-3.5 w-3.5" /></span>
+                    <div><div className="text-[10px] font-medium text-zinc-200">人物塑形与姿态</div><div className="text-[8px] text-zinc-600">体型、长度和 16 个关节</div></div>
+                  </div>
+                  <span className="rounded-full border border-white/[0.07] bg-black/20 px-2 py-0.5 text-[8px] text-zinc-500">{Math.round(selectedMannequin.proportions.height * 100)} cm</span>
+                </div>
+
+                <div className="space-y-4 p-3">
+                  <div>
+                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">体型预设</span><span className="text-[8px] text-zinc-700">选择后仍可微调</span></div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {DIRECTOR_MANNEQUIN_BODY_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          title={preset.description}
+                          onClick={() => applyBodyPreset(preset.id)}
+                          className={cn("rounded-lg border px-2 py-1.5 text-left transition", selectedMannequin.body_preset === preset.id ? "border-violet-300/30 bg-violet-300/12 text-violet-100" : "border-white/[0.065] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}
+                        >
+                          <span className="block text-[9px] font-medium">{preset.label}</span>
+                          <span className="mt-0.5 block truncate text-[7px] opacity-60">{preset.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-1.5 text-[9px] font-medium text-zinc-500">身高预设</div>
+                    <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1">
+                      {DIRECTOR_MANNEQUIN_SIZE_PRESETS.map((preset) => (
+                        <button key={preset.label} type="button" onClick={() => updateMannequinProportion("height", preset.height)} className={cn("h-7 rounded-lg text-[8px] transition", Math.abs(selectedMannequin.proportions.height - preset.height) < 0.005 ? "bg-white/[0.1] text-white" : "text-zinc-600 hover:text-zinc-300")}>{preset.label} · {Math.round(preset.height * 100)}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {MANNEQUIN_PROPORTION_CONTROLS.map((control) => {
+                      const value = selectedMannequin.proportions[control.key]
+                      return (
+                        <label key={control.key} className="block">
+                          <span className="mb-1 flex items-center justify-between text-[8px]"><span className="text-zinc-500">{control.label}</span><span className="tabular-nums text-cyan-100/75">{control.key === "height" ? value.toFixed(2) : value.toFixed(2)}{control.unit || "×"}</span></span>
+                          <input type="range" min={control.min} max={control.max} step={control.step} value={value} onChange={(event) => updateMannequinProportion(control.key, Number(event.target.value))} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-violet-300" />
+                        </label>
+                      )
+                    })}
+                  </div>
+
+                  <div className="border-t border-white/[0.065] pt-3">
+                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">动作预设</span><span className="text-[8px] text-zinc-700">{DIRECTOR_MANNEQUIN_POSE_PRESETS.length} 组</span></div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => (
+                        <button key={preset.id} type="button" title={preset.description} onClick={() => applyPosePreset(preset.id)} className={cn("h-8 rounded-lg border text-[8px] font-medium transition", selectedMannequin.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>{preset.label}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/[0.065] pt-3">
+                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">关节微调</span><button type="button" onClick={resetMannequinJoint} className="text-[8px] text-zinc-600 transition hover:text-zinc-200">归零当前关节</button></div>
+                    <select value={selectedJoint} onChange={(event) => setSelectedJoint(event.target.value as DirectorMannequinJoint)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-violet-300/35">
+                      {DIRECTOR_MANNEQUIN_JOINT_INFO.map((joint) => <option key={joint.id} value={joint.id}>{joint.group} · {joint.label}</option>)}
+                    </select>
+                    <div className="mt-3 space-y-2.5">
+                      {(["X", "Y", "Z"] as const).map((axis, index) => {
+                        const value = selectedMannequin.joints[selectedJoint][index]
+                        return (
+                          <label key={axis} className="grid grid-cols-[16px_minmax(0,1fr)_48px] items-center gap-2">
+                            <span className={cn("text-[9px] font-semibold", index === 0 ? "text-rose-300/75" : index === 1 ? "text-emerald-300/75" : "text-sky-300/75")}>{axis}</span>
+                            <input type="range" min="-180" max="180" step="1" value={value} onChange={(event) => updateMannequinJoint(index, Number(event.target.value))} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
+                            <span className="rounded-md bg-black/25 px-1.5 py-1 text-right text-[8px] tabular-nums text-zinc-400">{Math.round(value)}°</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 为当前关节的局部旋转，可在 −180° 至 180° 范围自由调节。</div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+            </>
           ) : (
             <section className="flex flex-col items-center rounded-2xl border border-dashed border-white/[0.09] bg-white/[0.012] px-4 py-7 text-center">
               <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.025] text-zinc-600"><DirectorIcon name="move" className="h-4 w-4" /></span>
               <span className="mt-3 text-[10px] font-medium text-zinc-400">选择一个场景对象</span>
-              <span className="mt-1 max-w-[190px] text-[8px] leading-4 text-zinc-700">在视口中点击白模，或从左侧场景列表中选择</span>
+              <span className="mt-1 max-w-[190px] text-[8px] leading-4 text-zinc-700">在视口中点击模型，或从左侧场景列表中选择</span>
             </section>
           )}
 

@@ -191,3 +191,45 @@ async def test_director_rejects_invalid_glb_and_stale_revision(
             await service.save_scene("director-project", _scene(), expected_revision=0)
         assert conflict.value.status_code == 409
     await db_session.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_director_persists_mannequin_proportions_and_rejects_invalid_joint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    await _setup_db(monkeypatch, tmp_path)
+    async with db_session.session_scope() as session:
+        service = DirectorDeskService(session)
+        scene = _scene()
+        scene["objects"][0]["mannequin"] = {
+            "body_preset": "custom",
+            "pose_preset": "custom",
+            "proportions": {
+                "height": 1.88,
+                "build": 1.12,
+                "shoulder_width": 1.08,
+                "hip_width": 0.98,
+                "torso_length": 1.02,
+                "arm_length": 1.06,
+                "leg_length": 1.04,
+                "head_scale": 0.96,
+            },
+            "joints": {
+                "rightShoulder": [-88, 0, 5],
+                "rightElbow": [-8, 0, 0],
+            },
+        }
+        saved = await service.save_scene("director-project", scene, expected_revision=0)
+        mannequin = saved["scene"]["objects"][0]["mannequin"]
+        assert mannequin["proportions"]["height"] == 1.88
+        assert mannequin["joints"]["rightShoulder"] == [-88, 0, 5]
+
+        invalid = _scene()
+        invalid["objects"][0]["mannequin"] = {
+            "proportions": {"height": 1.72},
+            "joints": {"rightShoulder": [181, 0, 0]},
+        }
+        with pytest.raises(DirectorDeskError, match="超出旋转范围"):
+            await service.save_scene("director-project", invalid, expected_revision=1)
+    await db_session.engine.dispose()
