@@ -174,7 +174,9 @@ function applyBoneFrame(frame: BoneFrame | null, control: THREE.Quaternion): voi
 function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
   const up = new THREE.Vector3(0, 1, 0)
   const down = new THREE.Vector3(0, -1, 0)
-  const forward = new THREE.Vector3(0, 0, 1)
+  // The rig's foot-to-ball axis runs through the instep rather than along the
+  // sole. A small downward pitch keeps the visible sole level with the stage.
+  const footForward = new THREE.Vector3(0, -0.14, 1).normalize()
   model.updateMatrixWorld(true)
 
   const frames = {
@@ -191,10 +193,10 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
     rightWrist: captureBoneFrame(model, JOINT_BONES.rightWrist, "middle_01_l", down),
     leftHip: captureBoneFrame(model, JOINT_BONES.leftHip, JOINT_BONES.leftKnee, down),
     leftKnee: captureBoneFrame(model, JOINT_BONES.leftKnee, JOINT_BONES.leftAnkle, down),
-    leftAnkle: captureBoneFrame(model, JOINT_BONES.leftAnkle, "ball_r", forward),
+    leftAnkle: captureBoneFrame(model, JOINT_BONES.leftAnkle, "ball_r", footForward),
     rightHip: captureBoneFrame(model, JOINT_BONES.rightHip, JOINT_BONES.rightKnee, down),
     rightKnee: captureBoneFrame(model, JOINT_BONES.rightKnee, JOINT_BONES.rightAnkle, down),
-    rightAnkle: captureBoneFrame(model, JOINT_BONES.rightAnkle, "ball_l", forward),
+    rightAnkle: captureBoneFrame(model, JOINT_BONES.rightAnkle, "ball_l", footForward),
   }
 
   const identity = new THREE.Quaternion()

@@ -20,7 +20,27 @@ export const DIRECTOR_MANNEQUIN_JOINTS = [
 export type DirectorMannequinJoint = typeof DIRECTOR_MANNEQUIN_JOINTS[number]
 export type DirectorMannequinAnatomy = "masculine" | "feminine"
 export type DirectorMannequinBodyPreset = "compact" | "standard" | "slender" | "athletic" | "broad" | "custom"
-export type DirectorMannequinPosePreset = "relaxed" | "attention" | "a-pose" | "t-pose" | "walk" | "run" | "sit" | "crouch" | "wave" | "point" | "hands-hips" | "custom"
+export type DirectorMannequinPosePreset =
+  | "relaxed"
+  | "attention"
+  | "a-pose"
+  | "t-pose"
+  | "walk"
+  | "run"
+  | "sit"
+  | "crouch"
+  | "wave"
+  | "point"
+  | "hands-hips"
+  | "open-arms"
+  | "explain"
+  | "hands-back"
+  | "look-back"
+  | "salute"
+  | "celebrate"
+  | "lunge"
+  | "high-step"
+  | "custom"
 
 export interface DirectorMannequinProportions {
   height: number
@@ -244,7 +264,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
     joints: pose({
       chest: [0, -7, 0], head: [0, 8, 0],
       leftShoulder: [-4, 0, -8], leftElbow: [-8, 0, 0],
-      rightShoulder: [-10, 8, 132], rightElbow: [-12, 0, -88], rightWrist: [0, 0, 18],
+      rightShoulder: [-7, -8, 96], rightElbow: [-18, 0, 82], rightWrist: [0, 10, 2],
       leftHip: [2, 0, -2], rightHip: [-3, 0, 2],
     }),
   },
@@ -254,21 +274,115 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
     description: "右臂向前指示",
     joints: pose({
       chest: [0, -12, 0], head: [0, -8, 0],
-      leftShoulder: [-4, 0, -8], rightShoulder: [-88, 0, 5],
-      rightElbow: [-8, 0, 0], rightWrist: [2, 0, 0],
+      leftShoulder: [-4, 0, -8], rightShoulder: [-18, -6, 88],
+      rightElbow: [-7, 0, 0], rightWrist: [2, 0, 0],
     }),
   },
   {
     id: "hands-hips",
     label: "叉腰",
-    description: "双臂外展、手掌贴在髋部外侧",
+    description: "抬高双肘，手掌自然落在腰胯外侧",
     joints: pose({
-      chest: [0, 0, 0],
-      leftShoulder: [-10, 10, -42], rightShoulder: [-10, -10, 42],
-      leftElbow: [-18, 0, 84], rightElbow: [-18, 0, -84],
-      // Counter the elbow roll so the fingers point down along the outside of
-      // the hip instead of continuing inward through the abdomen.
-      leftWrist: [0, 0, -42], rightWrist: [0, 0, 42],
+      chest: [0, 0, 1],
+      leftShoulder: [-6, 12, -52], rightShoulder: [-6, -12, 52],
+      leftElbow: [-12, 0, 108], rightElbow: [-12, 0, -108],
+      leftWrist: [2, -8, -56], rightWrist: [2, 8, 56],
+    }),
+  },
+  {
+    id: "open-arms",
+    label: "展开双臂",
+    description: "双臂舒展，适合欢迎、展示和开放式交流",
+    joints: pose({
+      chest: [-2, 0, 0], head: [1, 0, 0],
+      leftShoulder: [-16, 0, -58], rightShoulder: [-16, 0, 58],
+      leftElbow: [-18, 0, 14], rightElbow: [-18, 0, -14],
+      leftWrist: [8, 0, 4], rightWrist: [8, 0, -4],
+      leftHip: [2, 0, -3], rightHip: [-3, 0, 3],
+    }),
+  },
+  {
+    id: "explain",
+    label: "讲解",
+    description: "一手向前摊开，适合介绍和对话调度",
+    joints: pose({
+      chest: [0, -8, 0], head: [0, 7, 0],
+      leftShoulder: [-5, 0, -9], leftElbow: [-10, 0, -2],
+      rightShoulder: [-35, -10, 48], rightElbow: [-35, 0, 35], rightWrist: [20, 12, 5],
+      leftHip: [2, 0, -2], rightHip: [-4, 0, 3],
+    }),
+  },
+  {
+    id: "hands-back",
+    label: "背手站立",
+    description: "双手收在身后，适合观察、等待和长辈姿态",
+    joints: pose({
+      chest: [0, 0, 1], head: [1, 0, 0],
+      leftShoulder: [18, 10, -18], rightShoulder: [18, -10, 18],
+      leftElbow: [-58, 0, 48], rightElbow: [-58, 0, -48],
+      leftWrist: [12, -12, -28], rightWrist: [12, 12, 28],
+      leftHip: [2, 0, -2], rightHip: [-3, 0, 2],
+    }),
+  },
+  {
+    id: "look-back",
+    label: "回身看",
+    description: "胸肩与头部错位回望，适合反应镜头",
+    joints: pose({
+      spine: [0, 18, 1], chest: [0, 22, -1], neck: [0, 14, 0], head: [0, 18, 0],
+      leftShoulder: [8, 0, -10], rightShoulder: [-12, 0, 9],
+      leftElbow: [-14, 0, -2], rightElbow: [-18, 0, 2],
+      leftHip: [5, -8, -3], rightHip: [-8, 8, 3],
+      leftKnee: [8, 0, 0], rightKnee: [12, 0, 0],
+    }),
+  },
+  {
+    id: "salute",
+    label: "抬手示意",
+    description: "右手抬至头侧，适合回应、示意停下和报告",
+    joints: pose({
+      chest: [0, -4, 0], head: [0, 4, 0],
+      leftShoulder: [0, 0, -4], leftElbow: [-6, 0, 0],
+      rightShoulder: [-5, -8, 110], rightElbow: [-15, 0, 115], rightWrist: [0, 10, -45],
+    }),
+  },
+  {
+    id: "celebrate",
+    label: "举手欢呼",
+    description: "双臂高举并略微屈肘，适合胜利和欢呼",
+    joints: pose({
+      spine: [-3, 0, 0], chest: [-5, 0, 0], head: [3, 0, 0],
+      leftShoulder: [6, 0, -142], rightShoulder: [6, 0, 142],
+      leftElbow: [-24, 0, 18], rightElbow: [-24, 0, -18],
+      leftWrist: [8, 0, 0], rightWrist: [8, 0, 0],
+      leftHip: [4, 0, -3], rightHip: [-5, 0, 3],
+      leftKnee: [8, 0, 0], rightKnee: [5, 0, 0],
+    }),
+  },
+  {
+    id: "lunge",
+    label: "前弓步",
+    description: "重心前移、前腿屈膝，适合对峙和发力",
+    joints: pose({
+      spine: [-9, 0, 0], chest: [-4, 0, 0], neck: [7, 0, 0],
+      leftShoulder: [-28, 0, -22], rightShoulder: [-34, 0, 22],
+      leftElbow: [-42, 0, 16], rightElbow: [-48, 0, -16],
+      leftHip: [-58, 0, -6], rightHip: [24, 0, 6],
+      leftKnee: [72, 0, 0], rightKnee: [18, 0, 0],
+      leftAnkle: [-18, 0, 0], rightAnkle: [12, 0, 0],
+    }),
+  },
+  {
+    id: "high-step",
+    label: "高抬腿",
+    description: "单腿抬起并配合摆臂，适合跨越和动作起势",
+    joints: pose({
+      spine: [-5, 0, 0], chest: [-2, 0, 0], neck: [5, 0, 0],
+      leftShoulder: [28, 0, -8], rightShoulder: [-32, 0, 8],
+      leftElbow: [-24, 0, 0], rightElbow: [-28, 0, 0],
+      leftHip: [-75, 0, -5], rightHip: [3, 0, 4],
+      leftKnee: [88, 0, 0], rightKnee: [5, 0, 0],
+      leftAnkle: [-8, 0, 0], rightAnkle: [2, 0, 0],
     }),
   },
 ]
@@ -330,9 +444,12 @@ export function normalizeDirectorMannequin(value: unknown): DirectorMannequinSta
   const resolvedPosePreset = (posePreset === "custom" || POSE_PRESET_IDS.has(posePreset)
     ? posePreset
     : fallback.pose_preset) as DirectorMannequinPosePreset
-  const storedPose = resolvedPosePreset === "hands-hips"
-    ? DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === "hands-hips")!.joints
-    : rawJoints
+  const currentPreset = resolvedPosePreset === "custom"
+    ? null
+    : DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === resolvedPosePreset)
+  // A named preset is versioned application data. Reload its current joint
+  // definition so pose fixes also repair scenes saved by an older release.
+  const storedPose = currentPreset?.joints ?? rawJoints
   return {
     anatomy,
     body_preset: (bodyPreset === "custom" || BODY_PRESET_IDS.has(bodyPreset) ? bodyPreset : fallback.body_preset) as DirectorMannequinBodyPreset,
