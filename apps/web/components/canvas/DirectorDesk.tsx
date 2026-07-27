@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
@@ -73,6 +73,82 @@ const TRANSFORM_LABELS: Record<DirectorTransformMode, string> = {
   translate: "移动",
   rotate: "旋转",
   scale: "缩放",
+}
+
+type DirectorIconName =
+  | "arrow-left"
+  | "camera"
+  | "check"
+  | "chevron"
+  | "copy"
+  | "eye"
+  | "eye-off"
+  | "grid"
+  | "image"
+  | "layers"
+  | "lock"
+  | "move"
+  | "redo"
+  | "rotate"
+  | "scale"
+  | "sparkles"
+  | "thirds"
+  | "trash"
+  | "undo"
+  | "unlock"
+  | "upload"
+
+function DirectorIcon({ name, className = "h-4 w-4" }: { name: DirectorIconName; className?: string }) {
+  const common = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeWidth: 1.8,
+  }
+  const content: Record<DirectorIconName, ReactNode> = {
+    "arrow-left": <><path d="m15 18-6-6 6-6" /><path d="M9 12h10" /></>,
+    camera: <><path d="M14.5 6 13 4H7L5.5 6H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z" /><circle cx="10" cy="12" r="3.5" /><path d="M18 9h.01" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
+    chevron: <path d="m9 18 6-6-6-6" />,
+    copy: <><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>,
+    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /></>,
+    "eye-off": <><path d="m3 3 18 18" /><path d="M10.6 6.2A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-2.1 2.8M6.6 6.6C3.7 8.4 2 12 2 12s3.5 6 10 6c1.9 0 3.5-.5 4.9-1.2" /></>,
+    grid: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></>,
+    image: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m21 15-5-5L5 20" /></>,
+    layers: <><path d="m12 3-9 5 9 5 9-5-9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></>,
+    lock: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
+    move: <><path d="M12 2v20M2 12h20" /><path d="m8 6 4-4 4 4M8 18l4 4 4-4M6 8l-4 4 4 4M18 8l4 4-4 4" /></>,
+    redo: <><path d="m17 7 4 4-4 4" /><path d="M3 17v-2a4 4 0 0 1 4-4h14" /></>,
+    rotate: <><path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 3v6h-6" /></>,
+    scale: <><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" /></>,
+    sparkles: <><path d="m12 3 1.2 3.2L16 8l-2.8 1.8L12 13l-1.2-3.2L8 8l2.8-1.8L12 3Z" /><path d="m5 14 .8 2.2L8 17.5l-2.2 1.3L5 21l-.8-2.2L2 17.5l2.2-1.3L5 14ZM19 3l.6 1.6L21 5.5l-1.4.9L19 8l-.6-1.6-1.4-.9 1.4-.9L19 3Z" /></>,
+    thirds: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15 4v16M3 9.3h18M3 14.7h18" /></>,
+    trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" /></>,
+    undo: <><path d="m7 7-4 4 4 4" /><path d="M21 17v-2a4 4 0 0 0-4-4H3" /></>,
+    unlock: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 7.5-2" /></>,
+    upload: <><path d="M12 16V3M7 8l5-5 5 5" /><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></>,
+  }
+  return <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...common}>{content[name]}</svg>
+}
+
+function BuiltinGlyph({ assetId }: { assetId: string }) {
+  if (assetId === "builtin:mannequin") {
+    return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><circle cx="24" cy="10" r="5" fill="currentColor" /><path d="M18 17c0-2 2-4 6-4s6 2 6 4l2 12-4 2-1 11h-6l-1-11-4-2 2-12Z" fill="currentColor" opacity=".82" /><path d="m18 19-6 11m18-11 6 11" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+  }
+  if (assetId === "builtin:table") {
+    return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><path d="m8 18 24-6 9 6-24 7-9-7Z" fill="currentColor" opacity=".9" /><path d="M12 22v16m24-17v13M19 25v16" stroke="currentColor" strokeWidth="3" strokeLinecap="round" opacity=".7" /></svg>
+  }
+  if (assetId === "builtin:chair") {
+    return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><path d="M13 9h22v19H13z" fill="currentColor" opacity=".55" /><path d="m10 26 25-3 4 7-25 3-4-7Z" fill="currentColor" /><path d="m16 31-2 10m20-12 3 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+  }
+  if (assetId === "builtin:wall") {
+    return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><path d="M6 9h36v30H6z" fill="currentColor" opacity=".18" stroke="currentColor" strokeWidth="2" /><path d="M6 19h36M6 29h36M18 9v10m15-10v10M13 19v10m20-10v10M18 29v10m15-10v10" stroke="currentColor" strokeWidth="2" opacity=".75" /></svg>
+  }
+  if (assetId === "builtin:cylinder") {
+    return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><ellipse cx="24" cy="12" rx="13" ry="6" fill="currentColor" /><path d="M11 12v23c0 4 6 7 13 7s13-3 13-7V12" fill="currentColor" opacity=".55" /><ellipse cx="24" cy="35" rx="13" ry="7" fill="currentColor" opacity=".75" /></svg>
+  }
+  return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><path d="m24 5 17 9-17 9-17-9 17-9Z" fill="currentColor" /><path d="m7 14 17 9v20L7 34V14Z" fill="currentColor" opacity=".6" /><path d="m41 14-17 9v20l17-9V14Z" fill="currentColor" opacity=".82" /></svg>
 }
 
 function material(color: string, roughness = 0.82): THREE.MeshStandardMaterial {
@@ -225,6 +301,9 @@ export default function DirectorDesk({
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const promotionOffsetRef = useRef(0)
   const draggedCaptureRef = useRef<string | null>(null)
+  const placementModeRef = useRef<"ground" | "free">("ground")
+  const transformModeRef = useRef<DirectorTransformMode>("translate")
+  const snapToGridRef = useRef(false)
   const [director, setDirector] = useState<DirectorDeskState>(() => defaultDirectorDesk())
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -238,6 +317,9 @@ export default function DirectorDesk({
   const [promotingId, setPromotingId] = useState<string | null>(null)
   const [showGrid, setShowGrid] = useState(true)
   const [showThirds, setShowThirds] = useState(false)
+  const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene">("library")
+  const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
+  const [snapToGrid, setSnapToGrid] = useState(false)
 
   const setLocalDirector = useCallback((next: DirectorDeskState) => {
     directorRef.current = next
@@ -433,12 +515,23 @@ export default function DirectorDesk({
 
     const orbit = new OrbitControls(camera, renderer.domElement)
     orbit.enableDamping = true
-    orbit.dampingFactor = 0.08
+    orbit.dampingFactor = 0.1
+    orbit.rotateSpeed = 0.68
+    orbit.zoomSpeed = 0.78
+    orbit.panSpeed = 0.72
+    orbit.screenSpacePanning = false
+    orbit.zoomToCursor = true
     orbit.minDistance = 0.5
     orbit.maxDistance = 60
     orbit.maxPolarAngle = Math.PI * 0.495
     const transform = new TransformControls(camera, renderer.domElement)
     transform.setMode("translate")
+    transform.size = 0.82
+    transform.showY = false
+    transform.showXY = false
+    transform.showYZ = false
+    transform.showXZ = true
+    renderer.domElement.style.cursor = "grab"
     const transformHelper = transform.getHelper()
     scene.add(transformHelper)
 
@@ -469,23 +562,109 @@ export default function DirectorDesk({
     const pointerStart = new THREE.Vector2()
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
-    const onPointerDown = (event: PointerEvent) => pointerStart.set(event.clientX, event.clientY)
-    const onPointerUp = (event: PointerEvent) => {
-      if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5 || transform.axis) return
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+    const planePoint = new THREE.Vector3()
+    let planeDrag: {
+      pointerId: number
+      root: THREE.Group
+      objectId: string
+      y: number
+      offsetX: number
+      offsetZ: number
+      before: DirectorSceneState
+      moved: boolean
+    } | null = null
+    const updatePointer = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       )
       raycaster.setFromCamera(pointer, camera)
+    }
+    const rootAtPointer = (event: PointerEvent): THREE.Group | null => {
+      updatePointer(event)
       const hits = raycaster.intersectObjects([...runtime.objectRoots.values()], true)
       let selected: THREE.Object3D | null = hits[0]?.object || null
       while (selected && selected.parent !== root) selected = selected.parent
+      return selected instanceof THREE.Group ? selected : null
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      pointerStart.set(event.clientX, event.clientY)
+      if (
+        event.button !== 0
+        || placementModeRef.current !== "ground"
+        || transformModeRef.current !== "translate"
+        || transform.axis
+      ) return
+      const selectedRoot = rootAtPointer(event)
+      const objectId = selectedRoot?.userData.directorObjectId
+      if (!selectedRoot || typeof objectId !== "string") return
+      const object = directorRef.current.scene.objects.find((item) => item.id === objectId)
+      if (!object || object.locked) {
+        setSelectedObjectId(objectId)
+        return
+      }
+      groundPlane.constant = -selectedRoot.position.y
+      updatePointer(event)
+      if (!raycaster.ray.intersectPlane(groundPlane, planePoint)) return
+      planeDrag = {
+        pointerId: event.pointerId,
+        root: selectedRoot,
+        objectId,
+        y: selectedRoot.position.y,
+        offsetX: selectedRoot.position.x - planePoint.x,
+        offsetZ: selectedRoot.position.z - planePoint.z,
+        before: snapshotRuntimeScene(runtime, directorRef.current.scene),
+        moved: false,
+      }
+      setSelectedObjectId(objectId)
+      orbit.enabled = false
+      renderer.domElement.style.cursor = "grabbing"
+      renderer.domElement.setPointerCapture(event.pointerId)
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    const onPointerMove = (event: PointerEvent) => {
+      if (!planeDrag || planeDrag.pointerId !== event.pointerId) return
+      updatePointer(event)
+      groundPlane.constant = -planeDrag.y
+      if (!raycaster.ray.intersectPlane(groundPlane, planePoint)) return
+      let x = planePoint.x + planeDrag.offsetX
+      let z = planePoint.z + planeDrag.offsetZ
+      if (snapToGridRef.current) {
+        x = Math.round(x / 0.25) * 0.25
+        z = Math.round(z / 0.25) * 0.25
+      }
+      planeDrag.root.position.set(x, planeDrag.y, z)
+      planeDrag.moved = planeDrag.moved || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 2
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    const finishPlaneDrag = (event: PointerEvent) => {
+      if (!planeDrag || planeDrag.pointerId !== event.pointerId) return false
+      const completed = planeDrag
+      planeDrag = null
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId)
+      orbit.enabled = true
+      renderer.domElement.style.cursor = "grab"
+      if (completed.moved) commitRuntimeScene(completed.before)
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      return true
+    }
+    const onPointerUp = (event: PointerEvent) => {
+      if (finishPlaneDrag(event)) return
+      if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5 || transform.axis) return
+      const selected = rootAtPointer(event)
       const id = selected?.userData.directorObjectId
       setSelectedObjectId(typeof id === "string" ? id : null)
     }
-    renderer.domElement.addEventListener("pointerdown", onPointerDown)
-    renderer.domElement.addEventListener("pointerup", onPointerUp)
+    const onPointerCancel = (event: PointerEvent) => { finishPlaneDrag(event) }
+    renderer.domElement.addEventListener("pointerdown", onPointerDown, true)
+    renderer.domElement.addEventListener("pointermove", onPointerMove, true)
+    renderer.domElement.addEventListener("pointerup", onPointerUp, true)
+    renderer.domElement.addEventListener("pointercancel", onPointerCancel, true)
 
     const onTransformStart = () => {
       interactionBeforeRef.current = snapshotRuntimeScene(runtime, directorRef.current.scene)
@@ -522,8 +701,10 @@ export default function DirectorDesk({
       runtime.buildToken += 1
       renderer.setAnimationLoop(null)
       resizeObserver.disconnect()
-      renderer.domElement.removeEventListener("pointerdown", onPointerDown)
-      renderer.domElement.removeEventListener("pointerup", onPointerUp)
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown, true)
+      renderer.domElement.removeEventListener("pointermove", onPointerMove, true)
+      renderer.domElement.removeEventListener("pointerup", onPointerUp, true)
+      renderer.domElement.removeEventListener("pointercancel", onPointerCancel, true)
       transform.removeEventListener("mouseDown", onTransformStart)
       transform.removeEventListener("mouseUp", onTransformEnd)
       transform.removeEventListener("dragging-changed", onDraggingChanged)
@@ -548,10 +729,27 @@ export default function DirectorDesk({
   }, [showGrid])
 
   useEffect(() => {
+    transformModeRef.current = transformMode
     const runtime = runtimeRef.current
     if (!runtime) return
     runtime.transform.setMode(transformMode)
   }, [transformMode])
+
+  useEffect(() => {
+    placementModeRef.current = placementMode
+    snapToGridRef.current = snapToGrid
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    const groundTranslate = placementMode === "ground" && transformMode === "translate"
+    runtime.transform.showX = true
+    runtime.transform.showY = !groundTranslate
+    runtime.transform.showZ = true
+    runtime.transform.showXY = !groundTranslate
+    runtime.transform.showYZ = !groundTranslate
+    runtime.transform.showXZ = true
+    runtime.transform.translationSnap = placementMode === "ground" && snapToGrid ? 0.25 : null
+    runtime.renderer.domElement.style.cursor = groundTranslate ? "grab" : "default"
+  }, [placementMode, snapToGrid, transformMode])
 
   useEffect(() => {
     const runtime = runtimeRef.current
@@ -906,16 +1104,19 @@ export default function DirectorDesk({
     field: "position" | "rotation" | "scale",
     values: [number, number, number],
   ) => (
-    <div className="grid grid-cols-3 gap-1">
+    <div className="grid grid-cols-3 gap-1.5">
       {values.map((value, index) => (
-        <label key={`${field}-${index}`} className="rounded border border-white/10 bg-black/20 px-1.5 py-1 text-[10px] text-zinc-500">
-          {"XYZ"[index]}
+        <label key={`${field}-${index}`} className="group rounded-lg border border-white/[0.075] bg-black/20 px-2 py-1.5 transition focus-within:border-violet-300/35 focus-within:bg-violet-300/[0.04]">
+          <span className={cn(
+            "text-[9px] font-semibold",
+            index === 0 ? "text-rose-300/70" : index === 1 ? "text-emerald-300/70" : "text-sky-300/70",
+          )}>{"XYZ"[index]}</span>
           <input
             type="number"
             step={field === "rotation" ? 0.1 : 0.05}
             value={Number(value.toFixed(3))}
             onChange={(event) => changeVectorValue(field, index, Number(event.target.value))}
-            className="mt-0.5 w-full bg-transparent text-xs text-zinc-100 outline-none"
+            className="mt-0.5 w-full bg-transparent text-[11px] tabular-nums text-zinc-100 outline-none"
           />
         </label>
       ))}
@@ -923,169 +1124,300 @@ export default function DirectorDesk({
   )
 
   return createPortal((
-    <div className="fixed inset-0 z-[100] grid grid-rows-[56px_minmax(0,1fr)_190px] bg-[#070a10] text-zinc-100">
-      <header className="flex items-center justify-between gap-4 border-b border-white/10 bg-[#0d1119] px-4">
+    <div className="openreel-director-desk fixed inset-0 z-[100] isolate grid min-w-[960px] grid-rows-[68px_minmax(0,1fr)_208px] overflow-hidden bg-[#070910] text-zinc-100">
+      <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_18%_-10%,rgba(139,124,255,.11),transparent_30%),radial-gradient(circle_at_82%_0%,rgba(85,215,255,.06),transparent_28%)]" />
+      <header className="relative z-30 flex items-center justify-between gap-4 border-b border-white/[0.075] bg-[#0b0e16]/95 px-4 shadow-[0_14px_45px_rgba(0,0,0,.24)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={() => void closeDesk()} className="h-8 rounded-md border border-white/10 px-3 text-xs text-zinc-300 hover:bg-white/[0.06]">返回画布</button>
+          <button
+            type="button"
+            onClick={() => void closeDesk()}
+            className="group flex h-9 items-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.025] px-3 text-[11px] font-medium text-zinc-300 transition hover:border-violet-300/25 hover:bg-violet-300/[0.07] hover:text-white"
+          >
+            <DirectorIcon name="arrow-left" className="h-3.5 w-3.5 transition group-hover:-translate-x-0.5" />
+            返回画布
+          </button>
+          <div className="h-7 w-px bg-white/[0.08]" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-300/20 bg-[linear-gradient(145deg,rgba(139,124,255,.22),rgba(85,215,255,.1))] text-violet-100 shadow-[0_12px_30px_rgba(83,63,205,.18)]">
+            <DirectorIcon name="camera" className="h-[18px] w-[18px]" />
+          </div>
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">3D 导演台</div>
-            <div className="truncate text-[10px] text-zinc-500">{projectTitle || "当前项目"} · 白模构图与镜头候选</div>
+            <div className="flex items-center gap-2">
+              <div className="truncate text-sm font-semibold tracking-[-.01em] text-zinc-50">导演台</div>
+              <span className="rounded-full border border-violet-300/15 bg-violet-300/[0.07] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[.14em] text-violet-200/80">3D blocking</span>
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-zinc-500">
+              <span className="truncate">{projectTitle || "当前项目"}</span>
+              <span className="text-zinc-700">/</span>
+              <span>空间构图与镜头预演</span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button type="button" onClick={undo} disabled={undoRef.current.length === 0} className="h-8 rounded px-2 text-xs text-zinc-400 hover:bg-white/[0.06] disabled:opacity-30">撤销</button>
-          <button type="button" onClick={redo} disabled={redoRef.current.length === 0} className="h-8 rounded px-2 text-xs text-zinc-400 hover:bg-white/[0.06] disabled:opacity-30">重做</button>
-          <span className="mx-1 h-5 w-px bg-white/10" />
-          <button type="button" onClick={() => setShowGrid((value) => !value)} className={cn("h-8 rounded px-2 text-xs", showGrid ? "bg-cyan-400/15 text-cyan-200" : "text-zinc-400 hover:bg-white/[0.06]")}>网格</button>
-          <button type="button" onClick={() => setShowThirds((value) => !value)} className={cn("h-8 rounded px-2 text-xs", showThirds ? "bg-cyan-400/15 text-cyan-200" : "text-zinc-400 hover:bg-white/[0.06]")}>三分线</button>
+
+        <div className="flex items-center gap-2">
+          <div className="hidden items-center rounded-xl border border-white/[0.075] bg-black/20 p-1 lg:flex">
+            <button type="button" title="撤销 (Ctrl/⌘ Z)" onClick={undo} disabled={undoRef.current.length === 0} className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-25"><DirectorIcon name="undo" className="h-3.5 w-3.5" /></button>
+            <button type="button" title="重做 (Ctrl/⌘ Shift Z)" onClick={redo} disabled={redoRef.current.length === 0} className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-25"><DirectorIcon name="redo" className="h-3.5 w-3.5" /></button>
+          </div>
+          <div className="hidden items-center rounded-xl border border-white/[0.075] bg-black/20 p-1 md:flex">
+            <button type="button" title="显示网格" onClick={() => setShowGrid((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showGrid ? "bg-violet-300/12 text-violet-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name="grid" className="h-3.5 w-3.5" />网格</button>
+            <button type="button" title="显示三分构图线" onClick={() => setShowThirds((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showThirds ? "bg-violet-300/12 text-violet-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name="thirds" className="h-3.5 w-3.5" />三分线</button>
+          </div>
           <button
             type="button"
             onClick={() => void createCapture()}
             disabled={!loaded || capturing || loadingModels > 0}
-            className="ml-1 h-9 rounded-lg bg-cyan-300 px-4 text-xs font-semibold text-cyan-950 hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-50"
+            className="group relative ml-1 flex h-10 items-center gap-2 overflow-hidden rounded-xl border border-cyan-100/25 bg-[linear-gradient(135deg,#72e4ff,#9be8ff)] px-4 text-[11px] font-semibold text-[#06121a] shadow-[0_10px_30px_rgba(85,215,255,.2)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(85,215,255,.28)] disabled:translate-y-0 disabled:cursor-wait disabled:opacity-50"
           >
-            {capturing ? "截图中…" : loadingModels > 0 ? "模型加载中" : "截图到时间线"}
+            <DirectorIcon name="camera" className="h-4 w-4" />
+            {capturing ? "正在保存镜头…" : loadingModels > 0 ? "模型加载中" : "保存镜头"}
           </button>
         </div>
       </header>
 
-      <div className="grid min-h-0 grid-cols-[240px_minmax(0,1fr)_260px]">
-        <aside className="min-h-0 overflow-y-auto border-r border-white/10 bg-[#0b0f16] p-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-zinc-500">基础白模</div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {DIRECTOR_BUILTINS.map((item) => (
-              <button key={item.id} type="button" onClick={() => addObject(item.id, item.defaultName)} className="rounded-lg border border-white/10 bg-white/[0.025] px-2 py-2.5 text-left text-xs text-zinc-300 hover:border-cyan-300/30 hover:bg-cyan-300/[0.06] hover:text-white">
-                <span className="block text-lg leading-none text-zinc-500">{item.id === "builtin:mannequin" ? "♙" : item.id === "builtin:wall" ? "▥" : "◇"}</span>
-                <span className="mt-1 block">{item.label}</span>
-              </button>
-            ))}
+      <div className="relative z-10 grid min-h-0 grid-cols-[220px_minmax(0,1fr)_250px] 2xl:grid-cols-[260px_minmax(0,1fr)_300px]">
+        <aside className="flex min-h-0 flex-col border-r border-white/[0.07] bg-[#0a0d14]/94">
+          <div className="border-b border-white/[0.065] px-3 pb-3 pt-3">
+            <div className="grid grid-cols-2 rounded-xl border border-white/[0.075] bg-black/25 p-1">
+              <button type="button" onClick={() => setLeftPanelTab("library")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "library" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="sparkles" className="h-3.5 w-3.5" />素材</button>
+              <button type="button" onClick={() => setLeftPanelTab("scene")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "scene" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="layers" className="h-3.5 w-3.5" />场景 <span className="rounded-full bg-black/30 px-1.5 text-[8px] tabular-nums text-zinc-400">{director.scene.objects.length}</span></button>
+            </div>
           </div>
 
-          <div className="mt-5 flex items-center justify-between">
-            <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-zinc-500">自定义模型</div>
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="rounded border border-white/10 px-2 py-1 text-[10px] text-zinc-300 hover:bg-white/[0.06] disabled:opacity-40">{uploading ? "上传中" : "导入 GLB"}</button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".glb,model/gltf-binary"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                event.target.value = ""
-                if (file) void uploadModel(file)
-              }}
-            />
-          </div>
-          <div className="mt-2 space-y-1.5">
-            {director.model_assets.length === 0 ? <div className="rounded border border-dashed border-white/10 px-2 py-3 text-center text-[10px] text-zinc-600">导入单文件 GLB 后可重复放置</div> : director.model_assets.map((asset) => (
-              <div key={asset.id} className="group flex items-center gap-2 rounded border border-white/[0.07] bg-black/15 p-2">
-                <button type="button" onClick={() => addObject(asset.id, asset.name.replace(/\.glb$/i, ""))} className="min-w-0 flex-1 text-left">
-                  <span className="block truncate text-xs text-zinc-300">{asset.name}</span>
-                  <span className="block text-[9px] text-zinc-600">{formatBytes(asset.size)} · 点击添加</span>
-                </button>
-                <button type="button" onClick={() => void removeModel(asset)} className="opacity-0 text-[10px] text-red-300 transition group-hover:opacity-100">删除</button>
-              </div>
-            ))}
-          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {leftPanelTab === "library" ? (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-zinc-200">基础白模</div>
+                    <div className="mt-0.5 text-[9px] text-zinc-600">点击添加到场景</div>
+                  </div>
+                  <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2 py-0.5 text-[8px] text-zinc-500">{DIRECTOR_BUILTINS.length} 项</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {DIRECTOR_BUILTINS.map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => addObject(item.id, item.defaultName)}
+                      className="group relative min-h-[92px] overflow-hidden rounded-xl border border-white/[0.075] bg-[linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.012))] p-2.5 text-left transition duration-200 hover:-translate-y-0.5 hover:border-violet-300/25 hover:bg-violet-300/[0.065] hover:shadow-[0_12px_28px_rgba(0,0,0,.2)]"
+                    >
+                      <span className={cn("flex h-11 w-full items-center justify-center rounded-lg transition group-hover:scale-105", index % 3 === 0 ? "bg-violet-300/[0.08] text-violet-200/70" : index % 3 === 1 ? "bg-cyan-300/[0.07] text-cyan-200/70" : "bg-amber-300/[0.055] text-amber-100/65")}><BuiltinGlyph assetId={item.id} /></span>
+                      <span className="mt-2 flex items-center justify-between text-[10px] font-medium text-zinc-300 group-hover:text-white"><span>{item.label}</span><span className="translate-x-1 text-zinc-700 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100">＋</span></span>
+                    </button>
+                  ))}
+                </div>
 
-          <div className="mt-5 text-[10px] font-semibold uppercase tracking-[.16em] text-zinc-500">场景对象 · {director.scene.objects.length}</div>
-          <div className="mt-2 space-y-1">
-            {director.scene.objects.map((object) => (
-              <button
-                key={object.id}
-                type="button"
-                onClick={() => setSelectedObjectId(object.id)}
-                className={cn("flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs", selectedObjectId === object.id ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-400 hover:bg-white/[0.05]")}
-              >
-                <span className="h-2.5 w-2.5 rounded-full border border-white/20" style={{ backgroundColor: object.color }} />
-                <span className="min-w-0 flex-1 truncate">{object.name}</span>
-                {object.locked ? <span className="text-[9px] text-zinc-600">锁</span> : null}
-                {!object.visible ? <span className="text-[9px] text-zinc-600">隐</span> : null}
-              </button>
-            ))}
+                <div className="mb-2 mt-5 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-zinc-200">我的模型</div>
+                    <div className="mt-0.5 text-[9px] text-zinc-600">支持单文件 GLB · 最大 50 MB</div>
+                  </div>
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="flex h-8 items-center gap-1.5 rounded-lg border border-white/[0.085] bg-white/[0.025] px-2.5 text-[9px] font-medium text-zinc-300 transition hover:border-cyan-300/25 hover:bg-cyan-300/[0.06] hover:text-cyan-100 disabled:opacity-40"><DirectorIcon name="upload" className="h-3 w-3" />{uploading ? "上传中" : "导入"}</button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".glb,model/gltf-binary"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ""
+                      if (file) void uploadModel(file)
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  {director.model_assets.length === 0 ? (
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="group flex w-full flex-col items-center rounded-xl border border-dashed border-white/[0.09] bg-white/[0.012] px-3 py-5 text-center transition hover:border-violet-300/25 hover:bg-violet-300/[0.035]">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.04] text-zinc-600 transition group-hover:bg-violet-300/10 group-hover:text-violet-200"><DirectorIcon name="upload" className="h-3.5 w-3.5" /></span>
+                      <span className="mt-2 text-[10px] text-zinc-500 group-hover:text-zinc-300">导入你的第一个 3D 模型</span>
+                      <span className="mt-0.5 text-[8px] text-zinc-700">导入后可在场景中重复使用</span>
+                    </button>
+                  ) : director.model_assets.map((asset) => (
+                    <div key={asset.id} className="group flex items-center gap-2 rounded-xl border border-white/[0.065] bg-white/[0.018] p-2 transition hover:border-white/[0.12] hover:bg-white/[0.035]">
+                      <button type="button" onClick={() => addObject(asset.id, asset.name.replace(/\.glb$/i, ""))} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-300/[0.07] text-violet-200/55"><BuiltinGlyph assetId="builtin:cube" /></span>
+                        <span className="min-w-0"><span className="block truncate text-[10px] text-zinc-300">{asset.name}</span><span className="mt-0.5 block text-[8px] text-zinc-600">{formatBytes(asset.size)} · 点击放置</span></span>
+                      </button>
+                      <button type="button" title="删除模型" onClick={() => void removeModel(asset)} className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-700 opacity-0 transition hover:bg-red-400/10 hover:text-red-300 group-hover:opacity-100"><DirectorIcon name="trash" className="h-3 w-3" /></button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-zinc-200">场景对象</div>
+                    <div className="mt-0.5 text-[9px] text-zinc-600">按添加顺序排列</div>
+                  </div>
+                  <span className="text-[9px] tabular-nums text-zinc-600">{director.scene.objects.length} 个</span>
+                </div>
+                <div className="space-y-1.5">
+                  {director.scene.objects.length === 0 ? (
+                    <button type="button" onClick={() => setLeftPanelTab("library")} className="flex w-full flex-col items-center rounded-xl border border-dashed border-white/[0.09] px-3 py-6 text-center text-zinc-600 transition hover:border-violet-300/25 hover:text-zinc-300"><DirectorIcon name="layers" className="h-5 w-5" /><span className="mt-2 text-[10px]">场景还是空的</span><span className="mt-1 text-[8px] text-zinc-700">前往素材库添加白模</span></button>
+                  ) : director.scene.objects.map((object, index) => (
+                    <button
+                      key={object.id}
+                      type="button"
+                      onClick={() => setSelectedObjectId(object.id)}
+                      className={cn("group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition", selectedObjectId === object.id ? "border-violet-300/22 bg-violet-300/[0.085] text-violet-50 shadow-[inset_3px_0_rgba(167,139,250,.65)]" : "border-transparent text-zinc-400 hover:border-white/[0.07] hover:bg-white/[0.035] hover:text-zinc-200")}
+                    >
+                      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20 text-[9px] font-semibold tabular-nums text-zinc-600"><span className="absolute bottom-1 right-1 h-2 w-2 rounded-full border border-[#11151e]" style={{ backgroundColor: object.color }} />{String(index + 1).padStart(2, "0")}</span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-medium">{object.name}</span><span className="mt-0.5 block truncate text-[8px] text-zinc-600">{object.asset_id.startsWith("builtin:") ? "基础白模" : "自定义模型"}</span></span>
+                      <span className="flex items-center gap-1 text-zinc-700">{object.locked ? <DirectorIcon name="lock" className="h-3 w-3" /> : null}{!object.visible ? <DirectorIcon name="eye-off" className="h-3 w-3" /> : null}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </aside>
 
-        <main ref={viewportRef} className="relative min-h-0 overflow-hidden bg-[#05080d]">
-          {!loaded && <div className="absolute inset-0 z-20 flex items-center justify-center text-xs text-zinc-500">正在载入导演台…</div>}
-          {showThirds && (
-            <div className="pointer-events-none absolute inset-[15px] z-10">
-              <div className="absolute left-1/3 top-0 h-full border-l border-white/25" />
-              <div className="absolute left-2/3 top-0 h-full border-l border-white/25" />
-              <div className="absolute left-0 top-1/3 w-full border-t border-white/25" />
-              <div className="absolute left-0 top-2/3 w-full border-t border-white/25" />
+        <main className="relative min-h-0 overflow-hidden bg-[#05070c] p-3 2xl:p-4">
+          <div ref={viewportRef} className="relative h-full overflow-hidden rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
+            <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(circle_at_50%_38%,transparent_35%,rgba(0,0,0,.24)_100%)]" />
+            {!loaded && <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#070a10]/90 text-[10px] text-zinc-500 backdrop-blur-sm"><span className="mb-3 h-7 w-7 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />正在准备 3D 场景…</div>}
+            {showThirds && (
+              <div className="pointer-events-none absolute inset-[15px] z-10 rounded-xl border border-white/[0.06]">
+                <div className="absolute left-1/3 top-0 h-full border-l border-cyan-100/20" />
+                <div className="absolute left-2/3 top-0 h-full border-l border-cyan-100/20" />
+                <div className="absolute left-0 top-1/3 w-full border-t border-cyan-100/20" />
+                <div className="absolute left-0 top-2/3 w-full border-t border-cyan-100/20" />
+              </div>
+            )}
+
+            <div className="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-xl border border-white/[0.1] bg-[#0a0d14]/72 p-1 shadow-[0_12px_34px_rgba(0,0,0,.28)] backdrop-blur-xl">
+              {(Object.keys(TRANSFORM_LABELS) as DirectorTransformMode[]).map((mode) => {
+                const iconName: DirectorIconName = mode === "translate" ? "move" : mode === "rotate" ? "rotate" : "scale"
+                const shortcut = mode === "translate" ? "W" : mode === "rotate" ? "E" : "R"
+                return (
+                  <button key={mode} type="button" title={`${TRANSFORM_LABELS[mode]} (${shortcut})`} onClick={() => setTransformMode(mode)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] font-medium transition", transformMode === mode ? "bg-white text-zinc-950 shadow-[0_6px_18px_rgba(0,0,0,.2)]" : "text-zinc-400 hover:bg-white/[0.07] hover:text-white")}><DirectorIcon name={iconName} className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">{TRANSFORM_LABELS[mode]}</span><kbd className={cn("ml-0.5 text-[8px] font-medium", transformMode === mode ? "text-zinc-500" : "text-zinc-600")}>{shortcut}</kbd></button>
+                )
+              })}
+              <span className="mx-0.5 h-5 w-px bg-white/[0.09]" />
+              <button
+                type="button"
+                title="平面摆放：直接拖动物体，只改变地面 X/Z 位置"
+                onClick={() => { setPlacementMode("ground"); setTransformMode("translate") }}
+                className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[9px] font-medium transition", placementMode === "ground" ? "bg-violet-300/15 text-violet-100" : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200")}
+              >
+                <DirectorIcon name="grid" className="h-3.5 w-3.5" />
+                平面
+              </button>
+              <button
+                type="button"
+                title="自由变换：允许调整物体高度"
+                onClick={() => setPlacementMode("free")}
+                className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[9px] font-medium transition", placementMode === "free" ? "bg-violet-300/15 text-violet-100" : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200")}
+              >
+                <DirectorIcon name="move" className="h-3.5 w-3.5" />
+                自由
+              </button>
+              {placementMode === "ground" ? (
+                <button
+                  type="button"
+                  title="按 0.25 个单位吸附到网格"
+                  onClick={() => setSnapToGrid((value) => !value)}
+                  className={cn("flex h-8 items-center rounded-lg px-2 text-[8px] font-medium transition", snapToGrid ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300")}
+                >
+                  吸附 {snapToGrid ? "开" : "关"}
+                </button>
+              ) : null}
             </div>
-          )}
-          <div className="absolute left-3 top-3 z-20 flex gap-1 rounded-lg border border-white/10 bg-black/45 p-1 backdrop-blur">
-            {(Object.keys(TRANSFORM_LABELS) as DirectorTransformMode[]).map((mode) => (
-              <button key={mode} type="button" onClick={() => setTransformMode(mode)} className={cn("h-7 rounded px-2 text-[10px]", transformMode === mode ? "bg-cyan-300 text-cyan-950" : "text-zinc-300 hover:bg-white/10")}>{TRANSFORM_LABELS[mode]} <span className="opacity-50">{mode === "translate" ? "W" : mode === "rotate" ? "E" : "R"}</span></button>
-            ))}
+
+            <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full border border-white/[0.08] bg-[#0a0d14]/68 px-2.5 py-1.5 text-[8px] text-zinc-500 shadow-lg backdrop-blur-xl">
+              <span className={cn("h-1.5 w-1.5 rounded-full", saving ? "animate-pulse bg-amber-300" : "bg-emerald-300")} />
+              {saving ? "正在同步" : "已同步"}
+              <span className="text-zinc-700">·</span>
+              <span>{director.scene.aspect_ratio}</span>
+            </div>
+
+            <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/[0.1] bg-[#0a0d14]/76 p-1 shadow-[0_12px_34px_rgba(0,0,0,.28)] backdrop-blur-xl">
+              <span className="hidden px-2 text-[8px] font-medium uppercase tracking-[.15em] text-zinc-600 2xl:inline">Camera</span>
+              {([['front', '正面'], ['three', '斜侧'], ['high', '俯拍'], ['top', '顶视']] as const).map(([preset, label]) => (
+                <button key={preset} type="button" onClick={() => applyCameraPreset(preset)} className="h-8 rounded-lg px-3 text-[9px] font-medium text-zinc-400 transition hover:bg-white/[0.08] hover:text-white">{label}</button>
+              ))}
+            </div>
+
+            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{placementMode === "ground" ? "拖动物体 · 平面摆放" : "拖拽空白 · 旋转视角"}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右键 · 平移镜头</span></div>
+            {error && <div className="absolute bottom-4 right-4 z-30 flex max-w-sm items-start gap-2 rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2.5 text-[10px] leading-4 text-red-100 shadow-[0_18px_44px_rgba(0,0,0,.4)] backdrop-blur-xl"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-300" />{error}</div>}
           </div>
-          <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-lg border border-white/10 bg-black/45 p-1 backdrop-blur">
-            {([['front', '正面'], ['three', '斜侧'], ['high', '俯拍'], ['top', '顶视']] as const).map(([preset, label]) => (
-              <button key={preset} type="button" onClick={() => applyCameraPreset(preset)} className="h-7 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/10">{label}</button>
-            ))}
-          </div>
-          {error && <div className="absolute bottom-3 right-3 z-30 max-w-sm rounded-lg border border-red-300/20 bg-red-950/80 px-3 py-2 text-[11px] text-red-100 shadow-xl">{error}</div>}
         </main>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-white/10 bg-[#0b0f16] p-3">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-zinc-500">属性</div>
-            <span className="text-[9px] text-zinc-600">{saving ? "保存中…" : `r${director.revision}`}</span>
-          </div>
-          {selectedObject ? (
-            <div className="mt-3 space-y-3">
-              <label className="block text-[10px] text-zinc-500">名称
-                <input value={selectedObject.name} onChange={(event) => updateSelectedObject({ name: event.target.value })} className="mt-1 h-8 w-full rounded border border-white/10 bg-black/20 px-2 text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />
-              </label>
-              <label className="flex items-center justify-between text-[10px] text-zinc-500">颜色
-                <input type="color" value={selectedObject.color} onChange={(event) => updateSelectedObject({ color: event.target.value })} className="h-7 w-12 rounded border border-white/10 bg-transparent" />
-              </label>
-              <div><div className="mb-1 text-[10px] text-zinc-500">位置</div>{renderVectorInputs("position", selectedObject.position)}</div>
-              <div><div className="mb-1 text-[10px] text-zinc-500">旋转（弧度）</div>{renderVectorInputs("rotation", selectedObject.rotation)}</div>
-              <div><div className="mb-1 text-[10px] text-zinc-500">缩放</div>{renderVectorInputs("scale", selectedObject.scale)}</div>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => updateSelectedObject({ visible: !selectedObject.visible })} className="h-8 rounded border border-white/10 text-[10px] text-zinc-300 hover:bg-white/[0.06]">{selectedObject.visible ? "隐藏" : "显示"}</button>
-                <button type="button" onClick={() => updateSelectedObject({ locked: !selectedObject.locked })} className="h-8 rounded border border-white/10 text-[10px] text-zinc-300 hover:bg-white/[0.06]">{selectedObject.locked ? "解锁" : "锁定"}</button>
-                <button type="button" onClick={duplicateSelectedObject} className="h-8 rounded border border-white/10 text-[10px] text-zinc-300 hover:bg-white/[0.06]">复制</button>
-                <button type="button" onClick={deleteSelectedObject} className="h-8 rounded border border-red-300/15 text-[10px] text-red-300 hover:bg-red-400/10">删除</button>
-              </div>
+        <aside className="min-h-0 overflow-y-auto border-l border-white/[0.07] bg-[#0a0d14]/94 p-3 2xl:p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-semibold text-zinc-200">检查器</div>
+              <div className="mt-0.5 text-[9px] text-zinc-600">编辑对象与镜头参数</div>
             </div>
+            <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2 py-0.5 text-[8px] tabular-nums text-zinc-600">r{director.revision}</span>
+          </div>
+
+          {selectedObject ? (
+            <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018] shadow-[inset_0_1px_rgba(255,255,255,.025)]">
+              <div className="flex items-center gap-2.5 border-b border-white/[0.065] p-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-black/20 text-violet-200/60"><BuiltinGlyph assetId={selectedObject.asset_id} /></span>
+                <label className="min-w-0 flex-1"><span className="sr-only">名称</span><input value={selectedObject.name} onChange={(event) => updateSelectedObject({ name: event.target.value })} className="h-7 w-full border-0 bg-transparent px-0 text-[11px] font-semibold text-zinc-100 outline-none placeholder:text-zinc-600" /></label>
+                <label title="对象颜色" className="relative h-7 w-7 shrink-0 overflow-hidden rounded-lg border border-white/[0.12] shadow-inner"><input type="color" value={selectedObject.color} onChange={(event) => updateSelectedObject({ color: event.target.value })} className="absolute -inset-2 h-12 w-12 cursor-pointer border-0 bg-transparent" /></label>
+              </div>
+              <div className="space-y-4 p-3">
+                <div><div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">位置</span><span className="text-[8px] text-zinc-700">世界坐标</span></div>{renderVectorInputs("position", selectedObject.position)}</div>
+                <div><div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">旋转</span><span className="text-[8px] text-zinc-700">弧度</span></div>{renderVectorInputs("rotation", selectedObject.rotation)}</div>
+                <div><div className="mb-1.5 text-[9px] font-medium text-zinc-500">缩放</div>{renderVectorInputs("scale", selectedObject.scale)}</div>
+              </div>
+              <div className="grid grid-cols-4 border-t border-white/[0.065] bg-black/10 p-1.5">
+                <button type="button" title={selectedObject.visible ? "隐藏" : "显示"} onClick={() => updateSelectedObject({ visible: !selectedObject.visible })} className="flex h-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100">{selectedObject.visible ? <DirectorIcon name="eye" className="h-3.5 w-3.5" /> : <DirectorIcon name="eye-off" className="h-3.5 w-3.5" />}</button>
+                <button type="button" title={selectedObject.locked ? "解锁" : "锁定"} onClick={() => updateSelectedObject({ locked: !selectedObject.locked })} className="flex h-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100">{selectedObject.locked ? <DirectorIcon name="unlock" className="h-3.5 w-3.5" /> : <DirectorIcon name="lock" className="h-3.5 w-3.5" />}</button>
+                <button type="button" title="复制 (Ctrl/⌘ D)" onClick={duplicateSelectedObject} className="flex h-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100"><DirectorIcon name="copy" className="h-3.5 w-3.5" /></button>
+                <button type="button" title="删除" onClick={deleteSelectedObject} className="flex h-8 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-red-400/10 hover:text-red-300"><DirectorIcon name="trash" className="h-3.5 w-3.5" /></button>
+              </div>
+            </section>
           ) : (
-            <div className="mt-3 rounded border border-dashed border-white/10 px-3 py-5 text-center text-[10px] leading-5 text-zinc-600">点击视口中的物体或左侧对象列表进行编辑</div>
+            <section className="flex flex-col items-center rounded-2xl border border-dashed border-white/[0.09] bg-white/[0.012] px-4 py-7 text-center">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.025] text-zinc-600"><DirectorIcon name="move" className="h-4 w-4" /></span>
+              <span className="mt-3 text-[10px] font-medium text-zinc-400">选择一个场景对象</span>
+              <span className="mt-1 max-w-[190px] text-[8px] leading-4 text-zinc-700">在视口中点击白模，或从左侧场景列表中选择</span>
+            </section>
           )}
 
-          <div className="mt-6 border-t border-white/10 pt-4">
-            <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-zinc-500">镜头</div>
-            <label className="mt-3 block text-[10px] text-zinc-500">画幅
-              <select value={director.scene.aspect_ratio} onChange={(event) => changeAspectRatio(event.target.value as DirectorAspectRatio)} className="mt-1 h-8 w-full rounded border border-white/10 bg-[#111722] px-2 text-xs text-zinc-200">
-                {(["16:9", "9:16", "1:1", "4:3"] as DirectorAspectRatio[]).map((item) => <option key={item}>{item}</option>)}
-              </select>
-            </label>
-            <label className="mt-3 block text-[10px] text-zinc-500">视场角 · {Math.round(director.scene.camera.fov)}°
-              <input type="range" min="20" max="90" value={director.scene.camera.fov} onChange={(event) => {
-                const scene = cloneDirectorScene(directorRef.current.scene)
-                scene.camera.fov = Number(event.target.value)
-                replaceScene(scene, true)
-              }} className="mt-1 w-full accent-cyan-300" />
-            </label>
-            <div className="mt-3 text-[10px] leading-5 text-zinc-600">拖拽空白处旋转视角，滚轮缩放。截图只进入下方时间线，不会自动创建画布节点。</div>
-          </div>
+          <section className="mt-3 overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
+            <div className="flex items-center gap-2 border-b border-white/[0.065] px-3 py-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[0.07] text-cyan-200/70"><DirectorIcon name="camera" className="h-3.5 w-3.5" /></span><div><div className="text-[10px] font-medium text-zinc-300">镜头设置</div><div className="text-[8px] text-zinc-700">构图比例与透视</div></div></div>
+            <div className="space-y-4 p-3">
+              <div>
+                <div className="mb-1.5 text-[9px] font-medium text-zinc-500">画幅比例</div>
+                <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.07] bg-black/20 p-1">
+                  {(["16:9", "9:16", "1:1", "4:3"] as DirectorAspectRatio[]).map((item) => <button key={item} type="button" onClick={() => changeAspectRatio(item)} className={cn("h-7 rounded-lg text-[8px] font-medium transition", director.scene.aspect_ratio === item ? "bg-white/[0.1] text-zinc-100 shadow-sm" : "text-zinc-600 hover:text-zinc-300")}>{item}</button>)}
+                </div>
+              </div>
+              <label className="block">
+                <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">视场角</span><span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[9px] tabular-nums text-cyan-200/80">{Math.round(director.scene.camera.fov)}°</span></div>
+                <input type="range" min="20" max="90" value={director.scene.camera.fov} onChange={(event) => {
+                  const scene = cloneDirectorScene(directorRef.current.scene)
+                  scene.camera.fov = Number(event.target.value)
+                  replaceScene(scene, true)
+                }} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
+                <div className="mt-1.5 flex justify-between text-[7px] text-zinc-700"><span>长焦 20°</span><span>广角 90°</span></div>
+              </label>
+            </div>
+          </section>
+
+          <div className="mt-3 rounded-xl border border-violet-300/[0.09] bg-violet-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-violet-200/70">工作提示：</span>{placementMode === "ground" ? "平面模式下可直接拖动白模，位置只在地面 X/Z 轴变化。" : "自由模式可用变换手柄调整物体高度、旋转和缩放。"} 截图仅保存到下方镜头条。</div>
         </aside>
       </div>
 
-      <section className="min-w-0 border-t border-white/10 bg-[#0a0e15] px-3 py-2">
-        <div className="mb-2 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-zinc-200">截图时间线</span>
-            <span className="ml-2 text-[10px] text-zinc-600">{director.captures.length} 个静态镜头候选 · 拖动排序</span>
+      <section className="relative z-20 min-w-0 border-t border-white/[0.075] bg-[#090c13]/97 px-4 py-3 shadow-[0_-16px_48px_rgba(0,0,0,.2)]">
+        <div className="mb-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/15 bg-violet-300/[0.07] text-violet-200/80"><DirectorIcon name="image" className="h-3.5 w-3.5" /></span>
+            <div><div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-zinc-200">镜头条</span><span className="rounded-full bg-white/[0.045] px-1.5 py-0.5 text-[8px] tabular-nums text-zinc-500">{director.captures.length}</span></div><div className="mt-0.5 text-[8px] text-zinc-700">静态构图候选 · 拖动即可重新排序</div></div>
           </div>
-          <span className="text-[10px] text-zinc-600">点击“放入画布”后才创建图片节点</span>
+          <div className="flex items-center gap-2 text-[8px] text-zinc-600"><span className="hidden md:inline">镜头不会自动进入创作画布</span><span className="h-1 w-1 rounded-full bg-zinc-700" /><span>手动选择“放入画布”</span></div>
         </div>
-        <div className="flex h-[140px] min-w-0 gap-2 overflow-x-auto pb-2">
+        <div className="flex h-[142px] min-w-0 gap-3 overflow-x-auto pb-1">
           {director.captures.length === 0 ? (
-            <div className="flex w-full items-center justify-center rounded-lg border border-dashed border-white/10 text-xs text-zinc-600">调整构图后点击右上角“截图到时间线”</div>
+            <div className="group flex w-full items-center justify-center rounded-2xl border border-dashed border-white/[0.085] bg-[radial-gradient(circle_at_50%_0%,rgba(139,124,255,.07),transparent_45%)]">
+              <div className="flex items-center gap-3 text-left"><span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.025] text-zinc-600"><DirectorIcon name="camera" className="h-4 w-4" /></span><span><span className="block text-[10px] font-medium text-zinc-400">还没有保存镜头</span><span className="mt-1 block text-[8px] text-zinc-700">调整人物、道具和机位，然后点击右上角“保存镜头”</span></span></div>
+            </div>
           ) : director.captures.map((capture, index) => (
             <article
               key={capture.id}
@@ -1094,28 +1426,30 @@ export default function DirectorDesk({
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => void dropCapture(capture.id)}
               onClick={() => setSelectedCaptureId(capture.id)}
-              className={cn("group relative w-56 shrink-0 overflow-hidden rounded-lg border bg-[#111722]", selectedCaptureId === capture.id ? "border-cyan-300/55 ring-1 ring-cyan-300/15" : "border-white/10")}
+              className={cn("group relative w-[218px] shrink-0 cursor-pointer overflow-hidden rounded-xl border bg-[#111620] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(0,0,0,.3)]", selectedCaptureId === capture.id ? "border-cyan-200/55 ring-2 ring-cyan-300/10" : "border-white/[0.09] hover:border-white/[0.18]")}
             >
-              <img src={resolveMediaUrl(capture.image_url)} alt={capture.title} className="h-[82px] w-full object-cover" />
-              <div className="px-2 py-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="rounded bg-black/35 px-1 py-0.5 text-[9px] text-zinc-500">{index + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-200">{capture.title}</span>
-                  <span className="text-[9px] text-zinc-600">{capture.aspect_ratio}</span>
+              <div className="relative h-[96px] overflow-hidden bg-black/30">
+                <img src={resolveMediaUrl(capture.image_url)} alt={capture.title} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.025]" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0d121b]/90 via-transparent to-black/10" />
+                <span className="absolute left-2 top-2 rounded-md border border-white/[0.09] bg-black/45 px-1.5 py-0.5 text-[8px] font-semibold tabular-nums text-white/80 backdrop-blur">{String(index + 1).padStart(2, "0")}</span>
+                <span className="absolute right-2 top-2 rounded-md border border-white/[0.09] bg-black/45 px-1.5 py-0.5 text-[8px] text-white/65 backdrop-blur">{capture.aspect_ratio}</span>
+                <div className="absolute bottom-2 left-2 right-2 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                  <button type="button" title="恢复这个机位" onClick={(event) => { event.stopPropagation(); restoreCapture(capture) }} className="rounded-lg border border-white/[0.1] bg-black/55 px-2 py-1 text-[8px] text-zinc-200 backdrop-blur hover:bg-black/75">恢复机位</button>
+                  <button type="button" title="重命名" onClick={(event) => { event.stopPropagation(); void renameCapture(capture) }} className="rounded-lg border border-white/[0.1] bg-black/55 px-2 py-1 text-[8px] text-zinc-200 backdrop-blur hover:bg-black/75">重命名</button>
+                  <button type="button" title="移除镜头" onClick={(event) => { event.stopPropagation(); void removeCapture(capture) }} className="ml-auto flex h-6 w-6 items-center justify-center rounded-lg border border-red-300/10 bg-black/55 text-red-300/80 backdrop-blur hover:bg-red-400/15"><DirectorIcon name="trash" className="h-2.5 w-2.5" /></button>
                 </div>
-                <div className="mt-1 flex items-center gap-1">
-                  <button type="button" onClick={(event) => { event.stopPropagation(); restoreCapture(capture) }} className="rounded px-1.5 py-1 text-[9px] text-zinc-400 hover:bg-white/[0.07]">回到机位</button>
-                  <button type="button" onClick={(event) => { event.stopPropagation(); void renameCapture(capture) }} className="rounded px-1.5 py-1 text-[9px] text-zinc-400 hover:bg-white/[0.07]">重命名</button>
-                  <button
-                    type="button"
-                    onClick={(event) => { event.stopPropagation(); void promoteCapture(capture) }}
-                    disabled={promotingId === capture.id}
-                    className="ml-auto rounded bg-cyan-300/15 px-1.5 py-1 text-[9px] text-cyan-200 hover:bg-cyan-300/25 disabled:opacity-50"
-                  >
-                    {promotingId === capture.id ? "处理中" : capture.promoted_node_id ? "查看画布" : "放入画布"}
-                  </button>
-                  <button type="button" onClick={(event) => { event.stopPropagation(); void removeCapture(capture) }} className="rounded px-1 py-1 text-[9px] text-red-300 opacity-0 hover:bg-red-400/10 group-hover:opacity-100">×</button>
-                </div>
+              </div>
+              <div className="flex h-[44px] items-center gap-2 px-2.5">
+                <span className="min-w-0 flex-1 truncate text-[9px] font-medium text-zinc-200">{capture.title}</span>
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); void promoteCapture(capture) }}
+                  disabled={promotingId === capture.id}
+                  className={cn("flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-[8px] font-semibold transition disabled:opacity-50", capture.promoted_node_id ? "bg-emerald-300/[0.08] text-emerald-200/80 hover:bg-emerald-300/[0.13]" : "bg-cyan-300/[0.1] text-cyan-100 hover:bg-cyan-300/[0.18]")}
+                >
+                  {capture.promoted_node_id ? <DirectorIcon name="check" className="h-2.5 w-2.5" /> : <DirectorIcon name="chevron" className="h-2.5 w-2.5" />}
+                  {promotingId === capture.id ? "处理中" : capture.promoted_node_id ? "已在画布" : "放入画布"}
+                </button>
               </div>
             </article>
           ))}
