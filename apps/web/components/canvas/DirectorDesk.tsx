@@ -22,6 +22,7 @@ import {
 import {
   DIRECTOR_ASPECT_VALUES,
   DIRECTOR_BUILTINS,
+  DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID,
   cloneDirectorScene,
   createDirectorId,
   defaultDirectorDesk,
@@ -41,6 +42,7 @@ import {
   applyDirectorMannequinPosePreset,
   DIRECTOR_MANNEQUIN_BODY_PRESETS,
   DIRECTOR_MANNEQUIN_JOINT_INFO,
+  DIRECTOR_MANNEQUIN_JOINT_LIMITS,
   DIRECTOR_MANNEQUIN_POSE_PRESETS,
   DIRECTOR_MANNEQUIN_SIZE_PRESETS,
   normalizeDirectorMannequin,
@@ -165,7 +167,7 @@ function DirectorIcon({ name, className = "h-4 w-4" }: { name: DirectorIconName;
 }
 
 function BuiltinGlyph({ assetId }: { assetId: string }) {
-  if (assetId === "builtin:mannequin") {
+  if (assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID) {
     return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><circle cx="24" cy="10" r="5" fill="currentColor" /><path d="M18 17c0-2 2-4 6-4s6 2 6 4l2 12-4 2-1 11h-6l-1-11-4-2 2-12Z" fill="currentColor" opacity=".82" /><path d="m18 19-6 11m18-11 6 11" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
   }
   if (assetId === "builtin:table") {
@@ -279,7 +281,7 @@ function snapshotRuntimeScene(runtime: DirectorRuntime, base: DirectorSceneState
 
 function actorLegend(scene: DirectorSceneState): DirectorActorLegendItem[] {
   return scene.objects
-    .filter((item) => item.asset_id === "builtin:mannequin")
+    .filter((item) => item.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID)
     .map((item) => ({ label: item.name, color: item.color, object_id: item.id }))
 }
 
@@ -431,7 +433,7 @@ export default function DirectorDesk({
       applyObjectTransform(root, object)
       runtime.objectRoots.set(object.id, root)
       runtime.root.add(root)
-      if (object.asset_id === "builtin:mannequin") {
+      if (object.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID) {
         const placeholder = createBuiltinModel("builtin:cylinder", object.color)
         placeholder.name = "人体模型加载中"
         placeholder.scale.set(0.34, 1.28, 0.34)
@@ -828,7 +830,7 @@ export default function DirectorDesk({
     [director.scene.objects, selectedObjectId],
   )
   const selectedMannequin = useMemo(
-    () => selectedObject?.asset_id === "builtin:mannequin"
+    () => selectedObject?.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
       ? normalizeDirectorMannequin(selectedObject.mannequin)
       : null,
     [selectedObject],
@@ -875,7 +877,7 @@ export default function DirectorDesk({
   const updateSelectedMannequin = useCallback((
     updater: (current: ReturnType<typeof normalizeDirectorMannequin>) => ReturnType<typeof normalizeDirectorMannequin>,
   ) => {
-    if (!selectedObject || selectedObject.asset_id !== "builtin:mannequin") return
+    if (!selectedObject || selectedObject.asset_id !== DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID) return
     const current = normalizeDirectorMannequin(selectedObject.mannequin)
     updateSelectedObject({ mannequin: normalizeDirectorMannequin(updater(current)) })
   }, [selectedObject, updateSelectedObject])
@@ -1365,7 +1367,7 @@ export default function DirectorDesk({
                       className={cn("group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition", selectedObjectId === object.id ? "border-violet-300/22 bg-violet-300/[0.085] text-violet-50 shadow-[inset_3px_0_rgba(167,139,250,.65)]" : "border-transparent text-zinc-400 hover:border-white/[0.07] hover:bg-white/[0.035] hover:text-zinc-200")}
                     >
                       <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20 text-[9px] font-semibold tabular-nums text-zinc-600"><span className="absolute bottom-1 right-1 h-2 w-2 rounded-full border border-[#11151e]" style={{ backgroundColor: object.color }} />{String(index + 1).padStart(2, "0")}</span>
-                      <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-medium">{object.name}</span><span className="mt-0.5 block truncate text-[8px] text-zinc-600">{object.asset_id === "builtin:mannequin" ? "可调骨架人物" : object.asset_id.startsWith("builtin:") ? "内置模型" : "自定义模型"}</span></span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-medium">{object.name}</span><span className="mt-0.5 block truncate text-[8px] text-zinc-600">{object.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID ? "标准骨骼人物" : object.asset_id.startsWith("builtin:") ? "内置模型" : "自定义模型"}</span></span>
                       <span className="flex items-center gap-1 text-zinc-700">{object.locked ? <DirectorIcon name="lock" className="h-3 w-3" /> : null}{!object.visible ? <DirectorIcon name="eye-off" className="h-3 w-3" /> : null}</span>
                     </button>
                   ))}
@@ -1561,13 +1563,13 @@ export default function DirectorDesk({
                         return (
                           <label key={axis} className="grid grid-cols-[16px_minmax(0,1fr)_48px] items-center gap-2">
                             <span className={cn("text-[9px] font-semibold", index === 0 ? "text-rose-300/75" : index === 1 ? "text-emerald-300/75" : "text-sky-300/75")}>{axis}</span>
-                            <input type="range" min="-180" max="180" step="1" value={value} onChange={(event) => updateMannequinJoint(index, Number(event.target.value))} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
+                            <input type="range" min={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][0]} max={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][1]} step="1" value={value} onChange={(event) => updateMannequinJoint(index, Number(event.target.value))} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
                             <span className="rounded-md bg-black/25 px-1.5 py-1 text-right text-[8px] tabular-nums text-zinc-400">{Math.round(value)}°</span>
                           </label>
                         )
                       })}
                     </div>
-                    <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 为当前关节的局部旋转，可在 −180° 至 180° 范围自由调节。</div>
+                    <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 使用标准人物骨骼的安全活动范围，降低反关节与动作穿模。</div>
                   </div>
                 </div>
               </section>

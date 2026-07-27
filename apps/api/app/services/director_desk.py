@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import copy
 import json
 import math
 import uuid
@@ -45,6 +46,24 @@ MANNEQUIN_PROPORTION_RANGES = {
     "leg_length": (0.75, 1.30),
     "head_scale": (0.78, 1.25),
 }
+MANNEQUIN_JOINT_RANGES = {
+    "spine": ((-45, 45), (-55, 55), (-35, 35)),
+    "chest": ((-45, 45), (-55, 55), (-35, 35)),
+    "neck": ((-45, 45), (-70, 70), (-35, 35)),
+    "head": ((-55, 55), (-80, 80), (-45, 45)),
+    "leftShoulder": ((-120, 120), (-90, 90), (-150, 150)),
+    "leftElbow": ((-145, 15), (-45, 45), (-120, 120)),
+    "leftWrist": ((-75, 75), (-80, 80), (-75, 75)),
+    "rightShoulder": ((-120, 120), (-90, 90), (-150, 150)),
+    "rightElbow": ((-145, 15), (-45, 45), (-120, 120)),
+    "rightWrist": ((-75, 75), (-80, 80), (-75, 75)),
+    "leftHip": ((-110, 65), (-60, 60), (-55, 55)),
+    "leftKnee": ((-5, 145), (-15, 15), (-15, 15)),
+    "leftAnkle": ((-55, 45), (-35, 35), (-35, 35)),
+    "rightHip": ((-110, 65), (-60, 60), (-55, 55)),
+    "rightKnee": ((-5, 145), (-15, 15), (-15, 15)),
+    "rightAnkle": ((-55, 45), (-35, 35), (-35, 35)),
+}
 
 
 class DirectorDeskError(RuntimeError):
@@ -75,6 +94,34 @@ def default_director_state() -> dict[str, Any]:
     }
 
 
+def _normalize_legacy_mannequin_joints(scene: dict[str, Any]) -> None:
+    objects = scene.get("objects")
+    if not isinstance(objects, list):
+        return
+    for item in objects:
+        if not isinstance(item, dict) or item.get("asset_id") != "builtin:mannequin":
+            continue
+        mannequin = item.get("mannequin")
+        joints = mannequin.get("joints") if isinstance(mannequin, dict) else None
+        if not isinstance(joints, dict):
+            continue
+        for joint, limits in MANNEQUIN_JOINT_RANGES.items():
+            rotation = joints.get(joint)
+            if not isinstance(rotation, list) or len(rotation) != 3:
+                continue
+            if not all(
+                isinstance(axis, (int, float))
+                and not isinstance(axis, bool)
+                and math.isfinite(float(axis))
+                for axis in rotation
+            ):
+                continue
+            joints[joint] = [
+                min(max(float(axis), minimum), maximum)
+                for axis, (minimum, maximum) in zip(rotation, limits, strict=True)
+            ]
+
+
 def normalize_director_state(raw: Any) -> dict[str, Any]:
     source = raw if isinstance(raw, dict) else {}
     state = default_director_state()
@@ -84,7 +131,8 @@ def normalize_director_state(raw: Any) -> dict[str, Any]:
         state["revision"] = 0
     state["version"] = DIRECTOR_VERSION
     if isinstance(source.get("scene"), dict):
-        state["scene"] = source["scene"]
+        state["scene"] = copy.deepcopy(source["scene"])
+        _normalize_legacy_mannequin_joints(state["scene"])
     if isinstance(source.get("model_assets"), list):
         state["model_assets"] = source["model_assets"]
     if isinstance(source.get("captures"), list):
@@ -138,7 +186,11 @@ def _validate_mannequin(value: Any, *, name: str) -> None:
             if joint not in MANNEQUIN_JOINTS:
                 continue
             _finite_vector(rotation, length=3, name=f"{name}.joints.{joint}")
-            if any(abs(float(axis)) > 180 for axis in rotation):
+            limits = MANNEQUIN_JOINT_RANGES[joint]
+            if any(
+                not minimum <= float(axis) <= maximum
+                for axis, (minimum, maximum) in zip(rotation, limits, strict=True)
+            ):
                 raise DirectorDeskError(f"{name}.joints.{joint} 超出旋转范围")
 
 

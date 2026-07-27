@@ -47,6 +47,33 @@ export interface DirectorMannequinJointInfo {
   group: "躯干" | "左臂" | "右臂" | "左腿" | "右腿"
 }
 
+export type DirectorMannequinJointLimits = Record<
+  DirectorMannequinJoint,
+  [[number, number], [number, number], [number, number]]
+>
+
+// The director desk stores left/right from the viewer-facing stage coordinate
+// system used by the original procedural mannequin. These limits describe the
+// safe control envelope of the standard Mesh2Motion humanoid rig.
+export const DIRECTOR_MANNEQUIN_JOINT_LIMITS: DirectorMannequinJointLimits = {
+  spine: [[-45, 45], [-55, 55], [-35, 35]],
+  chest: [[-45, 45], [-55, 55], [-35, 35]],
+  neck: [[-45, 45], [-70, 70], [-35, 35]],
+  head: [[-55, 55], [-80, 80], [-45, 45]],
+  leftShoulder: [[-120, 120], [-90, 90], [-150, 150]],
+  leftElbow: [[-145, 15], [-45, 45], [-120, 120]],
+  leftWrist: [[-75, 75], [-80, 80], [-75, 75]],
+  rightShoulder: [[-120, 120], [-90, 90], [-150, 150]],
+  rightElbow: [[-145, 15], [-45, 45], [-120, 120]],
+  rightWrist: [[-75, 75], [-80, 80], [-75, 75]],
+  leftHip: [[-110, 65], [-60, 60], [-55, 55]],
+  leftKnee: [[-5, 145], [-15, 15], [-15, 15]],
+  leftAnkle: [[-55, 45], [-35, 35], [-35, 35]],
+  rightHip: [[-110, 65], [-60, 60], [-55, 55]],
+  rightKnee: [[-5, 145], [-15, 15], [-15, 15]],
+  rightAnkle: [[-55, 45], [-35, 35], [-35, 35]],
+}
+
 export const DIRECTOR_MANNEQUIN_JOINT_INFO: DirectorMannequinJointInfo[] = [
   { id: "spine", label: "腰 / 脊柱", group: "躯干" },
   { id: "chest", label: "胸椎", group: "躯干" },
@@ -237,9 +264,9 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
     description: "双臂外展、手落髋部",
     joints: pose({
       chest: [0, 0, 0],
-      leftShoulder: [-10, 12, -40], rightShoulder: [-10, -12, 40],
-      leftElbow: [-18, 0, 104], rightElbow: [-18, 0, -104],
-      leftWrist: [0, 0, -18], rightWrist: [0, 0, 18],
+      leftShoulder: [-10, 10, -42], rightShoulder: [-10, -10, 42],
+      leftElbow: [-18, 0, 84], rightElbow: [-18, 0, -84],
+      leftWrist: [0, 0, -12], rightWrist: [0, 0, 12],
     }),
   },
 ]
@@ -256,12 +283,17 @@ function clamp(value: unknown, minimum: number, maximum: number, fallback: numbe
   return Math.min(maximum, Math.max(minimum, finiteNumber(value, fallback)))
 }
 
-function vector3(value: unknown, fallback: [number, number, number]): [number, number, number] {
+function jointRotation(
+  joint: DirectorMannequinJoint,
+  value: unknown,
+  fallback: [number, number, number],
+): [number, number, number] {
   if (!Array.isArray(value) || value.length !== 3) return [...fallback]
+  const limits = DIRECTOR_MANNEQUIN_JOINT_LIMITS[joint]
   return [
-    clamp(value[0], -180, 180, fallback[0]),
-    clamp(value[1], -180, 180, fallback[1]),
-    clamp(value[2], -180, 180, fallback[2]),
+    clamp(value[0], limits[0][0], limits[0][1], fallback[0]),
+    clamp(value[1], limits[1][0], limits[1][1], fallback[1]),
+    clamp(value[2], limits[2][0], limits[2][1], fallback[2]),
   ]
 }
 
@@ -308,7 +340,10 @@ export function normalizeDirectorMannequin(value: unknown): DirectorMannequinSta
       head_scale: clamp(rawProportions.head_scale, 0.78, 1.25, fallback.proportions.head_scale),
     },
     joints: Object.fromEntries(
-      DIRECTOR_MANNEQUIN_JOINTS.map((joint) => [joint, vector3(rawJoints[joint], fallback.joints[joint])]),
+      DIRECTOR_MANNEQUIN_JOINTS.map((joint) => [
+        joint,
+        jointRotation(joint, rawJoints[joint], fallback.joints[joint]),
+      ]),
     ) as Record<DirectorMannequinJoint, [number, number, number]>,
   }
 }

@@ -12,23 +12,28 @@ const MODEL_FILES = {
   feminine: "human-female.glb",
 } as const
 
+// Director state predates the imported rig and names the screen-left limb
+// "left". Mesh2Motion follows anatomical left/right, which appears mirrored
+// to a front-facing viewer, so the standard-rig adapter deliberately swaps
+// side suffixes. Without this adapter, symmetric actions cross through the
+// torso before reaching their intended pose.
 const JOINT_BONES: Record<DirectorMannequinJoint, string> = {
   spine: "spine_01",
   chest: "spine_03",
   neck: "neck_01",
   head: "head",
-  leftShoulder: "upperarm_l",
-  leftElbow: "lowerarm_l",
-  leftWrist: "hand_l",
-  rightShoulder: "upperarm_r",
-  rightElbow: "lowerarm_r",
-  rightWrist: "hand_r",
-  leftHip: "thigh_l",
-  leftKnee: "calf_l",
-  leftAnkle: "foot_l",
-  rightHip: "thigh_r",
-  rightKnee: "calf_r",
-  rightAnkle: "foot_r",
+  leftShoulder: "upperarm_r",
+  leftElbow: "lowerarm_r",
+  leftWrist: "hand_r",
+  rightShoulder: "upperarm_l",
+  rightElbow: "lowerarm_l",
+  rightWrist: "hand_l",
+  leftHip: "thigh_r",
+  leftKnee: "calf_r",
+  leftAnkle: "foot_r",
+  rightHip: "thigh_l",
+  rightKnee: "calf_l",
+  rightAnkle: "foot_l",
 }
 
 interface BoneFrame {
@@ -85,6 +90,20 @@ function scaleBoneOffset(root: THREE.Object3D, name: string, factor: number): vo
   if (value) value.position.multiplyScalar(factor)
 }
 
+function spreadBonePair(
+  root: THREE.Object3D,
+  leftName: string,
+  rightName: string,
+  factor: number,
+): void {
+  const left = bone(root, leftName)
+  const right = bone(root, rightName)
+  if (!left || !right || left.parent !== right.parent) return
+  const midpoint = left.position.clone().add(right.position).multiplyScalar(0.5)
+  left.position.copy(midpoint.clone().add(left.position.clone().sub(midpoint).multiplyScalar(factor)))
+  right.position.copy(midpoint.clone().add(right.position.clone().sub(midpoint).multiplyScalar(factor)))
+}
+
 function applyProportions(model: THREE.Object3D, state: DirectorMannequinState): void {
   const { proportions } = state
 
@@ -97,12 +116,8 @@ function applyProportions(model: THREE.Object3D, state: DirectorMannequinState):
   for (const name of ["calf_l", "foot_l", "calf_r", "foot_r"]) {
     scaleBoneOffset(model, name, proportions.leg_length)
   }
-  for (const name of ["upperarm_l", "upperarm_r"]) {
-    scaleBoneOffset(model, name, proportions.shoulder_width)
-  }
-  for (const name of ["thigh_l", "thigh_r"]) {
-    scaleBoneOffset(model, name, proportions.hip_width)
-  }
+  spreadBonePair(model, "clavicle_l", "clavicle_r", proportions.shoulder_width)
+  spreadBonePair(model, "thigh_l", "thigh_r", proportions.hip_width)
 
   const head = bone(model, "head")
   if (head) head.scale.multiplyScalar(proportions.head_scale)
@@ -163,18 +178,18 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
     chest: captureBoneFrame(model, "spine_03", "neck_01", up),
     neck: captureBoneFrame(model, "neck_01", "head", up),
     head: captureBoneFrame(model, "head", "head_leaf", up),
-    leftShoulder: captureBoneFrame(model, "upperarm_l", "lowerarm_l", down),
-    leftElbow: captureBoneFrame(model, "lowerarm_l", "hand_l", down),
-    leftWrist: captureBoneFrame(model, "hand_l", "middle_01_l", down),
-    rightShoulder: captureBoneFrame(model, "upperarm_r", "lowerarm_r", down),
-    rightElbow: captureBoneFrame(model, "lowerarm_r", "hand_r", down),
-    rightWrist: captureBoneFrame(model, "hand_r", "middle_01_r", down),
-    leftHip: captureBoneFrame(model, "thigh_l", "calf_l", down),
-    leftKnee: captureBoneFrame(model, "calf_l", "foot_l", down),
-    leftAnkle: captureBoneFrame(model, "foot_l", "ball_l", forward),
-    rightHip: captureBoneFrame(model, "thigh_r", "calf_r", down),
-    rightKnee: captureBoneFrame(model, "calf_r", "foot_r", down),
-    rightAnkle: captureBoneFrame(model, "foot_r", "ball_r", forward),
+    leftShoulder: captureBoneFrame(model, JOINT_BONES.leftShoulder, JOINT_BONES.leftElbow, down),
+    leftElbow: captureBoneFrame(model, JOINT_BONES.leftElbow, JOINT_BONES.leftWrist, down),
+    leftWrist: captureBoneFrame(model, JOINT_BONES.leftWrist, "middle_01_r", down),
+    rightShoulder: captureBoneFrame(model, JOINT_BONES.rightShoulder, JOINT_BONES.rightElbow, down),
+    rightElbow: captureBoneFrame(model, JOINT_BONES.rightElbow, JOINT_BONES.rightWrist, down),
+    rightWrist: captureBoneFrame(model, JOINT_BONES.rightWrist, "middle_01_l", down),
+    leftHip: captureBoneFrame(model, JOINT_BONES.leftHip, JOINT_BONES.leftKnee, down),
+    leftKnee: captureBoneFrame(model, JOINT_BONES.leftKnee, JOINT_BONES.leftAnkle, down),
+    leftAnkle: captureBoneFrame(model, JOINT_BONES.leftAnkle, "ball_r", forward),
+    rightHip: captureBoneFrame(model, JOINT_BONES.rightHip, JOINT_BONES.rightKnee, down),
+    rightKnee: captureBoneFrame(model, JOINT_BONES.rightKnee, JOINT_BONES.rightAnkle, down),
+    rightAnkle: captureBoneFrame(model, JOINT_BONES.rightAnkle, "ball_l", forward),
   }
 
   const identity = new THREE.Quaternion()
@@ -234,9 +249,11 @@ export async function createDirectorMannequin(
   const template = await loadTemplate(state.anatomy)
   const model = prepareClone(template, color)
   const group = new THREE.Group()
-  group.name = "Mesh2Motion 可调人体素模"
+  group.name = "OpenReel 标准人物"
   group.userData.directorMannequin = true
+  group.userData.standardModel = true
   group.userData.modelSource = "Mesh2Motion"
+  group.userData.modelVariant = state.anatomy
   group.userData.modelLicense = "CC0-1.0"
   group.userData.jointBones = JOINT_BONES
   group.add(model)

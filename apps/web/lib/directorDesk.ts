@@ -77,8 +77,10 @@ export const DIRECTOR_ASPECT_VALUES: Record<DirectorAspectRatio, number> = {
   "4:3": 4 / 3,
 }
 
+export const DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID = "builtin:mannequin"
+
 export const DIRECTOR_BUILTINS = [
-  { id: "builtin:mannequin", label: "可调人物", defaultName: "人物" },
+  { id: DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID, label: "标准人物", defaultName: "人物" },
   { id: "builtin:cube", label: "立方体", defaultName: "方块" },
   { id: "builtin:cylinder", label: "圆柱体", defaultName: "圆柱" },
   { id: "builtin:table", label: "桌子", defaultName: "桌子" },
@@ -171,7 +173,7 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
         scale: vector3(raw.scale, [1, 1, 1]),
         visible: raw.visible !== false,
         locked: raw.locked === true,
-        mannequin: assetId === "builtin:mannequin"
+        mannequin: assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
           ? normalizeDirectorMannequin(raw.mannequin)
           : undefined,
       }]
@@ -246,12 +248,12 @@ export function newDirectorObject(
   existing: DirectorObjectState[],
 ): DirectorObjectState {
   const sameAssetCount = existing.filter((item) => item.asset_id === assetId).length
-  const mannequinCount = existing.filter((item) => item.asset_id === "builtin:mannequin").length
+  const mannequinCount = existing.filter((item) => item.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID).length
   return {
     id: createDirectorId("object"),
     asset_id: assetId,
     name: `${defaultName} ${sameAssetCount + 1}`,
-    color: assetId === "builtin:mannequin"
+    color: assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
       ? DIRECTOR_CHARACTER_COLORS[mannequinCount % DIRECTOR_CHARACTER_COLORS.length]
       : "#a1a1aa",
     position: [Math.min(3, existing.length * 0.45), 0, 0],
@@ -259,6 +261,6 @@ export function newDirectorObject(
     scale: [1, 1, 1],
     visible: true,
     locked: false,
-    mannequin: assetId === "builtin:mannequin" ? defaultDirectorMannequin() : undefined,
+    mannequin: assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID ? defaultDirectorMannequin() : undefined,
   }
 }

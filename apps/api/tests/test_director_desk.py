@@ -12,7 +12,12 @@ from starlette.datastructures import UploadFile
 from app.config import settings
 from app.db import session as db_session
 from app.db.models import Project, WorkflowNode
-from app.services.director_desk import DirectorDeskError, DirectorDeskService, default_director_scene
+from app.services.director_desk import (
+    DirectorDeskError,
+    DirectorDeskService,
+    default_director_scene,
+    normalize_director_state,
+)
 
 
 async def _setup_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -70,6 +75,23 @@ def test_director_routes_are_registered() -> None:
     assert ("POST", "/api/projects/{project_id}/director/models") in routes
     assert ("POST", "/api/projects/{project_id}/director/captures") in routes
     assert ("POST", "/api/projects/{project_id}/director/captures/{capture_id}/canvas") in routes
+
+
+def test_director_normalizes_legacy_joint_angles_into_standard_rig_limits() -> None:
+    scene = _scene()
+    scene["objects"][0]["mannequin"] = {
+        "joints": {
+            "leftKnee": [-30, 80, -90],
+            "rightShoulder": [170, -120, 175],
+        },
+    }
+
+    normalized = normalize_director_state({"scene": scene})
+    joints = normalized["scene"]["objects"][0]["mannequin"]["joints"]
+
+    assert joints["leftKnee"] == [-5.0, 15.0, -15.0]
+    assert joints["rightShoulder"] == [120.0, -90.0, 150.0]
+    assert scene["objects"][0]["mannequin"]["joints"]["leftKnee"] == [-30, 80, -90]
 
 
 @pytest.mark.asyncio
@@ -234,6 +256,13 @@ async def test_director_persists_mannequin_proportions_and_rejects_invalid_joint
         }
         with pytest.raises(DirectorDeskError, match="超出旋转范围"):
             await service.save_scene("director-project", invalid, expected_revision=1)
+
+        invalid_knee = _scene()
+        invalid_knee["objects"][0]["mannequin"] = {
+            "joints": {"leftKnee": [-30, 0, 0]},
+        }
+        with pytest.raises(DirectorDeskError, match="超出旋转范围"):
+            await service.save_scene("director-project", invalid_knee, expected_revision=1)
 
         invalid_anatomy = _scene()
         invalid_anatomy["objects"][0]["mannequin"] = {"anatomy": "robot"}
