@@ -151,6 +151,7 @@ interface CanvasCreateMenuState {
   y: number
   flowX: number
   flowY: number
+  copyNodeIds?: string[]
   connectFrom?: PendingConnectionDraft
   previewLine?: PendingConnectionPreviewLine
 }
@@ -9855,7 +9856,9 @@ function isCanvasBlankTarget(target: EventTarget | null) {
   if (isInteractiveTarget(target)) return false
   if (target.closest("[data-openreel-workflow-ui='true'],[data-openreel-group-toolbar='true']")) return false
   if (target.closest(".react-flow__node,.react-flow__edge,.react-flow__handle")) return false
-  return Boolean(target.closest(".react-flow__pane,.react-flow__viewport,.react-flow__renderer"))
+  return Boolean(target.closest(
+    ".react-flow__pane,.react-flow__viewport,.react-flow__renderer,.react-flow__selection,.react-flow__selectionpane,.react-flow__nodesselection,.react-flow__nodesselection-rect",
+  ))
 }
 
 function isVideoUrl(value: unknown): value is string {
@@ -11222,6 +11225,7 @@ export default function WorkflowCanvas({
   const undoStackRef = useRef<CanvasUndoRecord[]>([])
   const pasteSequenceRef = useRef(0)
   const pasteInFlightRef = useRef(false)
+  const lastCanvasPointerPositionRef = useRef<{ x: number; y: number } | null>(null)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const dragStartPositionsRef = useRef<Record<string, { x: number; y: number }>>({})
   const activeDragNodeIdsRef = useRef<string[]>([])
@@ -13500,26 +13504,37 @@ export default function WorkflowCanvas({
     event.preventDefault()
     if (!flowInstance) return
     const position = flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    lastCanvasPointerPositionRef.current = position
     setNodeActionMenu(null)
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
       flowX: position.x,
       flowY: position.y,
+      copyNodeIds: selectedNodeIds.length > 0 ? selectedNodeIds : undefined,
     })
-  }, [flowInstance])
+  }, [flowInstance, selectedNodeIds])
 
   const openPaneCreateMenuAt = useCallback((x: number, y: number) => {
     if (!flowInstance) return
     const position = flowInstance.screenToFlowPosition({ x, y })
+    lastCanvasPointerPositionRef.current = position
     setNodeActionMenu(null)
     setContextMenu({
       x,
       y,
       flowX: position.x,
       flowY: position.y,
+      copyNodeIds: selectedNodeIds.length > 0 ? selectedNodeIds : undefined,
     })
-  }, [flowInstance])
+  }, [flowInstance, selectedNodeIds])
+
+  const handleCanvasContextMenuCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!isCanvasBlankTarget(event.target)) return
+    event.preventDefault()
+    event.stopPropagation()
+    openPaneCreateMenuAt(event.clientX, event.clientY)
+  }, [openPaneCreateMenuAt])
 
   const openNodeActionMenuAt = useCallback((nodeId: string, x: number, y: number) => {
     const node = nodes.find((item) => item.id === nodeId)
@@ -13603,13 +13618,19 @@ export default function WorkflowCanvas({
   }, [clearLongPress, flowInstance, markTouchMenuOpened, openNodeActionMenuAt, openPaneCreateMenuAt])
 
   const handlePointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (flowInstance) {
+      lastCanvasPointerPositionRef.current = flowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      })
+    }
     if (isWorkflowUiTarget(event.target)) return
     blankPointerRef.current = event.button === 0 && isCanvasBlankTarget(event.target)
       ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
       : null
     if (!isTouchPointer(event)) return
     startLongPress(event.pointerId, event.clientX, event.clientY, event.target)
-  }, [startLongPress])
+  }, [flowInstance, startLongPress])
 
   const handleTouchStartCapture = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
     if (isWorkflowUiTarget(event.target)) return
@@ -13619,13 +13640,19 @@ export default function WorkflowCanvas({
   }, [startLongPress])
 
   const handlePointerMoveCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (flowInstance) {
+      lastCanvasPointerPositionRef.current = flowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      })
+    }
     if (isWorkflowUiTarget(event.target)) return
     const state = longPressRef.current
     if (!state || state.pointerId !== event.pointerId || state.fired) return
     if (Math.hypot(event.clientX - state.x, event.clientY - state.y) > LONG_PRESS_MOVE_TOLERANCE) {
       clearLongPress()
     }
-  }, [clearLongPress])
+  }, [clearLongPress, flowInstance])
 
   const handleTouchMoveCapture = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
     if (isWorkflowUiTarget(event.target)) return
@@ -13885,10 +13912,11 @@ export default function WorkflowCanvas({
       || pasteInFlightRef.current
     ) return
 
-    const keyboardPasteSequence = position ? 0 : pasteSequenceRef.current + 1
-    const pastePosition = position || {
-      x: nodeClipboard.originX + keyboardPasteSequence * 36,
-      y: nodeClipboard.originY + keyboardPasteSequence * 36,
+    const pointerPosition = position || lastCanvasPointerPositionRef.current
+    const fallbackPasteSequence = pointerPosition ? 0 : pasteSequenceRef.current + 1
+    const pastePosition = pointerPosition || {
+      x: nodeClipboard.originX + fallbackPasteSequence * 36,
+      y: nodeClipboard.originY + fallbackPasteSequence * 36,
     }
     const projectId = currentProject.id
     pasteInFlightRef.current = true
@@ -13905,7 +13933,7 @@ export default function WorkflowCanvas({
         .map((node) => String(node.id || ""))
         .filter(Boolean)
       if (copiedNodeIds.length === 0) throw new Error("没有可粘贴的节点")
-      if (!position) pasteSequenceRef.current = keyboardPasteSequence
+      if (!pointerPosition) pasteSequenceRef.current = fallbackPasteSequence
       await refreshCanvas({ preserveOnEmpty: true, preserveLayout: true })
       selectNode(null)
       applyNodeChanges(copiedNodeIds.map((id) => ({ type: "select", id, selected: true })))
@@ -14207,6 +14235,7 @@ export default function WorkflowCanvas({
         <div
         ref={canvasContainerRef}
         className="studio-canvas-shell relative h-full w-full select-none"
+        onContextMenuCapture={handleCanvasContextMenuCapture}
         onPointerDownCapture={handlePointerDownCapture}
         onPointerMoveCapture={handlePointerMoveCapture}
         onPointerUpCapture={handlePointerEndCapture}
@@ -14362,6 +14391,7 @@ export default function WorkflowCanvas({
         onConnectEnd={handleConnectEnd}
         isValidConnection={isOutputToInputConnection}
         onNodeContextMenu={handleNodeContextMenu}
+        onSelectionContextMenu={handlePaneContextMenu}
         onInit={(instance) => {
           setFlowInstance(instance)
           const nextViewport = instance.getViewport()
@@ -14430,7 +14460,9 @@ export default function WorkflowCanvas({
             CANVAS_CREATE_MENU_WIDTH,
             contextMenu.connectFrom
               ? CANVAS_CONNECT_CREATE_MENU_HEIGHT
-              : CANVAS_CREATE_MENU_HEIGHT + (hasCanvasClipboard ? 48 : 0),
+              : CANVAS_CREATE_MENU_HEIGHT
+                + (contextMenu.copyNodeIds?.length ? 40 : 0)
+                + (hasCanvasClipboard ? 40 : 0),
           )}
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
@@ -14443,17 +14475,29 @@ export default function WorkflowCanvas({
               {contextMenu.connectFrom ? "新节点会自动建立依赖连线" : "选择要添加的节点"}
             </div>
           </div>
-          {hasCanvasClipboard && !contextMenu.connectFrom && nodeClipboard && (
+          {!contextMenu.connectFrom && (contextMenu.copyNodeIds?.length || hasCanvasClipboard) && (
             <div className="border-b border-white/10 py-1">
-              <button
-                type="button"
-                disabled={pastingNodes}
-                className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-xs text-zinc-100 transition-colors hover:bg-white/[0.07] disabled:cursor-wait disabled:opacity-50"
-                onClick={() => void pasteCanvasNodes({ x: contextMenu.flowX, y: contextMenu.flowY })}
-              >
-                <span>{nodeClipboard.nodeIds.length > 1 ? `粘贴 ${nodeClipboard.nodeIds.length} 个节点` : "粘贴节点"}</span>
-                <span className="text-[10px] text-zinc-500">Ctrl/⌘+V</span>
-              </button>
+              {contextMenu.copyNodeIds?.length ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-xs text-zinc-100 transition-colors hover:bg-white/[0.07]"
+                  onClick={() => copyCanvasNodes(contextMenu.copyNodeIds!)}
+                >
+                  <span>{contextMenu.copyNodeIds.length > 1 ? `复制 ${contextMenu.copyNodeIds.length} 个节点` : "复制节点"}</span>
+                  <span className="text-[10px] text-zinc-500">Ctrl/⌘+C</span>
+                </button>
+              ) : null}
+              {hasCanvasClipboard && nodeClipboard ? (
+                <button
+                  type="button"
+                  disabled={pastingNodes}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-xs text-zinc-100 transition-colors hover:bg-white/[0.07] disabled:cursor-wait disabled:opacity-50"
+                  onClick={() => void pasteCanvasNodes({ x: contextMenu.flowX, y: contextMenu.flowY })}
+                >
+                  <span>{nodeClipboard.nodeIds.length > 1 ? `粘贴 ${nodeClipboard.nodeIds.length} 个节点` : "粘贴节点"}</span>
+                  <span className="text-[10px] text-zinc-500">Ctrl/⌘+V</span>
+                </button>
+              ) : null}
             </div>
           )}
           <div className="py-2">
