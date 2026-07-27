@@ -43,6 +43,7 @@ import {
   DIRECTOR_MANNEQUIN_BODY_PRESETS,
   DIRECTOR_MANNEQUIN_JOINT_INFO,
   DIRECTOR_MANNEQUIN_JOINT_LIMITS,
+  DIRECTOR_MANNEQUIN_JOINTS,
   DIRECTOR_MANNEQUIN_POSE_PRESETS,
   DIRECTOR_MANNEQUIN_SIZE_PRESETS,
   normalizeDirectorMannequin,
@@ -1482,7 +1483,7 @@ export default function DirectorDesk({
                 <div className="flex items-center justify-between border-b border-white/[0.065] px-3 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-300/[0.09] text-violet-100/80"><DirectorIcon name="sparkles" className="h-3.5 w-3.5" /></span>
-                    <div><div className="text-[10px] font-medium text-zinc-200">人物塑形与姿态</div><div className="text-[8px] text-zinc-600">男女体态、人体比例和 16 个关节</div></div>
+                    <div><div className="text-[10px] font-medium text-zinc-200">人物塑形与姿态</div><div className="text-[8px] text-zinc-600">原版 66 骨架 · {DIRECTOR_MANNEQUIN_JOINTS.length} 个可控关节，含手掌、手指与脚趾</div></div>
                   </div>
                   <span className="rounded-full border border-white/[0.07] bg-black/20 px-2 py-0.5 text-[8px] text-zinc-500">{Math.round(selectedMannequin.proportions.height * 100)} cm</span>
                 </div>
@@ -1555,7 +1556,11 @@ export default function DirectorDesk({
                   <div className="border-t border-white/[0.065] pt-3">
                     <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">关节微调</span><button type="button" onClick={resetMannequinJoint} className="text-[8px] text-zinc-600 transition hover:text-zinc-200">归零当前关节</button></div>
                     <select value={selectedJoint} onChange={(event) => setSelectedJoint(event.target.value as DirectorMannequinJoint)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-violet-300/35">
-                      {DIRECTOR_MANNEQUIN_JOINT_INFO.map((joint) => <option key={joint.id} value={joint.id}>{joint.group} · {joint.label}</option>)}
+                      {(["躯干", "左臂", "左手", "右臂", "右手", "左腿", "右腿"] as const).map((group) => (
+                        <optgroup key={group} label={group}>
+                          {DIRECTOR_MANNEQUIN_JOINT_INFO.filter((joint) => joint.group === group).map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}
+                        </optgroup>
+                      ))}
                     </select>
                     <div className="mt-3 space-y-2.5">
                       {(["X", "Y", "Z"] as const).map((axis, index) => {
@@ -1569,7 +1574,7 @@ export default function DirectorDesk({
                         )
                       })}
                     </div>
-                    <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 使用标准人物骨骼的安全活动范围，降低反关节与动作穿模。</div>
+                    <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 使用原版骨骼的分部位安全活动范围；手指含根节、中节、末节，足部含踝和前脚掌。</div>
                   </div>
                 </div>
               </section>

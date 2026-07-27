@@ -29,13 +29,20 @@ MAX_DIRECTOR_CAPTURES = 200
 MAX_DIRECTOR_MODELS = 100
 MAX_MODEL_BYTES = 50 * 1024 * 1024
 MAX_CAPTURE_BYTES = 20 * 1024 * 1024
-MANNEQUIN_JOINTS = {
-    "spine", "chest", "neck", "head",
-    "leftShoulder", "leftElbow", "leftWrist",
-    "rightShoulder", "rightElbow", "rightWrist",
-    "leftHip", "leftKnee", "leftAnkle",
-    "rightHip", "rightKnee", "rightAnkle",
+MANNEQUIN_FINGERS = ("Thumb", "Index", "Middle", "Ring", "Pinky")
+MANNEQUIN_FINGER_JOINTS = {
+    f"{side}{finger}{segment}"
+    for side in ("left", "right")
+    for finger in MANNEQUIN_FINGERS
+    for segment in (1, 2, 3)
 }
+MANNEQUIN_JOINTS = {
+    "pelvis", "spine", "spineMiddle", "chest", "neck", "head",
+    "leftClavicle", "leftShoulder", "leftElbow", "leftWrist",
+    "rightClavicle", "rightShoulder", "rightElbow", "rightWrist",
+    "leftHip", "leftKnee", "leftAnkle", "leftToe",
+    "rightHip", "rightKnee", "rightAnkle", "rightToe",
+} | MANNEQUIN_FINGER_JOINTS
 MANNEQUIN_PROPORTION_RANGES = {
     "height": (1.35, 2.15),
     "build": (0.68, 1.38),
@@ -47,23 +54,42 @@ MANNEQUIN_PROPORTION_RANGES = {
     "head_scale": (0.78, 1.25),
 }
 MANNEQUIN_JOINT_RANGES = {
+    "pelvis": ((-35, 35), (-50, 50), (-30, 30)),
     "spine": ((-45, 45), (-55, 55), (-35, 35)),
+    "spineMiddle": ((-35, 35), (-45, 45), (-30, 30)),
     "chest": ((-45, 45), (-55, 55), (-35, 35)),
     "neck": ((-45, 45), (-70, 70), (-35, 35)),
     "head": ((-55, 55), (-80, 80), (-45, 45)),
+    "leftClavicle": ((-35, 35), (-30, 30), (-40, 40)),
     "leftShoulder": ((-120, 120), (-90, 90), (-150, 150)),
     "leftElbow": ((-145, 15), (-45, 45), (-120, 120)),
     "leftWrist": ((-75, 75), (-80, 80), (-75, 75)),
+    "rightClavicle": ((-35, 35), (-30, 30), (-40, 40)),
     "rightShoulder": ((-120, 120), (-90, 90), (-150, 150)),
     "rightElbow": ((-145, 15), (-45, 45), (-120, 120)),
     "rightWrist": ((-75, 75), (-80, 80), (-75, 75)),
     "leftHip": ((-110, 65), (-60, 60), (-55, 55)),
     "leftKnee": ((-5, 145), (-15, 15), (-15, 15)),
     "leftAnkle": ((-55, 45), (-35, 35), (-35, 35)),
+    "leftToe": ((-45, 55), (-18, 18), (-18, 18)),
     "rightHip": ((-110, 65), (-60, 60), (-55, 55)),
     "rightKnee": ((-5, 145), (-15, 15), (-15, 15)),
     "rightAnkle": ((-55, 45), (-35, 35), (-35, 35)),
+    "rightToe": ((-45, 55), (-18, 18), (-18, 18)),
 }
+for side in ("left", "right"):
+    MANNEQUIN_JOINT_RANGES.update({
+        f"{side}Thumb1": ((-55, 65), (-55, 55), (-55, 55)),
+        f"{side}Thumb2": ((-15, 85), (-25, 25), (-25, 25)),
+        f"{side}Thumb3": ((-10, 85), (-20, 20), (-20, 20)),
+    })
+    for finger in ("Index", "Middle", "Ring", "Pinky"):
+        base_spread = 25 if finger in {"Index", "Pinky"} else 20
+        MANNEQUIN_JOINT_RANGES.update({
+            f"{side}{finger}1": ((-25, 95), (-base_spread, base_spread), (-base_spread, base_spread)),
+            f"{side}{finger}2": ((-10, 110), (-12, 12), (-12, 12)),
+            f"{side}{finger}3": ((-10, 100), (-12, 12), (-12, 12)),
+        })
 
 
 class DirectorDeskError(RuntimeError):

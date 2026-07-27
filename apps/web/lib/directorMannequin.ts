@@ -1,20 +1,56 @@
 export const DIRECTOR_MANNEQUIN_JOINTS = [
+  "pelvis",
   "spine",
+  "spineMiddle",
   "chest",
   "neck",
   "head",
+  "leftClavicle",
   "leftShoulder",
   "leftElbow",
   "leftWrist",
+  "leftThumb1",
+  "leftThumb2",
+  "leftThumb3",
+  "leftIndex1",
+  "leftIndex2",
+  "leftIndex3",
+  "leftMiddle1",
+  "leftMiddle2",
+  "leftMiddle3",
+  "leftRing1",
+  "leftRing2",
+  "leftRing3",
+  "leftPinky1",
+  "leftPinky2",
+  "leftPinky3",
+  "rightClavicle",
   "rightShoulder",
   "rightElbow",
   "rightWrist",
+  "rightThumb1",
+  "rightThumb2",
+  "rightThumb3",
+  "rightIndex1",
+  "rightIndex2",
+  "rightIndex3",
+  "rightMiddle1",
+  "rightMiddle2",
+  "rightMiddle3",
+  "rightRing1",
+  "rightRing2",
+  "rightRing3",
+  "rightPinky1",
+  "rightPinky2",
+  "rightPinky3",
   "leftHip",
   "leftKnee",
   "leftAnkle",
+  "leftToe",
   "rightHip",
   "rightKnee",
   "rightAnkle",
+  "rightToe",
 ] as const
 
 export type DirectorMannequinJoint = typeof DIRECTOR_MANNEQUIN_JOINTS[number]
@@ -64,7 +100,7 @@ export interface DirectorMannequinState {
 export interface DirectorMannequinJointInfo {
   id: DirectorMannequinJoint
   label: string
-  group: "躯干" | "左臂" | "右臂" | "左腿" | "右腿"
+  group: "躯干" | "左臂" | "左手" | "右臂" | "右手" | "左腿" | "右腿"
 }
 
 export type DirectorMannequinJointLimits = Record<
@@ -76,41 +112,113 @@ export type DirectorMannequinJointLimits = Record<
 // system used by the original procedural mannequin. These limits describe the
 // safe control envelope of the standard Mesh2Motion humanoid rig.
 export const DIRECTOR_MANNEQUIN_JOINT_LIMITS: DirectorMannequinJointLimits = {
+  pelvis: [[-35, 35], [-50, 50], [-30, 30]],
   spine: [[-45, 45], [-55, 55], [-35, 35]],
+  spineMiddle: [[-35, 35], [-45, 45], [-30, 30]],
   chest: [[-45, 45], [-55, 55], [-35, 35]],
   neck: [[-45, 45], [-70, 70], [-35, 35]],
   head: [[-55, 55], [-80, 80], [-45, 45]],
+  leftClavicle: [[-35, 35], [-30, 30], [-40, 40]],
   leftShoulder: [[-120, 120], [-90, 90], [-150, 150]],
   leftElbow: [[-145, 15], [-45, 45], [-120, 120]],
   leftWrist: [[-75, 75], [-80, 80], [-75, 75]],
+  leftThumb1: [[-55, 65], [-55, 55], [-55, 55]],
+  leftThumb2: [[-15, 85], [-25, 25], [-25, 25]],
+  leftThumb3: [[-10, 85], [-20, 20], [-20, 20]],
+  leftIndex1: [[-25, 95], [-25, 25], [-25, 25]],
+  leftIndex2: [[-10, 110], [-12, 12], [-12, 12]],
+  leftIndex3: [[-10, 100], [-12, 12], [-12, 12]],
+  leftMiddle1: [[-25, 95], [-20, 20], [-20, 20]],
+  leftMiddle2: [[-10, 110], [-12, 12], [-12, 12]],
+  leftMiddle3: [[-10, 100], [-12, 12], [-12, 12]],
+  leftRing1: [[-25, 95], [-20, 20], [-20, 20]],
+  leftRing2: [[-10, 110], [-12, 12], [-12, 12]],
+  leftRing3: [[-10, 100], [-12, 12], [-12, 12]],
+  leftPinky1: [[-25, 95], [-25, 25], [-25, 25]],
+  leftPinky2: [[-10, 110], [-12, 12], [-12, 12]],
+  leftPinky3: [[-10, 100], [-12, 12], [-12, 12]],
+  rightClavicle: [[-35, 35], [-30, 30], [-40, 40]],
   rightShoulder: [[-120, 120], [-90, 90], [-150, 150]],
   rightElbow: [[-145, 15], [-45, 45], [-120, 120]],
   rightWrist: [[-75, 75], [-80, 80], [-75, 75]],
+  rightThumb1: [[-55, 65], [-55, 55], [-55, 55]],
+  rightThumb2: [[-15, 85], [-25, 25], [-25, 25]],
+  rightThumb3: [[-10, 85], [-20, 20], [-20, 20]],
+  rightIndex1: [[-25, 95], [-25, 25], [-25, 25]],
+  rightIndex2: [[-10, 110], [-12, 12], [-12, 12]],
+  rightIndex3: [[-10, 100], [-12, 12], [-12, 12]],
+  rightMiddle1: [[-25, 95], [-20, 20], [-20, 20]],
+  rightMiddle2: [[-10, 110], [-12, 12], [-12, 12]],
+  rightMiddle3: [[-10, 100], [-12, 12], [-12, 12]],
+  rightRing1: [[-25, 95], [-20, 20], [-20, 20]],
+  rightRing2: [[-10, 110], [-12, 12], [-12, 12]],
+  rightRing3: [[-10, 100], [-12, 12], [-12, 12]],
+  rightPinky1: [[-25, 95], [-25, 25], [-25, 25]],
+  rightPinky2: [[-10, 110], [-12, 12], [-12, 12]],
+  rightPinky3: [[-10, 100], [-12, 12], [-12, 12]],
   leftHip: [[-110, 65], [-60, 60], [-55, 55]],
   leftKnee: [[-5, 145], [-15, 15], [-15, 15]],
   leftAnkle: [[-55, 45], [-35, 35], [-35, 35]],
+  leftToe: [[-45, 55], [-18, 18], [-18, 18]],
   rightHip: [[-110, 65], [-60, 60], [-55, 55]],
   rightKnee: [[-5, 145], [-15, 15], [-15, 15]],
   rightAnkle: [[-55, 45], [-35, 35], [-35, 35]],
+  rightToe: [[-45, 55], [-18, 18], [-18, 18]],
 }
 
 export const DIRECTOR_MANNEQUIN_JOINT_INFO: DirectorMannequinJointInfo[] = [
+  { id: "pelvis", label: "骨盆", group: "躯干" },
   { id: "spine", label: "腰 / 脊柱", group: "躯干" },
-  { id: "chest", label: "胸椎", group: "躯干" },
+  { id: "spineMiddle", label: "胸椎中段", group: "躯干" },
+  { id: "chest", label: "胸椎上段", group: "躯干" },
   { id: "neck", label: "颈部", group: "躯干" },
   { id: "head", label: "头部", group: "躯干" },
+  { id: "leftClavicle", label: "左锁骨", group: "左臂" },
   { id: "leftShoulder", label: "左肩", group: "左臂" },
   { id: "leftElbow", label: "左肘", group: "左臂" },
-  { id: "leftWrist", label: "左腕", group: "左臂" },
+  { id: "leftWrist", label: "左腕 / 手掌", group: "左臂" },
+  { id: "leftThumb1", label: "左拇指根节", group: "左手" },
+  { id: "leftThumb2", label: "左拇指中节", group: "左手" },
+  { id: "leftThumb3", label: "左拇指末节", group: "左手" },
+  { id: "leftIndex1", label: "左食指根节", group: "左手" },
+  { id: "leftIndex2", label: "左食指中节", group: "左手" },
+  { id: "leftIndex3", label: "左食指末节", group: "左手" },
+  { id: "leftMiddle1", label: "左中指根节", group: "左手" },
+  { id: "leftMiddle2", label: "左中指中节", group: "左手" },
+  { id: "leftMiddle3", label: "左中指末节", group: "左手" },
+  { id: "leftRing1", label: "左无名指根节", group: "左手" },
+  { id: "leftRing2", label: "左无名指中节", group: "左手" },
+  { id: "leftRing3", label: "左无名指末节", group: "左手" },
+  { id: "leftPinky1", label: "左小指根节", group: "左手" },
+  { id: "leftPinky2", label: "左小指中节", group: "左手" },
+  { id: "leftPinky3", label: "左小指末节", group: "左手" },
+  { id: "rightClavicle", label: "右锁骨", group: "右臂" },
   { id: "rightShoulder", label: "右肩", group: "右臂" },
   { id: "rightElbow", label: "右肘", group: "右臂" },
-  { id: "rightWrist", label: "右腕", group: "右臂" },
+  { id: "rightWrist", label: "右腕 / 手掌", group: "右臂" },
+  { id: "rightThumb1", label: "右拇指根节", group: "右手" },
+  { id: "rightThumb2", label: "右拇指中节", group: "右手" },
+  { id: "rightThumb3", label: "右拇指末节", group: "右手" },
+  { id: "rightIndex1", label: "右食指根节", group: "右手" },
+  { id: "rightIndex2", label: "右食指中节", group: "右手" },
+  { id: "rightIndex3", label: "右食指末节", group: "右手" },
+  { id: "rightMiddle1", label: "右中指根节", group: "右手" },
+  { id: "rightMiddle2", label: "右中指中节", group: "右手" },
+  { id: "rightMiddle3", label: "右中指末节", group: "右手" },
+  { id: "rightRing1", label: "右无名指根节", group: "右手" },
+  { id: "rightRing2", label: "右无名指中节", group: "右手" },
+  { id: "rightRing3", label: "右无名指末节", group: "右手" },
+  { id: "rightPinky1", label: "右小指根节", group: "右手" },
+  { id: "rightPinky2", label: "右小指中节", group: "右手" },
+  { id: "rightPinky3", label: "右小指末节", group: "右手" },
   { id: "leftHip", label: "左髋", group: "左腿" },
   { id: "leftKnee", label: "左膝", group: "左腿" },
   { id: "leftAnkle", label: "左踝", group: "左腿" },
+  { id: "leftToe", label: "左前脚掌 / 脚趾", group: "左腿" },
   { id: "rightHip", label: "右髋", group: "右腿" },
   { id: "rightKnee", label: "右膝", group: "右腿" },
   { id: "rightAnkle", label: "右踝", group: "右腿" },
+  { id: "rightToe", label: "右前脚掌 / 脚趾", group: "右腿" },
 ]
 
 export const DIRECTOR_MANNEQUIN_BODY_PRESETS: Array<{
@@ -163,10 +271,34 @@ function emptyJointMap(): Record<DirectorMannequinJoint, [number, number, number
   ) as Record<DirectorMannequinJoint, [number, number, number]>
 }
 
+type DirectorMannequinJointValues = Partial<
+  Record<DirectorMannequinJoint, [number, number, number]>
+>
+
+function handCurl(
+  side: "left" | "right",
+  base = 5,
+  middle = 8,
+  tip = 5,
+): DirectorMannequinJointValues {
+  const values: DirectorMannequinJointValues = {}
+  for (const finger of ["Index", "Middle", "Ring", "Pinky"] as const) {
+    values[`${side}${finger}1`] = [base, 0, 0]
+    values[`${side}${finger}2`] = [middle, 0, 0]
+    values[`${side}${finger}3`] = [tip, 0, 0]
+  }
+  return values
+}
+
 function pose(
-  values: Partial<Record<DirectorMannequinJoint, [number, number, number]>>,
+  values: DirectorMannequinJointValues,
 ): Record<DirectorMannequinJoint, [number, number, number]> {
-  return { ...emptyJointMap(), ...values }
+  return {
+    ...emptyJointMap(),
+    ...handCurl("left"),
+    ...handCurl("right"),
+    ...values,
+  }
 }
 
 export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
@@ -197,13 +329,19 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
     id: "a-pose",
     label: "A Pose",
     description: "手臂自然展开",
-    joints: pose({ leftShoulder: [0, 0, -34], rightShoulder: [0, 0, 34] }),
+    joints: pose({
+      leftShoulder: [0, 0, -34], rightShoulder: [0, 0, 34],
+      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
+    }),
   },
   {
     id: "t-pose",
     label: "T Pose",
     description: "手臂水平展开",
-    joints: pose({ leftShoulder: [0, 0, -90], rightShoulder: [0, 0, 90] }),
+    joints: pose({
+      leftShoulder: [0, 0, -90], rightShoulder: [0, 0, 90],
+      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
+    }),
   },
   {
     id: "walk",
@@ -266,6 +404,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       leftShoulder: [-4, 0, -8], leftElbow: [-8, 0, 0],
       rightShoulder: [-7, -8, 96], rightElbow: [-18, 0, 82], rightWrist: [0, 10, 2],
       leftHip: [2, 0, -2], rightHip: [-3, 0, 2],
+      ...handCurl("right", 0, 0, 0),
     }),
   },
   {
@@ -276,6 +415,8 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       chest: [0, -12, 0], head: [0, -8, 0],
       leftShoulder: [-4, 0, -8], rightShoulder: [-18, -6, 88],
       rightElbow: [-7, 0, 0], rightWrist: [2, 0, 0],
+      ...handCurl("right", 62, 86, 66),
+      rightIndex1: [0, 0, 0], rightIndex2: [0, 0, 0], rightIndex3: [0, 0, 0],
     }),
   },
   {
@@ -299,6 +440,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       leftElbow: [-18, 0, 14], rightElbow: [-18, 0, -14],
       leftWrist: [8, 0, 4], rightWrist: [8, 0, -4],
       leftHip: [2, 0, -3], rightHip: [-3, 0, 3],
+      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
     }),
   },
   {
@@ -310,6 +452,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       leftShoulder: [-5, 0, -9], leftElbow: [-10, 0, -2],
       rightShoulder: [-35, -10, 48], rightElbow: [-35, 0, 35], rightWrist: [20, 12, 5],
       leftHip: [2, 0, -2], rightHip: [-4, 0, 3],
+      ...handCurl("right", 0, 0, 0),
     }),
   },
   {
@@ -344,6 +487,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       chest: [0, -4, 0], head: [0, 4, 0],
       leftShoulder: [0, 0, -4], leftElbow: [-6, 0, 0],
       rightShoulder: [-5, -8, 110], rightElbow: [-15, 0, 115], rightWrist: [0, 10, -45],
+      ...handCurl("right", 0, 0, 0),
     }),
   },
   {
@@ -357,6 +501,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       leftWrist: [8, 0, 0], rightWrist: [8, 0, 0],
       leftHip: [4, 0, -3], rightHip: [-5, 0, 3],
       leftKnee: [8, 0, 0], rightKnee: [5, 0, 0],
+      ...handCurl("left", 0, 0, 0), ...handCurl("right", 0, 0, 0),
     }),
   },
   {

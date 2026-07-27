@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js"
 import {
+  DIRECTOR_MANNEQUIN_JOINTS,
   normalizeDirectorMannequin,
   type DirectorMannequinJoint,
   type DirectorMannequinState,
@@ -22,22 +23,58 @@ const GROUND_CONTACT_DEPTH = 0.004
 // side suffixes. Without this adapter, symmetric actions cross through the
 // torso before reaching their intended pose.
 const JOINT_BONES: Record<DirectorMannequinJoint, string> = {
+  pelvis: "pelvis",
   spine: "spine_01",
+  spineMiddle: "spine_02",
   chest: "spine_03",
   neck: "neck_01",
   head: "head",
+  leftClavicle: "clavicle_r",
   leftShoulder: "upperarm_r",
   leftElbow: "lowerarm_r",
   leftWrist: "hand_r",
+  leftThumb1: "thumb_01_r",
+  leftThumb2: "thumb_02_r",
+  leftThumb3: "thumb_03_r",
+  leftIndex1: "index_01_r",
+  leftIndex2: "index_02_r",
+  leftIndex3: "index_03_r",
+  leftMiddle1: "middle_01_r",
+  leftMiddle2: "middle_02_r",
+  leftMiddle3: "middle_03_r",
+  leftRing1: "ring_01_r",
+  leftRing2: "ring_02_r",
+  leftRing3: "ring_03_r",
+  leftPinky1: "pinky_01_r",
+  leftPinky2: "pinky_02_r",
+  leftPinky3: "pinky_03_r",
+  rightClavicle: "clavicle_l",
   rightShoulder: "upperarm_l",
   rightElbow: "lowerarm_l",
   rightWrist: "hand_l",
+  rightThumb1: "thumb_01_l",
+  rightThumb2: "thumb_02_l",
+  rightThumb3: "thumb_03_l",
+  rightIndex1: "index_01_l",
+  rightIndex2: "index_02_l",
+  rightIndex3: "index_03_l",
+  rightMiddle1: "middle_01_l",
+  rightMiddle2: "middle_02_l",
+  rightMiddle3: "middle_03_l",
+  rightRing1: "ring_01_l",
+  rightRing2: "ring_02_l",
+  rightRing3: "ring_03_l",
+  rightPinky1: "pinky_01_l",
+  rightPinky2: "pinky_02_l",
+  rightPinky3: "pinky_03_l",
   leftHip: "thigh_r",
   leftKnee: "calf_r",
   leftAnkle: "foot_r",
+  leftToe: "ball_r",
   rightHip: "thigh_l",
   rightKnee: "calf_l",
   rightAnkle: "foot_l",
+  rightToe: "ball_l",
 }
 
 interface BoneFrame {
@@ -169,12 +206,16 @@ function captureBoneFrame(
   return { bone: target, baseWorld: alignment.multiply(restWorld) }
 }
 
-function captureRestBoneFrame(root: THREE.Object3D, boneName: string): BoneFrame | null {
+function captureRestBoneFrame(
+  root: THREE.Object3D,
+  boneName: string,
+  worldCorrection = new THREE.Quaternion(),
+): BoneFrame | null {
   const target = bone(root, boneName)
   if (!target) return null
   return {
     bone: target,
-    baseWorld: target.getWorldQuaternion(new THREE.Quaternion()),
+    baseWorld: worldCorrection.clone().multiply(target.getWorldQuaternion(new THREE.Quaternion())),
   }
 }
 
@@ -259,39 +300,18 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
   const down = new THREE.Vector3(0, -1, 0)
   model.updateMatrixWorld(true)
 
-  const frames = {
-    spineLower: captureBoneFrame(model, "spine_01", "spine_02", up),
-    spineUpper: captureBoneFrame(model, "spine_02", "spine_03", up),
-    chest: captureBoneFrame(model, "spine_03", "neck_01", up),
-    neck: captureBoneFrame(model, "neck_01", "head", up),
-    head: captureBoneFrame(model, "head", "head_leaf", up),
-    leftShoulder: captureBoneFrame(model, JOINT_BONES.leftShoulder, JOINT_BONES.leftElbow, down),
-    leftElbow: captureBoneFrame(model, JOINT_BONES.leftElbow, JOINT_BONES.leftWrist, down),
-    leftWrist: captureBoneFrame(model, JOINT_BONES.leftWrist, "middle_01_r", down),
-    rightShoulder: captureBoneFrame(model, JOINT_BONES.rightShoulder, JOINT_BONES.rightElbow, down),
-    rightElbow: captureBoneFrame(model, JOINT_BONES.rightElbow, JOINT_BONES.rightWrist, down),
-    rightWrist: captureBoneFrame(model, JOINT_BONES.rightWrist, "middle_01_l", down),
-    leftHip: captureBoneFrame(model, JOINT_BONES.leftHip, JOINT_BONES.leftKnee, down),
-    leftKnee: captureBoneFrame(model, JOINT_BONES.leftKnee, JOINT_BONES.leftAnkle, down),
-    // The imported foot is already authored with a flat sole. Preserve that
-    // exact rest frame instead of treating the instep bone as the sole axis.
-    leftAnkle: captureRestBoneFrame(model, JOINT_BONES.leftAnkle),
-    rightHip: captureBoneFrame(model, JOINT_BONES.rightHip, JOINT_BONES.rightKnee, down),
-    rightKnee: captureBoneFrame(model, JOINT_BONES.rightKnee, JOINT_BONES.rightAnkle, down),
-    rightAnkle: captureRestBoneFrame(model, JOINT_BONES.rightAnkle),
-  }
-
-  const identity = new THREE.Quaternion()
-  const spine = combineFrames(identity, state.joints.spine)
-  const chest = combineFrames(spine, state.joints.chest)
-  const neck = combineFrames(chest, state.joints.neck)
-  const head = combineFrames(neck, state.joints.head)
-
-  applyBoneFrame(frames.spineLower, spine)
-  applyBoneFrame(frames.spineUpper, spine)
-  applyBoneFrame(frames.chest, chest)
-  applyBoneFrame(frames.neck, neck)
-  applyBoneFrame(frames.head, head)
+  const frames = Object.fromEntries(
+    DIRECTOR_MANNEQUIN_JOINTS.map((joint) => [
+      joint,
+      captureRestBoneFrame(model, JOINT_BONES[joint]),
+    ]),
+  ) as Record<DirectorMannequinJoint, BoneFrame | null>
+  frames.pelvis = captureBoneFrame(model, JOINT_BONES.pelvis, JOINT_BONES.spine, up)
+  frames.spine = captureBoneFrame(model, JOINT_BONES.spine, JOINT_BONES.spineMiddle, up)
+  frames.spineMiddle = captureBoneFrame(model, JOINT_BONES.spineMiddle, JOINT_BONES.chest, up)
+  frames.chest = captureBoneFrame(model, JOINT_BONES.chest, JOINT_BONES.neck, up)
+  frames.neck = captureBoneFrame(model, JOINT_BONES.neck, JOINT_BONES.head, up)
+  frames.head = captureBoneFrame(model, JOINT_BONES.head, "head_leaf", up)
 
   for (const side of ["left", "right"] as const) {
     const shoulderJoint = `${side}Shoulder` as const
@@ -300,20 +320,100 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
     const hipJoint = `${side}Hip` as const
     const kneeJoint = `${side}Knee` as const
     const ankleJoint = `${side}Ankle` as const
+    frames[shoulderJoint] = captureBoneFrame(
+      model,
+      JOINT_BONES[shoulderJoint],
+      JOINT_BONES[elbowJoint],
+      down,
+    )
+    frames[elbowJoint] = captureBoneFrame(
+      model,
+      JOINT_BONES[elbowJoint],
+      JOINT_BONES[wristJoint],
+      down,
+    )
+    frames[wristJoint] = captureBoneFrame(
+      model,
+      JOINT_BONES[wristJoint],
+      JOINT_BONES[`${side}Middle1`],
+      down,
+    )
+    frames[hipJoint] = captureBoneFrame(model, JOINT_BONES[hipJoint], JOINT_BONES[kneeJoint], down)
+    frames[kneeJoint] = captureBoneFrame(model, JOINT_BONES[kneeJoint], JOINT_BONES[ankleJoint], down)
+    // The imported foot is already authored with a flat sole. Preserve that
+    // exact rest frame instead of treating the instep bone as the sole axis.
+    frames[ankleJoint] = captureRestBoneFrame(model, JOINT_BONES[ankleJoint])
 
-    const shoulder = combineFrames(chest, state.joints[shoulderJoint])
+    const wristBone = bone(model, JOINT_BONES[wristJoint])
+    const wristFrame = frames[wristJoint]
+    const wristCorrection = wristBone && wristFrame
+      ? wristFrame.baseWorld.clone().multiply(
+        wristBone.getWorldQuaternion(new THREE.Quaternion()).invert(),
+      )
+      : new THREE.Quaternion()
+    for (const finger of ["Thumb", "Index", "Middle", "Ring", "Pinky"] as const) {
+      for (const segment of [1, 2, 3] as const) {
+        const fingerJoint = `${side}${finger}${segment}` as DirectorMannequinJoint
+        frames[fingerJoint] = captureRestBoneFrame(
+          model,
+          JOINT_BONES[fingerJoint],
+          wristCorrection,
+        )
+      }
+    }
+  }
+
+  const identity = new THREE.Quaternion()
+  const pelvis = combineFrames(identity, state.joints.pelvis)
+  const spine = combineFrames(pelvis, state.joints.spine)
+  const spineMiddle = combineFrames(spine, state.joints.spineMiddle)
+  const chest = combineFrames(spineMiddle, state.joints.chest)
+  const neck = combineFrames(chest, state.joints.neck)
+  const head = combineFrames(neck, state.joints.head)
+
+  applyBoneFrame(frames.pelvis, pelvis)
+  applyBoneFrame(frames.spine, spine)
+  applyBoneFrame(frames.spineMiddle, spineMiddle)
+  applyBoneFrame(frames.chest, chest)
+  applyBoneFrame(frames.neck, neck)
+  applyBoneFrame(frames.head, head)
+
+  for (const side of ["left", "right"] as const) {
+    const clavicleJoint = `${side}Clavicle` as const
+    const shoulderJoint = `${side}Shoulder` as const
+    const elbowJoint = `${side}Elbow` as const
+    const wristJoint = `${side}Wrist` as const
+    const hipJoint = `${side}Hip` as const
+    const kneeJoint = `${side}Knee` as const
+    const ankleJoint = `${side}Ankle` as const
+    const toeJoint = `${side}Toe` as const
+
+    const clavicle = combineFrames(chest, state.joints[clavicleJoint])
+    const shoulder = combineFrames(clavicle, state.joints[shoulderJoint])
     const elbow = combineFrames(shoulder, state.joints[elbowJoint])
     const wrist = combineFrames(elbow, state.joints[wristJoint])
+    applyBoneFrame(frames[clavicleJoint], clavicle)
     applyBoneFrame(frames[shoulderJoint], shoulder)
     applyBoneFrame(frames[elbowJoint], elbow)
     applyBoneFrame(frames[wristJoint], wrist)
 
-    const hip = combineFrames(identity, state.joints[hipJoint])
+    for (const finger of ["Thumb", "Index", "Middle", "Ring", "Pinky"] as const) {
+      let fingerControl = wrist
+      for (const segment of [1, 2, 3] as const) {
+        const fingerJoint = `${side}${finger}${segment}` as DirectorMannequinJoint
+        fingerControl = combineFrames(fingerControl, state.joints[fingerJoint])
+        applyBoneFrame(frames[fingerJoint], fingerControl)
+      }
+    }
+
+    const hip = combineFrames(pelvis, state.joints[hipJoint])
     const knee = combineFrames(hip, state.joints[kneeJoint])
     const ankle = combineFrames(knee, state.joints[ankleJoint])
+    const toe = combineFrames(ankle, state.joints[toeJoint])
     applyBoneFrame(frames[hipJoint], hip)
     applyBoneFrame(frames[kneeJoint], knee)
     applyBoneFrame(frames[ankleJoint], ankle)
+    applyBoneFrame(frames[toeJoint], toe)
   }
 }
 

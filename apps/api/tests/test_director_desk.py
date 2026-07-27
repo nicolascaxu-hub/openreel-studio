@@ -15,6 +15,8 @@ from app.db.models import Project, WorkflowNode
 from app.services.director_desk import (
     DirectorDeskError,
     DirectorDeskService,
+    MANNEQUIN_JOINTS,
+    MANNEQUIN_JOINT_RANGES,
     default_director_scene,
     normalize_director_state,
 )
@@ -83,6 +85,7 @@ def test_director_normalizes_legacy_joint_angles_into_standard_rig_limits() -> N
         "joints": {
             "leftKnee": [-30, 80, -90],
             "rightShoulder": [170, -120, 175],
+            "leftIndex2": [130, -20, 25],
         },
     }
 
@@ -91,7 +94,18 @@ def test_director_normalizes_legacy_joint_angles_into_standard_rig_limits() -> N
 
     assert joints["leftKnee"] == [-5.0, 15.0, -15.0]
     assert joints["rightShoulder"] == [120.0, -90.0, 150.0]
+    assert joints["leftIndex2"] == [110.0, -12.0, 12.0]
     assert scene["objects"][0]["mannequin"]["joints"]["leftKnee"] == [-30, 80, -90]
+
+
+def test_director_exposes_every_deforming_standard_rig_joint() -> None:
+    assert len(MANNEQUIN_JOINTS) == 52
+    assert set(MANNEQUIN_JOINT_RANGES) == MANNEQUIN_JOINTS
+    assert {
+        "pelvis", "spineMiddle", "leftClavicle", "rightClavicle",
+        "leftThumb1", "leftIndex3", "rightRing2", "rightPinky3",
+        "leftToe", "rightToe",
+    } <= MANNEQUIN_JOINTS
 
 
 @pytest.mark.asyncio
