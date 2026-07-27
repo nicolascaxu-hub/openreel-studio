@@ -26,6 +26,7 @@ import ReactFlow, {
 import "reactflow/dist/style.css"
 import { AnimatePresence, motion } from "framer-motion"
 import { createPortal } from "react-dom"
+import dynamic from "next/dynamic"
 import { useCanvasStore } from "@/stores/canvasStore"
 import { useProjectStore } from "@/stores/projectStore"
 import { useChatStore } from "@/stores/chatStore"
@@ -108,6 +109,8 @@ import {
   type VideoProtocolSummary,
 } from "@/lib/videoProtocolLimits"
 import type { WorkspaceView } from "@/components/workspace/WorkspaceViewTabs"
+
+const DirectorDesk = dynamic(() => import("./DirectorDesk"), { ssr: false })
 
 interface GridDropTarget {
   gridNodeId: string
@@ -11169,6 +11172,8 @@ export default function WorkflowCanvas({
   const [nodePreviewRequest, setNodePreviewRequest] = useState<NodePreviewRequest | null>(null)
   const [nodeDetailEditRequestKey, setNodeDetailEditRequestKey] = useState<string | null>(null)
   const [panoramaViewer, setPanoramaViewer] = useState<PanoramaViewerRequest | null>(null)
+  const [directorDeskOpen, setDirectorDeskOpen] = useState(false)
+  const [directorCanvasPosition, setDirectorCanvasPosition] = useState({ x: 120, y: 120 })
   const [mediaHistoryOpen, setMediaHistoryOpen] = useState(false)
   const [mediaHistoryItems, setMediaHistoryItems] = useState<ProjectMediaHistoryItem[]>([])
   const [mediaHistoryFilter, setMediaHistoryFilter] = useState<MediaHistoryFilter>("all")
@@ -13148,6 +13153,33 @@ export default function WorkflowCanvas({
     ]
   }, [])
 
+  const openDirectorDesk = useCallback(() => {
+    if (!currentProject?.id) return
+    const rect = canvasContainerRef.current?.getBoundingClientRect()
+    const point = rect
+      ? { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.45 }
+      : { x: window.innerWidth * 0.5, y: window.innerHeight * 0.45 }
+    const position = flowInstance?.screenToFlowPosition(point) ?? { x: 120, y: 120 }
+    setDirectorCanvasPosition(position)
+    setDirectorDeskOpen(true)
+  }, [currentProject?.id, flowInstance])
+
+  const handleDirectorCapturePromoted = useCallback(async (nodeId: string, created: boolean) => {
+    if (!currentProject?.id) return
+    const projectId = currentProject.id
+    if (created) {
+      pushUndo({
+        label: "导演台截图放入画布",
+        undo: async () => {
+          await deleteProjectNode(projectId, nodeId)
+        },
+      })
+    }
+    setDirectorDeskOpen(false)
+    await refreshCanvas({ preserveOnEmpty: true, preserveLayout: true })
+    selectNode(nodeId)
+  }, [currentProject?.id, pushUndo, refreshCanvas, selectNode])
+
   const runUndo = useCallback(async () => {
     const record = undoStackRef.current.pop()
     if (!record) return
@@ -14432,6 +14464,22 @@ export default function WorkflowCanvas({
         <span className="text-base font-light leading-none">+</span>
       </button>
 
+      <button
+        type="button"
+        title="打开 3D 导演台"
+        aria-label="打开 3D 导演台"
+        data-openreel-workflow-ui="true"
+        disabled={!currentProject?.id}
+        onClick={(event) => {
+          event.stopPropagation()
+          openDirectorDesk()
+        }}
+        className="studio-canvas-fab absolute left-16 top-4 z-40 flex h-10 items-center justify-center gap-1.5 px-3 text-[11px] font-medium text-zinc-200 backdrop-blur-xl transition hover:border-cyan-300/40 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <span className="text-sm leading-none">◇</span>
+        <span>导演台</span>
+      </button>
+
       <CanvasGroupLayer
         projectId={currentProject?.id}
         nodes={flowNodes}
@@ -14706,6 +14754,15 @@ export default function WorkflowCanvas({
           title={panoramaViewer.title}
           onClose={() => setPanoramaViewer(null)}
           onCapture={savePanoramaCapture}
+        />
+      )}
+      {directorDeskOpen && currentProject?.id && (
+        <DirectorDesk
+          projectId={currentProject.id}
+          projectTitle={currentProject.title}
+          canvasPosition={directorCanvasPosition}
+          onClose={() => setDirectorDeskOpen(false)}
+          onCapturePromoted={handleDirectorCapturePromoted}
         />
       )}
         </div>

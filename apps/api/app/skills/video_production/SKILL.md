@@ -20,6 +20,7 @@ applies_to: 视频制作 视频工作流 默认视频流程 workflow template ge
 - prompt 模块索引用于模板维护、局部改提示词或 standalone 节点：剧本 `script_writing`，人物图 `character_prompt`，场景图 `scene_prompt`，宫格分镜 `shot_grid_prompt`，视频提示词 `video_prompt`，故事模板图 `story_template_method`。
 - 每个节点都是独立任务单元；`task` 只记录进度；生产依赖写节点 `fields.references`，图片引用用 `role:"visual_reference"`，文字上下文用 `role:"context"`，直接采用已有图片用 `role:"source_image"`。
 - 最终 image/video prompt 提到参考图时使用候选表给出的精确 `@参考图标签`，标签沿用完整画布标题并保留其中的 `|`、`｜`、空格、书名号等字符，例如“人物沿用 `@《回头》主角｜15岁少年`，镜头沿用 `@宫格分镜图`”。后端把标签绑定到稳定的图片节点 ID，参考图列表换序后仍指向同一张图。
+- `fields.director_capture=true` 的图片是导演台构图参考，只继承人物/物体站位、朝向、姿态、比例、遮挡、景别和机位；正式分镜同时引用人物图与场景图重绘，不保留白模、色块、网格或编辑器外观，也不把构图参考自动当作视频首帧。
 - `skill.get(detail="full")` 返回的正文是指南内容；`path` 只做诊断来源，不作为 `file.read_text` 目标。
 
 ## 默认模板
@@ -102,6 +103,8 @@ Standalone 节点运行使用 `node.run`；graph workflow 运行使用 `workflow
 外部执行客户端运行媒体节点后，通过同一节点的服务端终态事件等待取得结果；供应商轮询由后台 UMA 承担，客户端不重复查询节点状态，也不因等待超时再次调用 `node.run`。
 
 视频参考素材统一在 `fields.references` 中各写一次，不把同一图片重复写入 `reference_images` 或 `depends_on`。`video_mode=first_frame` 时，后端会把第一张已解析图片参考作为首帧；可见节点编号 `0` 可直接引用。
+
+导演台截图进入画布后是普通 completed image 节点，带 `fields.director_capture=true` 和 `reference_usage="composition_only"`。制作正式分镜时，把它与人物参考图、场景参考图一起作为目标 image 节点的 `visual_reference`；prompt 明确指出导演台图只约束构图关系。只有用户明确选择该图作为视频首帧时，才将其用于 `video_mode=first_frame`。
 
 Standalone 节点仍要写清：
 

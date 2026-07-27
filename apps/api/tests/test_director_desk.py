@@ -1,0 +1,193 @@
+import base64
+import io
+import json
+from pathlib import Path
+
+import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.datastructures import UploadFile
+
+from app.config import settings
+from app.db import session as db_session
+from app.db.models import Project, WorkflowNode
+from app.services.director_desk import DirectorDeskError, DirectorDeskService, default_director_scene
+
+
+async def _setup_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'director-desk.db'}"
+    engine = create_async_engine(database_url, echo=False, future=True, connect_args={"timeout": 30})
+    session_local = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
+    monkeypatch.setattr(db_session, "engine", engine)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", session_local)
+    monkeypatch.setattr(settings, "PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "STORAGE_PATH", str(tmp_path / "storage"))
+    monkeypatch.setattr(settings, "STORAGE_DIR", str(tmp_path / "storage"))
+    await db_session.init_db()
+    async with db_session.session_scope() as session:
+        session.add(Project(id="director-project", title="Director Test", state_json="{}"))
+        session.add(Project(id="other-project", title="Other", state_json="{}"))
+        await session.commit()
+
+
+def _scene() -> dict:
+    scene = default_director_scene()
+    scene["objects"] = [{
+        "id": "character-1",
+        "asset_id": "builtin:mannequin",
+        "name": "人物 1",
+        "color": "#ef4444",
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1],
+        "visible": True,
+        "locked": False,
+    }]
+    return scene
+
+
+def _fake_glb() -> bytes:
+    document = json.dumps({"asset": {"version": "2.0"}, "scene": 0, "scenes": [{}]}, separators=(",", ":")).encode("utf-8")
+    padding = (4 - len(document) % 4) % 4
+    document += b" " * padding
+    length = 12 + 8 + len(document)
+    return (
+        b"glTF"
+        + (2).to_bytes(4, "little")
+        + length.to_bytes(4, "little")
+        + len(document).to_bytes(4, "little")
+        + b"JSON"
+        + document
+    )
+
+
+def test_director_routes_are_registered() -> None:
+    from app.main import app
+
+    routes = {(method, route.path) for route in app.routes for method in getattr(route, "methods", set())}
+    assert ("GET", "/api/projects/{project_id}/director") in routes
+    assert ("POST", "/api/projects/{project_id}/director/models") in routes
+    assert ("POST", "/api/projects/{project_id}/director/captures") in routes
+    assert ("POST", "/api/projects/{project_id}/director/captures/{capture_id}/canvas") in routes
+
+
+@pytest.mark.asyncio
+async def test_director_capture_stays_in_timeline_until_explicit_promotion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    await _setup_db(monkeypatch, tmp_path)
+    async with db_session.session_scope() as session:
+        service = DirectorDeskService(session)
+        initial = await service.get("director-project")
+        assert initial["revision"] == 0
+        assert initial["captures"] == []
+
+        saved_scene = await service.save_scene("director-project", _scene(), expected_revision=0)
+        assert saved_scene["revision"] == 1
+
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        png_data = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+        director, capture = await service.add_capture(
+            "director-project",
+            title="双人对话",
+            data_url=png_data,
+            scene_snapshot=_scene(),
+            actor_legend=[{"label": "人物 1", "color": "#ef4444"}],
+            expected_revision=1,
+        )
+        assert director["revision"] == 2
+        assert capture["promoted_node_id"] is None
+
+        nodes_before = list((await session.exec(select(WorkflowNode))).all())
+        assert nodes_before == []
+
+        promoted, node, created = await service.promote_capture(
+            "director-project",
+            capture["id"],
+            x=320,
+            y=180,
+        )
+        assert created is True
+        assert node.type == "image"
+        assert node.status == "completed"
+        assert (node.position_x, node.position_y) == (320, 180)
+        node_input = json.loads(node.input_json or "{}")
+        assert node_input["fields"]["director_capture"] is True
+        assert node_input["fields"]["director_capture_id"] == capture["id"]
+        assert node_input["fields"]["reference_usage"] == "composition_only"
+        assert promoted["captures"][0]["promoted_node_id"] == node.id
+
+        second_state, second_node, second_created = await service.promote_capture(
+            "director-project",
+            capture["id"],
+            x=900,
+            y=900,
+        )
+        assert second_created is False
+        assert second_node.id == node.id
+        assert second_state["captures"][0]["promoted_node_id"] == node.id
+        project_nodes = list((await session.exec(select(WorkflowNode))).all())
+        assert len(project_nodes) == 1
+    await db_session.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_director_glb_is_project_scoped_and_referenced_models_cannot_be_deleted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    await _setup_db(monkeypatch, tmp_path)
+    async with db_session.session_scope() as session:
+        service = DirectorDeskService(session)
+        upload = UploadFile(file=io.BytesIO(_fake_glb()), filename="room.glb")
+        director, asset = await service.add_model("director-project", upload, expected_revision=0)
+        assert director["revision"] == 1
+        assert asset["url"].startswith("/api/projects/director-project/director/models/")
+        target, resolved = await service.model_file("director-project", asset["id"])
+        assert target.read_bytes() == _fake_glb()
+        assert resolved["id"] == asset["id"]
+
+        scene = _scene()
+        scene["objects"].append({
+            "id": "custom-1",
+            "asset_id": asset["id"],
+            "name": "房间",
+            "color": "#a1a1aa",
+            "position": [0, 0, 0],
+            "rotation": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "visible": True,
+            "locked": False,
+        })
+        await service.save_scene("director-project", scene, expected_revision=1)
+        with pytest.raises(DirectorDeskError, match="仍被场景或截图引用") as error:
+            await service.delete_model("director-project", asset["id"], expected_revision=2)
+        assert error.value.status_code == 409
+
+        with pytest.raises(DirectorDeskError, match="模型不存在") as other_error:
+            await service.model_file("other-project", asset["id"])
+        assert other_error.value.status_code == 404
+    await db_session.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_director_rejects_invalid_glb_and_stale_revision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    await _setup_db(monkeypatch, tmp_path)
+    async with db_session.session_scope() as session:
+        service = DirectorDeskService(session)
+        invalid = UploadFile(file=io.BytesIO(b"not-a-model"), filename="broken.glb")
+        with pytest.raises(DirectorDeskError, match="有效的 GLB"):
+            await service.add_model("director-project", invalid, expected_revision=0)
+        model_dir = settings.storage_path_resolved / "director-project" / "director_models"
+        assert not list(model_dir.glob("*.glb"))
+
+        await service.save_scene("director-project", _scene(), expected_revision=0)
+        with pytest.raises(DirectorDeskError, match="其他窗口更新") as conflict:
+            await service.save_scene("director-project", _scene(), expected_revision=0)
+        assert conflict.value.status_code == 409
+    await db_session.engine.dispose()

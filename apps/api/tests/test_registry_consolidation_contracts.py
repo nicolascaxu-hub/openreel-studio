@@ -381,6 +381,9 @@ async def test_video_production_skill_guides_reference_driven_short_video_nodes(
     assert "Prompt Skill 索引" in guide
     assert "精确 `@参考图标签`" in guide
     assert "稳定的图片节点 ID" in guide
+    assert "fields.director_capture=true" in guide
+    assert "reference_usage=\"composition_only\"" in guide
+    assert "不把构图参考自动当作视频首帧" in guide
     assert "默认模板" in guide
     assert "剧情/主题 `plot`" in guide
     assert "duration_seconds" in guide

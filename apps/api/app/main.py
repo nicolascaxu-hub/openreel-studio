@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes_assets import router as assets_router
 from app.api.routes_agent_debug import router as agent_debug_router
 from app.api.routes_chat import router as chat_router
+from app.api.routes_director import router as director_router
 from app.api.routes_media import router as media_router
 from app.api.routes_models import router as models_router
 from app.api.routes_nodes import router as nodes_router
@@ -105,6 +106,7 @@ app.add_middleware(
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(agent_debug_router, prefix="/api/agent", tags=["agent-debug"])
 app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
+app.include_router(director_router, prefix="/api/projects", tags=["director"])
 app.include_router(nodes_router, prefix="/api/nodes", tags=["nodes"])
 app.include_router(assets_router, prefix="/api/assets", tags=["assets"])
 app.include_router(media_router, prefix="/api/media", tags=["media"])

@@ -1154,6 +1154,130 @@ export async function createPanoramaCapture<T = Record<string, unknown>>(
   return result
 }
 
+export async function getProjectDirector<T = Record<string, unknown>>(projectId: string): Promise<T> {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/director`)
+  return asJson<T>(res)
+}
+
+export async function saveProjectDirectorScene<T = Record<string, unknown>>(
+  projectId: string,
+  input: { scene: Record<string, unknown>; expected_revision?: number },
+): Promise<T> {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/director/scene`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return asJson<T>(res)
+}
+
+export async function uploadProjectDirectorModel<T = Record<string, unknown>>(
+  projectId: string,
+  file: File,
+  expectedRevision?: number,
+): Promise<T> {
+  const base = await getApiBase()
+  const form = new FormData()
+  form.append('file', file)
+  if (expectedRevision !== undefined) form.append('expected_revision', String(expectedRevision))
+  const res = await fetch(`${base}/api/projects/${projectId}/director/models`, {
+    method: 'POST',
+    body: form,
+  })
+  return asJson<T>(res)
+}
+
+export async function deleteProjectDirectorModel<T = Record<string, unknown>>(
+  projectId: string,
+  modelId: string,
+  expectedRevision?: number,
+): Promise<T> {
+  const base = await getApiBase()
+  const params = expectedRevision === undefined ? '' : `?expected_revision=${expectedRevision}`
+  const res = await fetch(`${base}/api/projects/${projectId}/director/models/${modelId}${params}`, {
+    method: 'DELETE',
+  })
+  return asJson<T>(res)
+}
+
+export async function createProjectDirectorCapture<T = Record<string, unknown>>(
+  projectId: string,
+  input: {
+    title?: string
+    data_url: string
+    scene_snapshot: Record<string, unknown>
+    actor_legend?: Array<Record<string, unknown>>
+    expected_revision?: number
+  },
+): Promise<T> {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/director/captures`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return asJson<T>(res)
+}
+
+export async function updateProjectDirectorCapture<T = Record<string, unknown>>(
+  projectId: string,
+  captureId: string,
+  input: { title?: string; expected_revision?: number },
+): Promise<T> {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/director/captures/${captureId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return asJson<T>(res)
+}
+
+export async function reorderProjectDirectorCaptures<T = Record<string, unknown>>(
+  projectId: string,
+  captureIds: string[],
+  expectedRevision?: number,
+): Promise<T> {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/director/captures/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ capture_ids: captureIds, expected_revision: expectedRevision }),
+  })
+  return asJson<T>(res)
+}
+
+export async function deleteProjectDirectorCapture<T = Record<string, unknown>>(
+  projectId: string,
+  captureId: string,
+  expectedRevision?: number,
+): Promise<T> {
+  const base = await getApiBase()
+  const params = expectedRevision === undefined ? '' : `?expected_revision=${expectedRevision}`
+  const res = await fetch(`${base}/api/projects/${projectId}/director/captures/${captureId}${params}`, {
+    method: 'DELETE',
+  })
+  return asJson<T>(res)
+}
+
+export async function promoteProjectDirectorCapture<T = Record<string, unknown>>(
+  projectId: string,
+  captureId: string,
+  input: { x?: number; y?: number },
+): Promise<T> {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/director/captures/${captureId}/canvas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const result = await asJson<T>(res)
+  requestCanvasRefresh({ projectId, preserveOnEmpty: true, preserveLayout: true })
+  return result
+}
+
 export async function deleteProjectNode(projectId: string, nodeId: string) {
   const base = await getApiBase()
   const res = await fetch(`${base}/api/projects/${projectId}/nodes/${nodeId}`, {
@@ -2198,6 +2322,15 @@ export const api = {
   uploadProjectNodeMedia,
   runProjectMediaOperation,
   createPanoramaCapture,
+  getProjectDirector,
+  saveProjectDirectorScene,
+  uploadProjectDirectorModel,
+  deleteProjectDirectorModel,
+  createProjectDirectorCapture,
+  updateProjectDirectorCapture,
+  reorderProjectDirectorCaptures,
+  deleteProjectDirectorCapture,
+  promoteProjectDirectorCapture,
   listProjectMediaHistory,
   restoreProjectMediaHistoryItem,
   deleteProjectMediaHistoryItem,
