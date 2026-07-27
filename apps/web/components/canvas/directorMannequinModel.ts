@@ -44,26 +44,6 @@ function jointGroup(
   return group
 }
 
-function capsule(
-  parent: THREE.Object3D,
-  length: number,
-  radius: number,
-  meshMaterial: THREE.Material,
-  widthScale = 1,
-  depthScale = 1,
-): THREE.Mesh {
-  const safeRadius = Math.max(0.012, radius)
-  const bodyLength = Math.max(0.01, length - safeRadius * 2)
-  return addMesh(
-    parent,
-    new THREE.CapsuleGeometry(safeRadius, bodyLength, 8, 18),
-    meshMaterial,
-    [0, -length / 2, 0],
-    [0, 0, 0],
-    [widthScale, 1, depthScale],
-  )
-}
-
 function colorMaterial(color: string, lightnessOffset = 0): THREE.MeshStandardMaterial {
   const resolved = new THREE.Color(color)
   resolved.offsetHSL(0, -0.04, lightnessOffset)
@@ -86,65 +66,167 @@ interface LimbOptions {
   isLeg: boolean
 }
 
-function addLimb(
+interface LimbRig {
+  upper: THREE.Group
+  middle: THREE.Group
+  end: THREE.Group
+  options: LimbOptions
+}
+
+function createLimbRig(
   parent: THREE.Object3D,
   options: LimbOptions,
   state: DirectorMannequinState,
-  surface: THREE.Material,
-  jointSurface: THREE.Material,
-): void {
+): LimbRig {
   const upper = jointGroup(parent, options.upperJoint, options.anchor, state)
-  addMesh(
-    upper,
-    new THREE.SphereGeometry(options.upperRadius * 1.07, 20, 14),
-    jointSurface,
-    [0, 0, 0],
-    [0, 0, 0],
-    [1, options.isLeg ? 0.88 : 1, options.isLeg ? 1.08 : 1],
-  )
-  capsule(upper, options.upperLength, options.upperRadius, surface, options.isLeg ? 1.08 : 1, 1.02)
-
   const middle = jointGroup(upper, options.middleJoint, [0, -options.upperLength, 0], state)
-  addMesh(
-    middle,
-    new THREE.SphereGeometry(options.lowerRadius * 1.12, 18, 12),
-    jointSurface,
-    [0, 0, 0],
-    [0, 0, 0],
-    [options.isLeg ? 1.06 : 1, 0.9, 1],
-  )
-  capsule(middle, options.lowerLength, options.lowerRadius, surface, 0.96, 0.98)
-
   const end = jointGroup(middle, options.endJoint, [0, -options.lowerLength, 0], state)
-  addMesh(
-    end,
-    new THREE.SphereGeometry(options.lowerRadius * 0.92, 16, 10),
-    jointSurface,
-    [0, 0, 0],
-    [0, 0, 0],
-    [1, 0.82, 1],
-  )
+  return { upper, middle, end, options }
+}
 
-  if (options.isLeg) {
-    const footLength = options.lowerLength * 0.34
+function taperedLimbGeometry(
+  controlPoints: THREE.Vector3[],
+  controlRadii: number[],
+): THREE.BufferGeometry {
+  const radialSegments = 20
+  const positions: number[] = []
+  const indices: number[] = []
+  const points: THREE.Vector3[] = []
+  const radii: number[] = []
+  const ringsPerSection = 5
+  for (let section = 0; section < controlPoints.length - 1; section += 1) {
+    for (let step = 0; step < ringsPerSection; step += 1) {
+      const mix = step / ringsPerSection
+      points.push(controlPoints[section].clone().lerp(controlPoints[section + 1], mix))
+      radii.push(THREE.MathUtils.lerp(controlRadii[section], controlRadii[section + 1], mix))
+    }
+  }
+  points.push(controlPoints[controlPoints.length - 1].clone())
+  radii.push(controlRadii[controlRadii.length - 1])
+  const tangents = points.map((point, index) => {
+    if (index === 0) return points[1].clone().sub(point).normalize()
+    if (index === points.length - 1) return point.clone().sub(points[index - 1]).normalize()
+    return points[index + 1].clone().sub(points[index - 1]).normalize()
+  })
+  const normals: THREE.Vector3[] = []
+  const binormals: THREE.Vector3[] = []
+  const startAxis = Math.abs(tangents[0].dot(new THREE.Vector3(0, 0, 1))) < 0.9
+    ? new THREE.Vector3(0, 0, 1)
+    : new THREE.Vector3(1, 0, 0)
+  normals.push(new THREE.Vector3().crossVectors(tangents[0], startAxis).normalize())
+  binormals.push(new THREE.Vector3().crossVectors(tangents[0], normals[0]).normalize())
+  for (let index = 1; index < points.length; index += 1) {
+    const rotation = new THREE.Quaternion().setFromUnitVectors(tangents[index - 1], tangents[index])
+    const normal = normals[index - 1].clone().applyQuaternion(rotation)
+    normal.addScaledVector(tangents[index], -normal.dot(tangents[index])).normalize()
+    normals.push(normal)
+    binormals.push(new THREE.Vector3().crossVectors(tangents[index], normal).normalize())
+  }
+  for (let ring = 0; ring < points.length; ring += 1) {
+    for (let side = 0; side < radialSegments; side += 1) {
+      const angle = (side / radialSegments) * Math.PI * 2
+      const offset = normals[ring].clone().multiplyScalar(Math.cos(angle) * radii[ring])
+      offset.addScaledVector(binormals[ring], Math.sin(angle) * radii[ring])
+      const vertex = points[ring].clone().add(offset)
+      positions.push(vertex.x, vertex.y, vertex.z)
+    }
+  }
+  for (let ring = 0; ring < points.length - 1; ring += 1) {
+    for (let side = 0; side < radialSegments; side += 1) {
+      const nextSide = (side + 1) % radialSegments
+      const a = ring * radialSegments + side
+      const b = ring * radialSegments + nextSide
+      const c = (ring + 1) * radialSegments + side
+      const d = (ring + 1) * radialSegments + nextSide
+      indices.push(a, c, b, b, c, d)
+    }
+  }
+  const startCenter = positions.length / 3
+  positions.push(points[0].x, points[0].y, points[0].z)
+  const endCenter = positions.length / 3
+  const endPoint = points[points.length - 1]
+  positions.push(endPoint.x, endPoint.y, endPoint.z)
+  const lastRing = (points.length - 1) * radialSegments
+  for (let side = 0; side < radialSegments; side += 1) {
+    const nextSide = (side + 1) % radialSegments
+    indices.push(startCenter, nextSide, side)
+    indices.push(endCenter, lastRing + side, lastRing + nextSide)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+function limbPoint(root: THREE.Object3D, joint: THREE.Object3D): THREE.Vector3 {
+  const point = joint.getWorldPosition(new THREE.Vector3())
+  return root.worldToLocal(point)
+}
+
+function addSmoothLimb(
+  root: THREE.Group,
+  rig: LimbRig,
+  surface: THREE.Material,
+): void {
+  const upper = limbPoint(root, rig.upper)
+  const middle = limbPoint(root, rig.middle)
+  const end = limbPoint(root, rig.end)
+  const upperMiddle = upper.clone().lerp(middle, 0.5)
+  const lowerMiddle = middle.clone().lerp(end, 0.52)
+  const { upperRadius, lowerRadius, lowerLength, isLeg } = rig.options
+  const geometry = taperedLimbGeometry(
+    [upper, upperMiddle, middle, lowerMiddle, end],
+    isLeg
+      ? [upperRadius * 1.08, upperRadius, lowerRadius * 0.92, lowerRadius * 1.12, lowerRadius * 0.72]
+      : [upperRadius * 1.08, upperRadius, lowerRadius * 0.9, lowerRadius, lowerRadius * 0.72],
+  )
+  addMesh(root, geometry, surface)
+
+  if (!isLeg) {
     addMesh(
-      end,
-      new THREE.CapsuleGeometry(options.lowerRadius * 0.94, Math.max(0.02, footLength - options.lowerRadius * 1.4), 6, 14),
+      root,
+      new THREE.SphereGeometry(1, 24, 16),
       surface,
-      [0, -options.lowerRadius * 0.34, footLength * 0.42],
-      [Math.PI / 2, 0, 0],
-      [1.06, 1, 0.88],
-    )
-  } else {
-    const handLength = options.lowerLength * 0.29
-    addMesh(
-      end,
-      new THREE.CapsuleGeometry(options.lowerRadius * 0.68, Math.max(0.015, handLength - options.lowerRadius * 1.2), 6, 14),
-      surface,
-      [0, -handLength * 0.42, 0],
+      upper.toArray() as [number, number, number],
       [0, 0, 0],
-      [0.82, 1, 0.72],
+      [upperRadius * 1.05, upperRadius * 1.24, upperRadius],
     )
+  }
+
+  const endQuaternion = rig.end.getWorldQuaternion(new THREE.Quaternion())
+  const localQuaternion = root.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(endQuaternion)
+
+  if (isLeg) {
+    const footLength = lowerLength * 0.35
+    const center = new THREE.Vector3(0, -lowerRadius * 0.25, footLength * 0.42)
+      .applyQuaternion(localQuaternion)
+      .add(end)
+    const foot = addMesh(
+      root,
+      new THREE.SphereGeometry(1, 22, 14),
+      surface,
+      center.toArray() as [number, number, number],
+      [0, 0, 0],
+      [lowerRadius * 0.76, lowerRadius * 0.46, footLength * 0.54],
+    )
+    foot.quaternion.copy(localQuaternion)
+  } else {
+    const handLength = lowerLength * 0.38
+    const center = new THREE.Vector3(0, -handLength * 0.38, 0)
+      .applyQuaternion(localQuaternion)
+      .add(end)
+    const hand = addMesh(
+      root,
+      new THREE.SphereGeometry(1, 20, 14),
+      surface,
+      center.toArray() as [number, number, number],
+      [0, 0, 0],
+      [lowerRadius * 0.62, handLength * 0.58, lowerRadius * 0.5],
+    )
+    hand.quaternion.copy(localQuaternion)
   }
 }
 
@@ -173,7 +255,7 @@ export function createDirectorMannequin(
   const shoulderWidth = height * 0.235 * proportions.shoulder_width * (0.94 + build * 0.06)
   const hipWidth = height * 0.165 * proportions.hip_width * (0.88 + build * 0.12)
   const hipY = footHeight + thighLength + shinLength
-  const waistRadius = height * 0.082 * build
+  const waistRadius = height * 0.074 * build
   const chestRadius = height * 0.105 * build
   const limbBuild = 0.82 + build * 0.18
   const upperArmRadius = height * 0.033 * limbBuild
@@ -182,70 +264,47 @@ export function createDirectorMannequin(
   const shinRadius = height * 0.039 * limbBuild
 
   const surface = colorMaterial(color, 0.08)
-  const highlight = colorMaterial(color, 0.16)
-  const shade = colorMaterial(color, -0.1)
-  const jointSurface = colorMaterial(color, -0.03)
+  const facialDetail = colorMaterial(color, -0.045)
 
-  const pelvis = new THREE.Group()
-  pelvis.position.y = hipY
-  group.add(pelvis)
-  addMesh(
-    pelvis,
-    new THREE.SphereGeometry(1, 28, 20),
-    surface,
-    [0, torsoLength * 0.035, 0],
-    [0, 0, 0],
-    [hipWidth * 0.64, torsoLength * 0.16, waistRadius * 1.12],
-  )
-  addMesh(
-    pelvis,
-    new THREE.CapsuleGeometry(waistRadius * 0.82, Math.max(0.015, torsoLength * 0.12), 6, 18),
-    shade,
-    [0, torsoLength * 0.18, 0],
-    [0, 0, 0],
-    [1, 1, 0.92],
-  )
-
-  const spine = jointGroup(group, "spine", [0, hipY + torsoLength * 0.12, 0], state)
+  const spine = jointGroup(group, "spine", [0, hipY, 0], state)
+  const torsoRadius = shoulderWidth * 0.43
+  const torsoGeometry = new THREE.LatheGeometry([
+    new THREE.Vector2(hipWidth * 0.48, 0),
+    new THREE.Vector2(hipWidth * 0.53, torsoLength * 0.12),
+    new THREE.Vector2(hipWidth * 0.48, torsoLength * 0.25),
+    new THREE.Vector2(waistRadius * 0.92, torsoLength * 0.4),
+    new THREE.Vector2(shoulderWidth * 0.33, torsoLength * 0.62),
+    new THREE.Vector2(shoulderWidth * 0.38, torsoLength * 0.76),
+    new THREE.Vector2(torsoRadius, torsoLength * 0.86),
+    new THREE.Vector2(shoulderWidth * 0.34, torsoLength * 0.96),
+  ], 40)
   addMesh(
     spine,
-    new THREE.SphereGeometry(1, 28, 20),
+    torsoGeometry,
     surface,
-    [0, torsoLength * 0.24, 0],
     [0, 0, 0],
-    [waistRadius * 1.08, torsoLength * 0.28, waistRadius * 0.92],
+    [0, 0, 0],
+    [1, 1, chestRadius / torsoRadius],
   )
-
-  const chest = jointGroup(spine, "chest", [0, torsoLength * 0.39, 0], state)
   addMesh(
-    chest,
-    new THREE.SphereGeometry(1, 30, 22),
+    spine,
+    new THREE.SphereGeometry(1, 30, 20),
     surface,
-    [0, torsoLength * 0.235, 0],
+    [0, torsoLength * 0.055, 0],
     [0, 0, 0],
-    [shoulderWidth * 0.46, torsoLength * 0.29, chestRadius],
+    [hipWidth * 0.51, torsoLength * 0.09, chestRadius * 0.72],
   )
-  addMesh(
-    chest,
-    new THREE.SphereGeometry(1, 24, 16),
-    highlight,
-    [0, torsoLength * 0.34, chestRadius * 0.18],
-    [0, 0, 0],
-    [shoulderWidth * 0.38, torsoLength * 0.12, chestRadius * 0.94],
-  )
+  const chest = jointGroup(spine, "chest", [0, torsoLength * 0.58, 0], state)
 
-  const shoulderY = torsoLength * 0.34
-  addMesh(
-    chest,
-    new THREE.CapsuleGeometry(height * 0.024, Math.max(0.01, shoulderWidth - height * 0.048), 6, 18),
-    highlight,
-    [0, shoulderY, 0],
-    [0, 0, Math.PI / 2],
-    [1, 1, 0.88],
-  )
+  const shoulderY = torsoLength * 0.3
 
-  const neck = jointGroup(chest, "neck", [0, torsoLength * 0.43, 0], state)
-  capsule(neck, neckLength, height * 0.031 * build, surface, 0.92, 0.9).position.y = neckLength / 2
+  const neck = jointGroup(chest, "neck", [0, torsoLength * 0.39, 0], state)
+  addMesh(
+    neck,
+    new THREE.CylinderGeometry(height * 0.026 * build, height * 0.031 * build, neckLength * 1.1, 24),
+    surface,
+    [0, neckLength * 0.5, 0],
+  )
   const head = jointGroup(neck, "head", [0, neckLength, 0], state)
   const headWidth = headHeight * 0.66
   const headDepth = headHeight * 0.72
@@ -260,7 +319,7 @@ export function createDirectorMannequin(
   addMesh(
     head,
     new THREE.SphereGeometry(1, 24, 18),
-    shade,
+    facialDetail,
     [0, headHeight * 0.36, headDepth * 0.47],
     [0, 0, 0],
     [headWidth * 0.09, headHeight * 0.1, headDepth * 0.12],
@@ -269,14 +328,14 @@ export function createDirectorMannequin(
     addMesh(
       head,
       new THREE.SphereGeometry(1, 16, 10),
-      shade,
+      surface,
       [side * headWidth * 0.51, headHeight * 0.5, 0],
       [0, 0, 0],
       [headWidth * 0.07, headHeight * 0.12, headDepth * 0.08],
     )
   }
 
-  addLimb(chest, {
+  const leftArm = createLimbRig(chest, {
     upperJoint: "leftShoulder",
     middleJoint: "leftElbow",
     endJoint: "leftWrist",
@@ -284,10 +343,10 @@ export function createDirectorMannequin(
     lowerLength: forearmLength,
     upperRadius: upperArmRadius,
     lowerRadius: forearmRadius,
-    anchor: [-shoulderWidth / 2, shoulderY, 0],
+    anchor: [-shoulderWidth * 0.42, shoulderY, 0],
     isLeg: false,
-  }, state, surface, jointSurface)
-  addLimb(chest, {
+  }, state)
+  const rightArm = createLimbRig(chest, {
     upperJoint: "rightShoulder",
     middleJoint: "rightElbow",
     endJoint: "rightWrist",
@@ -295,10 +354,10 @@ export function createDirectorMannequin(
     lowerLength: forearmLength,
     upperRadius: upperArmRadius,
     lowerRadius: forearmRadius,
-    anchor: [shoulderWidth / 2, shoulderY, 0],
+    anchor: [shoulderWidth * 0.42, shoulderY, 0],
     isLeg: false,
-  }, state, surface, jointSurface)
-  addLimb(group, {
+  }, state)
+  const leftLeg = createLimbRig(group, {
     upperJoint: "leftHip",
     middleJoint: "leftKnee",
     endJoint: "leftAnkle",
@@ -306,10 +365,10 @@ export function createDirectorMannequin(
     lowerLength: shinLength,
     upperRadius: thighRadius,
     lowerRadius: shinRadius,
-    anchor: [-hipWidth * 0.37, hipY, 0],
+    anchor: [-hipWidth * 0.31, hipY, 0],
     isLeg: true,
-  }, state, surface, jointSurface)
-  addLimb(group, {
+  }, state)
+  const rightLeg = createLimbRig(group, {
     upperJoint: "rightHip",
     middleJoint: "rightKnee",
     endJoint: "rightAnkle",
@@ -317,9 +376,15 @@ export function createDirectorMannequin(
     lowerLength: shinLength,
     upperRadius: thighRadius,
     lowerRadius: shinRadius,
-    anchor: [hipWidth * 0.37, hipY, 0],
+    anchor: [hipWidth * 0.31, hipY, 0],
     isLeg: true,
-  }, state, surface, jointSurface)
+  }, state)
+
+  group.updateMatrixWorld(true)
+  addSmoothLimb(group, leftArm, surface)
+  addSmoothLimb(group, rightArm, surface)
+  addSmoothLimb(group, leftLeg, surface)
+  addSmoothLimb(group, rightLeg, surface)
 
   group.updateMatrixWorld(true)
   const bounds = new THREE.Box3().setFromObject(group)
