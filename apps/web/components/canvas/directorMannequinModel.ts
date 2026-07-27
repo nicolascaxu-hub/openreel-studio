@@ -12,6 +12,11 @@ const MODEL_FILES = {
   feminine: "human-female.glb",
 } as const
 
+// A mathematically exact mesh bound leaves the lowest toe vertex touching the
+// plane while the visible sole and its shadow can still read as floating.
+// Sink the standard model by a small real-world contact depth after posing.
+const GROUND_CONTACT_DEPTH = 0.015
+
 // Director state predates the imported rig and names the screen-left limb
 // "left". Mesh2Motion follows anatomical left/right, which appears mirrored
 // to a front-facing viewer, so the standard-rig adapter deliberately swaps
@@ -265,6 +270,6 @@ export async function createDirectorMannequin(
   group.updateMatrixWorld(true)
 
   const bounds = new THREE.Box3().setFromObject(group)
-  if (Number.isFinite(bounds.min.y)) group.position.y = -bounds.min.y
+  if (Number.isFinite(bounds.min.y)) group.position.y = -bounds.min.y - GROUND_CONTACT_DEPTH
   return group
 }

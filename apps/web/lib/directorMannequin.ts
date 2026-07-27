@@ -261,12 +261,14 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
   {
     id: "hands-hips",
     label: "叉腰",
-    description: "双臂外展、手落髋部",
+    description: "双臂外展、手掌贴在髋部外侧",
     joints: pose({
       chest: [0, 0, 0],
       leftShoulder: [-10, 10, -42], rightShoulder: [-10, -10, 42],
       leftElbow: [-18, 0, 84], rightElbow: [-18, 0, -84],
-      leftWrist: [0, 0, -12], rightWrist: [0, 0, 12],
+      // Counter the elbow roll so the fingers point down along the outside of
+      // the hip instead of continuing inward through the abdomen.
+      leftWrist: [0, 0, -42], rightWrist: [0, 0, 42],
     }),
   },
 ]
@@ -325,10 +327,16 @@ export function normalizeDirectorMannequin(value: unknown): DirectorMannequinSta
   const bodyPreset = String(source.body_preset || fallback.body_preset)
   const posePreset = String(source.pose_preset || fallback.pose_preset)
   const anatomy = source.anatomy === "feminine" ? "feminine" : "masculine"
+  const resolvedPosePreset = (posePreset === "custom" || POSE_PRESET_IDS.has(posePreset)
+    ? posePreset
+    : fallback.pose_preset) as DirectorMannequinPosePreset
+  const storedPose = resolvedPosePreset === "hands-hips"
+    ? DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === "hands-hips")!.joints
+    : rawJoints
   return {
     anatomy,
     body_preset: (bodyPreset === "custom" || BODY_PRESET_IDS.has(bodyPreset) ? bodyPreset : fallback.body_preset) as DirectorMannequinBodyPreset,
-    pose_preset: (posePreset === "custom" || POSE_PRESET_IDS.has(posePreset) ? posePreset : fallback.pose_preset) as DirectorMannequinPosePreset,
+    pose_preset: resolvedPosePreset,
     proportions: {
       height: clamp(rawProportions.height, 1.35, 2.15, fallback.proportions.height),
       build: clamp(rawProportions.build, 0.68, 1.38, fallback.proportions.build),
@@ -342,7 +350,7 @@ export function normalizeDirectorMannequin(value: unknown): DirectorMannequinSta
     joints: Object.fromEntries(
       DIRECTOR_MANNEQUIN_JOINTS.map((joint) => [
         joint,
-        jointRotation(joint, rawJoints[joint], fallback.joints[joint]),
+        jointRotation(joint, storedPose[joint], fallback.joints[joint]),
       ]),
     ) as Record<DirectorMannequinJoint, [number, number, number]>,
   }
