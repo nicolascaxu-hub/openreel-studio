@@ -12,10 +12,9 @@ const MODEL_FILES = {
   feminine: "human-female.glb",
 } as const
 
-// A mathematically exact mesh bound leaves the lowest toe vertex touching the
-// plane while the visible sole and its shadow can still read as floating.
-// Sink the standard model by a small real-world contact depth after posing.
-const GROUND_CONTACT_DEPTH = 0.015
+// Sink the generated sole just far enough into the stage to avoid a bright
+// contact seam without making the ankle look buried.
+const GROUND_CONTACT_DEPTH = 0.004
 
 // Director state predates the imported rig and names the screen-left limb
 // "left". Mesh2Motion follows anatomical left/right, which appears mirrored
@@ -70,6 +69,13 @@ function mannequinMaterial(color: string): THREE.MeshStandardMaterial {
     roughness: 0.72,
     metalness: 0.018,
   })
+}
+
+function soleMaterial(color: string): THREE.MeshStandardMaterial {
+  const material = mannequinMaterial(color)
+  material.color.offsetHSL(0, -0.02, -0.035)
+  material.roughness = 0.82
+  return material
 }
 
 function prepareClone(template: THREE.Object3D, color: string): THREE.Object3D {
@@ -163,6 +169,83 @@ function captureBoneFrame(
   return { bone: target, baseWorld: alignment.multiply(restWorld) }
 }
 
+function captureRestBoneFrame(root: THREE.Object3D, boneName: string): BoneFrame | null {
+  const target = bone(root, boneName)
+  if (!target) return null
+  return {
+    bone: target,
+    baseWorld: target.getWorldQuaternion(new THREE.Quaternion()),
+  }
+}
+
+function createSoleGeometry(width: number, length: number): THREE.ExtrudeGeometry {
+  const halfWidth = width / 2
+  const heel = -length * 0.47
+  const waist = -length * 0.12
+  const ball = length * 0.22
+  const toe = length * 0.53
+  const shape = new THREE.Shape()
+  shape.moveTo(-halfWidth * 0.66, heel)
+  shape.quadraticCurveTo(-halfWidth * 0.94, heel, -halfWidth, waist)
+  shape.quadraticCurveTo(-halfWidth * 1.05, ball, -halfWidth * 0.76, toe)
+  shape.quadraticCurveTo(0, toe + length * 0.035, halfWidth * 0.76, toe)
+  shape.quadraticCurveTo(halfWidth * 1.05, ball, halfWidth, waist)
+  shape.quadraticCurveTo(halfWidth * 0.94, heel, halfWidth * 0.66, heel)
+  shape.quadraticCurveTo(0, heel - length * 0.015, -halfWidth * 0.66, heel)
+
+  const height = Math.max(0.014, length * 0.052)
+  const bevel = Math.min(width * 0.035, 0.004)
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    bevelSize: bevel,
+    bevelThickness: bevel,
+    curveSegments: 8,
+  })
+  // Extrusion starts along +Z. Rotate it into a flat, +Y-thick sole whose
+  // longitudinal axis follows the mannequin's +Z stage direction.
+  geometry.rotateX(Math.PI / 2)
+  geometry.translate(0, height + bevel, 0)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function addFootSoles(model: THREE.Object3D, color: string): void {
+  model.updateMatrixWorld(true)
+  for (const side of ["l", "r"] as const) {
+    const foot = bone(model, `foot_${side}`)
+    const ball = bone(model, `ball_${side}`)
+    if (!foot || !ball) continue
+
+    const heelPosition = foot.getWorldPosition(new THREE.Vector3())
+    const ballPosition = ball.getWorldPosition(new THREE.Vector3())
+    const forward = ballPosition.clone().sub(heelPosition)
+    forward.y = 0
+    const footAxisLength = forward.length()
+    if (footAxisLength < 0.001) continue
+    forward.normalize()
+
+    const length = THREE.MathUtils.clamp(footAxisLength * 1.86, 0.265, 0.33)
+    const width = THREE.MathUtils.clamp(length * 0.39, 0.108, 0.128)
+    const sole = new THREE.Mesh(createSoleGeometry(width, length), soleMaterial(color))
+    sole.name = `OpenReel refined sole ${side}`
+    sole.userData.directorMannequinSole = true
+    sole.castShadow = true
+    sole.receiveShadow = true
+
+    const center = heelPosition.clone().addScaledVector(forward, footAxisLength * 0.64)
+    center.y = 0
+    sole.position.copy(center)
+    sole.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward)
+    model.add(sole)
+    model.updateMatrixWorld(true)
+    // Preserve the rest-pose world transform while making the sole follow the
+    // ankle for every director pose.
+    foot.attach(sole)
+  }
+}
+
 function applyBoneFrame(frame: BoneFrame | null, control: THREE.Quaternion): void {
   if (!frame || !frame.bone.parent) return
   const parentWorld = frame.bone.parent.getWorldQuaternion(new THREE.Quaternion())
@@ -174,9 +257,6 @@ function applyBoneFrame(frame: BoneFrame | null, control: THREE.Quaternion): voi
 function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
   const up = new THREE.Vector3(0, 1, 0)
   const down = new THREE.Vector3(0, -1, 0)
-  // The rig's foot-to-ball axis runs through the instep rather than along the
-  // sole. A small downward pitch keeps the visible sole level with the stage.
-  const footForward = new THREE.Vector3(0, -0.14, 1).normalize()
   model.updateMatrixWorld(true)
 
   const frames = {
@@ -193,10 +273,12 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
     rightWrist: captureBoneFrame(model, JOINT_BONES.rightWrist, "middle_01_l", down),
     leftHip: captureBoneFrame(model, JOINT_BONES.leftHip, JOINT_BONES.leftKnee, down),
     leftKnee: captureBoneFrame(model, JOINT_BONES.leftKnee, JOINT_BONES.leftAnkle, down),
-    leftAnkle: captureBoneFrame(model, JOINT_BONES.leftAnkle, "ball_r", footForward),
+    // The imported foot is already authored with a flat sole. Preserve that
+    // exact rest frame instead of treating the instep bone as the sole axis.
+    leftAnkle: captureRestBoneFrame(model, JOINT_BONES.leftAnkle),
     rightHip: captureBoneFrame(model, JOINT_BONES.rightHip, JOINT_BONES.rightKnee, down),
     rightKnee: captureBoneFrame(model, JOINT_BONES.rightKnee, JOINT_BONES.rightAnkle, down),
-    rightAnkle: captureBoneFrame(model, JOINT_BONES.rightAnkle, "ball_l", footForward),
+    rightAnkle: captureRestBoneFrame(model, JOINT_BONES.rightAnkle),
   }
 
   const identity = new THREE.Quaternion()
@@ -235,6 +317,19 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
   }
 }
 
+function groundFromFootSoles(group: THREE.Group): void {
+  group.updateMatrixWorld(true)
+  let soleFloor = Number.POSITIVE_INFINITY
+  group.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.userData.directorMannequinSole) return
+    const bounds = new THREE.Box3().setFromObject(child)
+    if (Number.isFinite(bounds.min.y)) soleFloor = Math.min(soleFloor, bounds.min.y)
+  })
+  if (Number.isFinite(soleFloor)) {
+    group.position.y = -soleFloor - GROUND_CONTACT_DEPTH
+  }
+}
+
 function modelScale(
   model: THREE.Object3D,
   state: DirectorMannequinState,
@@ -266,12 +361,11 @@ export async function createDirectorMannequin(
   group.add(model)
 
   applyProportions(model, state)
+  addFootSoles(model, color)
   const scale = modelScale(model, state)
   applyPose(model, state)
   group.scale.copy(scale)
   group.updateMatrixWorld(true)
-
-  const bounds = new THREE.Box3().setFromObject(group)
-  if (Number.isFinite(bounds.min.y)) group.position.y = -bounds.min.y - GROUND_CONTACT_DEPTH
+  groundFromFootSoles(group)
   return group
 }

@@ -234,7 +234,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
   {
     id: "sit",
     label: "坐姿",
-    description: "髋膝约九十度",
+    description: "髋膝约九十度、双脚平放，适合搭配椅凳",
     joints: pose({
       spine: [5, 0, 0], chest: [-3, 0, 0],
       leftShoulder: [-8, 0, -10], rightShoulder: [-8, 0, 10],
@@ -247,14 +247,14 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
   {
     id: "crouch",
     label: "下蹲",
-    description: "重心降低、膝盖弯曲",
+    description: "重心下沉、双脚完整着地的稳定深蹲",
     joints: pose({
-      spine: [-19, 0, 0], chest: [7, 0, 0], neck: [9, 0, 0],
-      leftShoulder: [-17, 0, -15], rightShoulder: [-17, 0, 15],
-      leftElbow: [-30, 0, 0], rightElbow: [-30, 0, 0],
-      leftHip: [-48, 0, -4], rightHip: [-48, 0, 4],
-      leftKnee: [93, 0, 0], rightKnee: [93, 0, 0],
-      leftAnkle: [-40, 0, 0], rightAnkle: [-40, 0, 0],
+      spine: [-17, 0, 0], chest: [7, 0, 0], neck: [8, 0, 0],
+      leftShoulder: [-25, 0, -14], rightShoulder: [-25, 0, 14],
+      leftElbow: [-24, 0, 0], rightElbow: [-24, 0, 0],
+      leftHip: [-58, 0, -5], rightHip: [-58, 0, 5],
+      leftKnee: [110, 0, 0], rightKnee: [110, 0, 0],
+      leftAnkle: [-50, 0, 0], rightAnkle: [-50, 0, 0],
     }),
   },
   {
@@ -362,14 +362,14 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
   {
     id: "lunge",
     label: "前弓步",
-    description: "重心前移、前腿屈膝，适合对峙和发力",
+    description: "前脚整掌支撑、后脚尖着地，适合对峙和发力",
     joints: pose({
-      spine: [-9, 0, 0], chest: [-4, 0, 0], neck: [7, 0, 0],
+      spine: [-8, 0, 0], chest: [-4, 0, 0], neck: [7, 0, 0],
       leftShoulder: [-28, 0, -22], rightShoulder: [-34, 0, 22],
       leftElbow: [-42, 0, 16], rightElbow: [-48, 0, -16],
-      leftHip: [-58, 0, -6], rightHip: [24, 0, 6],
-      leftKnee: [72, 0, 0], rightKnee: [18, 0, 0],
-      leftAnkle: [-18, 0, 0], rightAnkle: [12, 0, 0],
+      leftHip: [-35, 0, -6], rightHip: [44, 0, 6],
+      leftKnee: [45, 0, 0], rightKnee: [0, 0, 0],
+      leftAnkle: [-10, 0, 0], rightAnkle: [10, 0, 0],
     }),
   },
   {
