@@ -39,7 +39,6 @@ import {
 import {
   applyDirectorMannequinBodyPreset,
   applyDirectorMannequinPosePreset,
-  defaultDirectorMannequin,
   DIRECTOR_MANNEQUIN_BODY_PRESETS,
   DIRECTOR_MANNEQUIN_JOINT_INFO,
   DIRECTOR_MANNEQUIN_POSE_PRESETS,
@@ -209,13 +208,8 @@ function addMesh(
 function createBuiltinModel(
   assetId: string,
   color: string,
-  mannequin = defaultDirectorMannequin(),
 ): THREE.Group {
   const group = new THREE.Group()
-  if (assetId === "builtin:mannequin") {
-    group.add(createDirectorMannequin(mannequin, color))
-    return group
-  }
   const shared = material(color)
   const dark = material("#52525b")
   if (assetId === "builtin:cube") {
@@ -437,8 +431,29 @@ export default function DirectorDesk({
       applyObjectTransform(root, object)
       runtime.objectRoots.set(object.id, root)
       runtime.root.add(root)
+      if (object.asset_id === "builtin:mannequin") {
+        const placeholder = createBuiltinModel("builtin:cylinder", object.color)
+        placeholder.name = "人体模型加载中"
+        placeholder.scale.set(0.34, 1.28, 0.34)
+        root.add(placeholder)
+        setLoadingModels((value) => value + 1)
+        void createDirectorMannequin(object.mannequin, object.color).then((content) => {
+          if (runtime.disposed || runtime.buildToken !== token || !runtime.objectRoots.has(object.id)) {
+            disposeObject(content)
+            return
+          }
+          root.remove(placeholder)
+          disposeObject(placeholder)
+          root.add(content)
+        }).catch((loadError) => {
+          root.userData.loadError = loadError instanceof Error ? loadError.message : String(loadError)
+        }).finally(() => {
+          setLoadingModels((value) => Math.max(0, value - 1))
+        })
+        continue
+      }
       if (object.asset_id.startsWith("builtin:")) {
-        root.add(createBuiltinModel(object.asset_id, object.color, object.mannequin))
+        root.add(createBuiltinModel(object.asset_id, object.color))
         continue
       }
       const asset = modelById.get(object.asset_id)
