@@ -1267,6 +1267,26 @@ export interface CanvasEdgeSnapshot {
   label?: string | null
 }
 
+export interface DuplicateCanvasNodesResult {
+  ok: boolean
+  nodes: CanvasNodeSnapshot[]
+  edges: CanvasEdgeSnapshot[]
+  source_to_copy: Record<string, string>
+}
+
+export async function duplicateProjectCanvasNodes(
+  projectId: string,
+  input: { node_ids: string[]; x?: number; y?: number },
+) {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/nodes/duplicate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return asJson<DuplicateCanvasNodesResult>(res)
+}
+
 export async function restoreProjectCanvasSnapshot(
   projectId: string,
   input: { nodes?: CanvasNodeSnapshot[]; edges?: CanvasEdgeSnapshot[] },

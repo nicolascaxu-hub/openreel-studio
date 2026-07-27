@@ -101,6 +101,95 @@ async def test_persisted_canvas_graph_mutations_emit_project_events(
 
 
 @pytest.mark.asyncio
+async def test_duplicate_canvas_nodes_preserves_selection_graph_and_remaps_references(
+    monkeypatch: pytest.MonkeyPatch,
+    canvas_session: AsyncSession,
+) -> None:
+    source = await canvas_session.get(WorkflowNode, "source-1")
+    target = await canvas_session.get(WorkflowNode, "target-1")
+    assert source is not None
+    assert target is not None
+    source.status = "completed"
+    source.position_x = 40
+    source.position_y = 80
+    source.output_json = json.dumps({"url": "/storage/source.png", "producer_node_id": "source-1"})
+    source.model_config_json = json.dumps({"surface": "draft_canvas", "_ui_creator": "agent"})
+    target.status = "running"
+    target.position_x = 340
+    target.position_y = 180
+    target.prompt = "让 @Source 成为首帧"
+    target.input_json = json.dumps({
+        "depends_on": ["node:1"],
+        "fields": {
+            "references": [{"ref": "source-1", "role": "visual_reference"}],
+        },
+    })
+    target.model_config_json = json.dumps({"surface": "draft_canvas", "_ui_creator": "agent"})
+    canvas_session.add(source)
+    canvas_session.add(target)
+    canvas_session.add(WorkflowEdge(
+        id="edge-original",
+        project_id="project-1",
+        source_node_id="source-1",
+        target_node_id="target-1",
+        label="reference",
+    ))
+    await canvas_session.commit()
+
+    events: list[tuple[str, dict]] = []
+
+    async def capture(project_id: str, action: str, payload: dict) -> None:
+        assert project_id == "project-1"
+        events.append((action, payload))
+
+    monkeypatch.setattr(routes_projects, "_emit_project_canvas_action", capture)
+
+    result = await routes_projects.duplicate_project_canvas_nodes(
+        "project-1",
+        routes_projects.CanvasNodesDuplicateRequest(
+            node_ids=["source-1", "#2"],
+            x=600,
+            y=400,
+        ),
+        canvas_session,
+    )
+
+    copied_source_id = result["source_to_copy"]["source-1"]
+    copied_target_id = result["source_to_copy"]["target-1"]
+    copied_source = await canvas_session.get(WorkflowNode, copied_source_id)
+    copied_target = await canvas_session.get(WorkflowNode, copied_target_id)
+    assert copied_source is not None
+    assert copied_target is not None
+    assert copied_source.title == "Source"
+    assert copied_target.title == "Target"
+    assert copied_source.status == "completed"
+    assert copied_target.status == "idle"
+    assert (copied_source.position_x, copied_source.position_y) == (600.0, 400.0)
+    assert (copied_target.position_x, copied_target.position_y) == (900.0, 500.0)
+    assert json.loads(copied_source.output_json or "{}") == {
+        "url": "/storage/source.png",
+        "producer_node_id": str(copied_source.display_id),
+    }
+    copied_target_input = json.loads(copied_target.input_json or "{}")
+    assert copied_target_input["depends_on"] == [f"node:{copied_source.display_id}"]
+    assert copied_target_input["fields"]["references"] == [
+        {"ref": str(copied_source.display_id), "role": "visual_reference"},
+    ]
+    assert copied_target_input["reference_image_mentions"][0]["ref"] == f"node:{copied_source.id}"
+    assert json.loads(copied_target.model_config_json or "{}")["_ui_creator"] == "user"
+
+    copied_edge = await canvas_session.get(WorkflowEdge, result["edges"][0]["id"])
+    assert copied_edge is not None
+    assert copied_edge.source_node_id == copied_source.id
+    assert copied_edge.target_node_id == copied_target.id
+    assert copied_edge.label == "reference"
+    assert [action for action, _payload in events] == ["create_node", "create_node", "add_edge"]
+    assert all(payload.get("snapshot_complete") is True for action, payload in events if action == "create_node")
+    assert (source.position_x, source.position_y) == (40, 80)
+    assert (target.position_x, target.position_y) == (340, 180)
+
+
+@pytest.mark.asyncio
 async def test_direct_node_update_tool_result_is_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[tuple[dict, str | None]] = []
 

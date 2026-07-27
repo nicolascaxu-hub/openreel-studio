@@ -131,6 +131,14 @@ class CanvasNodesDeleteRequest(BaseModel):
     node_ids: list[str] = Field(default_factory=list)
 
 
+class CanvasNodesDuplicateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    node_ids: list[str] = Field(min_length=1, max_length=100)
+    x: Optional[float] = None
+    y: Optional[float] = None
+
+
 class CanvasNodeHistorySwitchRequest(BaseModel):
     history_id: Optional[str] = None
     index: Optional[int] = None
@@ -327,6 +335,44 @@ def _json_dumps_or_none(value: Any) -> str | None:
     if value is None:
         return None
     return json.dumps(value, ensure_ascii=False)
+
+
+def _remap_duplicated_node_references(
+    value: Any,
+    alias_to_display_id: dict[str, str],
+) -> Any:
+    """Point exact node references inside a copied selection at its new nodes."""
+    if isinstance(value, str):
+        original = value.strip()
+        display_id = alias_to_display_id.get(original)
+        if display_id is None:
+            return value
+        if original.startswith("@node:#"):
+            return f"@node:#{display_id}"
+        if original.startswith("@node:"):
+            return f"@node:{display_id}"
+        if original.startswith("node:#"):
+            return f"node:#{display_id}"
+        if original.startswith("node:"):
+            return f"node:{display_id}"
+        if original.startswith("@#"):
+            return f"@#{display_id}"
+        if original.startswith("@"):
+            return f"@{display_id}"
+        if original.startswith("#"):
+            return f"#{display_id}"
+        return display_id
+    if isinstance(value, list):
+        return [
+            _remap_duplicated_node_references(item, alias_to_display_id)
+            for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            key: _remap_duplicated_node_references(item, alias_to_display_id)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _project_active_workflow_payload(project_id: str, state: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2686,6 +2732,151 @@ async def delete_project_canvas_nodes(
     for node_id in result.get("deleted_node_ids") or []:
         await _emit_project_canvas_action(project_id, "delete_node", {"id": node_id})
     return result
+
+
+@router.post("/{project_id}/nodes/duplicate")
+async def duplicate_project_canvas_nodes(
+    project_id: str,
+    req: CanvasNodesDuplicateRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    source_nodes: list[WorkflowNode] = []
+    source_ids: set[str] = set()
+    for requested_id in req.node_ids:
+        resolved_id = await resolve_internal_node_id(db, project_id, requested_id)
+        if not resolved_id or resolved_id in source_ids:
+            continue
+        source = await db.get(WorkflowNode, resolved_id)
+        if not source or source.project_id != project_id:
+            raise HTTPException(status_code=404, detail=f"Node not found: {requested_id}")
+        model_config = _parse_json_dict(source.model_config_json)
+        surface = str(model_config.get("surface") or model_config.get("_surface") or "").strip()
+        if source.type not in {"text", "image", "video", "audio"} or surface == "workflow_runtime":
+            raise HTTPException(status_code=400, detail="Only visible canvas nodes can be duplicated")
+        source_ids.add(source.id)
+        source_nodes.append(source)
+
+    if not source_nodes:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    origin_x = min(float(node.position_x or 0.0) for node in source_nodes)
+    origin_y = min(float(node.position_y or 0.0) for node in source_nodes)
+    paste_x = float(req.x) if req.x is not None else origin_x + 36.0
+    paste_y = float(req.y) if req.y is not None else origin_y + 36.0
+    now = datetime.utcnow()
+    copies_by_source_id: dict[str, WorkflowNode] = {}
+
+    original_edges = list((await db.exec(
+        select(WorkflowEdge).where(
+            WorkflowEdge.project_id == project_id,
+            WorkflowEdge.source_node_id.in_(source_ids),
+            WorkflowEdge.target_node_id.in_(source_ids),
+        )
+    )).all())
+
+    async with node_display_id_allocation(project_id):
+        for source in source_nodes:
+            copied = WorkflowNode(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                display_id=await next_node_display_id(db, project_id),
+                type=source.type,
+                title=source.title,
+                status="completed" if source.status == "completed" else "idle",
+                position_x=paste_x + float(source.position_x or 0.0) - origin_x,
+                position_y=paste_y + float(source.position_y or 0.0) - origin_y,
+                input_json=None,
+                output_json=None,
+                model_config_json=None,
+                prompt=source.prompt,
+                error_message=None,
+                version=1,
+                supersedes_id=None,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(copied)
+            await db.flush()
+            copies_by_source_id[source.id] = copied
+
+        alias_to_display_id: dict[str, str] = {}
+        for source in source_nodes:
+            copied = copies_by_source_id[source.id]
+            if copied.display_id is None:
+                continue
+            display_id = str(copied.display_id)
+            for alias in _node_dependency_aliases(source):
+                alias_to_display_id[alias] = display_id
+
+        for source in source_nodes:
+            copied = copies_by_source_id[source.id]
+            input_data = _remap_duplicated_node_references(
+                _parse_json_value(source.input_json),
+                alias_to_display_id,
+            )
+            output_data = _remap_duplicated_node_references(
+                _parse_json_value(source.output_json),
+                alias_to_display_id,
+            )
+            model_config = _remap_duplicated_node_references(
+                _parse_json_dict(source.model_config_json),
+                alias_to_display_id,
+            )
+            if not isinstance(model_config, dict):
+                model_config = {}
+            model_config["_ui_creator"] = "user"
+            model_config["created_by"] = "user"
+            copied.input_json = _json_dumps_or_none(input_data)
+            copied.output_json = _json_dumps_or_none(output_data)
+            copied.model_config_json = _json_dumps_or_none(model_config)
+            await refresh_node_reference_mentions(db, copied)
+            db.add(copied)
+
+        copied_edges: list[WorkflowEdge] = []
+        for source_edge in original_edges:
+            copied_source = copies_by_source_id.get(source_edge.source_node_id)
+            copied_target = copies_by_source_id.get(source_edge.target_node_id)
+            if not copied_source or not copied_target:
+                continue
+            copied_edge = WorkflowEdge(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                source_node_id=copied_source.id,
+                target_node_id=copied_target.id,
+                label=source_edge.label,
+                created_at=now,
+            )
+            db.add(copied_edge)
+            copied_edges.append(copied_edge)
+
+        await db.commit()
+
+    id_map = await _public_id_map(project_id, db)
+    copied_node_payloads: list[dict[str, Any]] = []
+    for source in source_nodes:
+        copied = copies_by_source_id[source.id]
+        await db.refresh(copied)
+        payload = _node_detail_payload(copied, id_map)
+        payload["snapshot_complete"] = True
+        copied_node_payloads.append(payload)
+        await _emit_project_canvas_action(project_id, "create_node", payload)
+
+    copied_edge_payloads: list[dict[str, Any]] = []
+    for copied_edge in copied_edges:
+        await db.refresh(copied_edge)
+        payload = copied_edge.model_dump()
+        copied_edge_payloads.append(payload)
+        await _emit_project_canvas_action(project_id, "add_edge", payload)
+
+    return {
+        "ok": True,
+        "nodes": copied_node_payloads,
+        "edges": copied_edge_payloads,
+        "source_to_copy": {
+            source.id: copies_by_source_id[source.id].id
+            for source in source_nodes
+        },
+    }
 
 
 @router.delete("/{project_id}/nodes/{node_id}")

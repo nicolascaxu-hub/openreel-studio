@@ -37,6 +37,7 @@ import {
   createPanoramaCapture,
   createProjectEdge,
   createProjectNode,
+  duplicateProjectCanvasNodes,
   deleteProjectMediaHistoryItem,
   deleteProjectEdge,
   deleteProjectNode,
@@ -193,9 +194,17 @@ interface NodeActionMenuState {
   x: number
   y: number
   nodeId: string
+  nodeIds: string[]
   title: string
   mediaUrl?: string
   mediaKind?: "image" | "video"
+}
+
+interface CanvasNodeClipboardState {
+  projectId: string
+  nodeIds: string[]
+  originX: number
+  originY: number
 }
 
 interface AssetCategoryResult {
@@ -11149,6 +11158,8 @@ export default function WorkflowCanvas({
   const [groupedNodeIds, setGroupedNodeIds] = useState<string[]>([])
   const [contextMenu, setContextMenu] = useState<CanvasCreateMenuState | null>(null)
   const [nodeActionMenu, setNodeActionMenu] = useState<NodeActionMenuState | null>(null)
+  const [nodeClipboard, setNodeClipboard] = useState<CanvasNodeClipboardState | null>(null)
+  const [pastingNodes, setPastingNodes] = useState(false)
   const [assetSaveRequest, setAssetSaveRequest] = useState<NodeAssetSaveRequest | null>(null)
   const [imageEditRequest, setImageEditRequest] = useState<NodeImageEditRequest | null>(null)
   const [videoEditRequest, setVideoEditRequest] = useState<NodeVideoEditRequest | null>(null)
@@ -11209,6 +11220,8 @@ export default function WorkflowCanvas({
   const [assetSaveError, setAssetSaveError] = useState<string | null>(null)
   const [coarsePointer, setCoarsePointer] = useState(false)
   const undoStackRef = useRef<CanvasUndoRecord[]>([])
+  const pasteSequenceRef = useRef(0)
+  const pasteInFlightRef = useRef(false)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const dragStartPositionsRef = useRef<Record<string, { x: number; y: number }>>({})
   const activeDragNodeIdsRef = useRef<string[]>([])
@@ -11362,6 +11375,11 @@ export default function WorkflowCanvas({
       return [...ids]
     },
     [canvasVisibleNodeIds, nodes, selectedCanvasNodeId],
+  )
+  const hasCanvasClipboard = Boolean(
+    nodeClipboard
+    && currentProject?.id === nodeClipboard.projectId
+    && nodeClipboard.nodeIds.length > 0,
   )
   const invalidReferenceEdgeKeys = useMemo(
     () => invalidVideoReferenceEdgeKeys(nodes, canvasVisibleEdges, videoReferenceProviders, videoReferenceProtocols),
@@ -13506,6 +13524,7 @@ export default function WorkflowCanvas({
   const openNodeActionMenuAt = useCallback((nodeId: string, x: number, y: number) => {
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
+    const nodeIds = selectedNodeIds.includes(nodeId) ? selectedNodeIds : [nodeId]
     const title = String((node.data as { title?: string } | undefined)?.title || "未命名")
     const imageUrl = imageDownloadUrlFromNode(node) || undefined
     const videoUrl = previewVideoFromNode(node)?.src
@@ -13514,11 +13533,12 @@ export default function WorkflowCanvas({
       x,
       y,
       nodeId,
+      nodeIds,
       title,
       mediaUrl: imageUrl || videoUrl,
       mediaKind: imageUrl ? "image" : videoUrl ? "video" : undefined,
     })
-  }, [nodes])
+  }, [nodes, selectedNodeIds])
 
   const handleNodeContextMenu = useCallback((event: MouseEvent, node: FlowNode) => {
     event.preventDefault()
@@ -13839,6 +13859,71 @@ export default function WorkflowCanvas({
     await downloadUrl(url, safeDownloadName(title, url, kind))
   }, [])
 
+  const copyCanvasNodes = useCallback((nodeIdsInput: string[]) => {
+    if (!currentProject?.id) return false
+    const requestedIds = new Set(nodeIdsInput)
+    const copiedNodes = nodes.filter((node) => requestedIds.has(node.id))
+    if (copiedNodes.length === 0) return false
+    setNodeClipboard({
+      projectId: currentProject.id,
+      nodeIds: copiedNodes.map((node) => node.id),
+      originX: Math.min(...copiedNodes.map((node) => node.position.x)),
+      originY: Math.min(...copiedNodes.map((node) => node.position.y)),
+    })
+    pasteSequenceRef.current = 0
+    setContextMenu(null)
+    setNodeActionMenu(null)
+    return true
+  }, [currentProject?.id, nodes])
+
+  const pasteCanvasNodes = useCallback(async (position?: { x: number; y: number }) => {
+    if (
+      !currentProject?.id
+      || !nodeClipboard
+      || nodeClipboard.projectId !== currentProject.id
+      || nodeClipboard.nodeIds.length === 0
+      || pasteInFlightRef.current
+    ) return
+
+    const keyboardPasteSequence = position ? 0 : pasteSequenceRef.current + 1
+    const pastePosition = position || {
+      x: nodeClipboard.originX + keyboardPasteSequence * 36,
+      y: nodeClipboard.originY + keyboardPasteSequence * 36,
+    }
+    const projectId = currentProject.id
+    pasteInFlightRef.current = true
+    setPastingNodes(true)
+    setContextMenu(null)
+    setNodeActionMenu(null)
+    try {
+      const result = await duplicateProjectCanvasNodes(projectId, {
+        node_ids: nodeClipboard.nodeIds,
+        x: pastePosition.x,
+        y: pastePosition.y,
+      })
+      const copiedNodeIds = result.nodes
+        .map((node) => String(node.id || ""))
+        .filter(Boolean)
+      if (copiedNodeIds.length === 0) throw new Error("没有可粘贴的节点")
+      if (!position) pasteSequenceRef.current = keyboardPasteSequence
+      await refreshCanvas({ preserveOnEmpty: true, preserveLayout: true })
+      selectNode(null)
+      applyNodeChanges(copiedNodeIds.map((id) => ({ type: "select", id, selected: true })))
+      pushUndo({
+        label: copiedNodeIds.length > 1 ? `粘贴 ${copiedNodeIds.length} 个节点` : "粘贴节点",
+        undo: async () => {
+          await deleteProjectNodes(projectId, copiedNodeIds)
+        },
+      })
+    } catch (error) {
+      console.warn("Failed to paste canvas nodes", error)
+      window.alert(error instanceof Error ? error.message : "粘贴节点失败")
+    } finally {
+      pasteInFlightRef.current = false
+      setPastingNodes(false)
+    }
+  }, [applyNodeChanges, currentProject?.id, nodeClipboard, pushUndo, refreshCanvas, selectNode])
+
   // 项目级长连 SSE — 接收后台任务完成的画布事件和工作流运行态刷新
   useEffect(() => {
     if (!currentProject?.id) return
@@ -13902,6 +13987,20 @@ export default function WorkflowCanvas({
       const tagName = target?.tagName?.toLowerCase()
       const isTyping = tagName === "input" || tagName === "textarea" || target?.isContentEditable
       if (isTyping) return
+      const modifierPressed = event.ctrlKey || event.metaKey
+      const shortcutKey = event.key.toLowerCase()
+      if (modifierPressed && !event.altKey && !event.shiftKey && shortcutKey === "c") {
+        if (selectedNodeIds.length === 0) return
+        event.preventDefault()
+        copyCanvasNodes(selectedNodeIds)
+        return
+      }
+      if (modifierPressed && !event.altKey && !event.shiftKey && shortcutKey === "v") {
+        if (!hasCanvasClipboard) return
+        event.preventDefault()
+        void pasteCanvasNodes()
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
         event.preventDefault()
         void runUndo()
@@ -13930,7 +14029,7 @@ export default function WorkflowCanvas({
       window.removeEventListener("click", closeContextMenu)
       window.removeEventListener("blur", closeContextMenu)
     }
-  }, [deleteSelection, runUndo, selectedEdgeIds.length, selectedNodeIds.length])
+  }, [copyCanvasNodes, deleteSelection, hasCanvasClipboard, pasteCanvasNodes, runUndo, selectedEdgeIds.length, selectedNodeIds])
 
   const handleRerun = useCallback(async (nodeId: string) => {
     if (!currentProject || streaming) return
@@ -14329,7 +14428,9 @@ export default function WorkflowCanvas({
             contextMenu.x,
             contextMenu.y,
             CANVAS_CREATE_MENU_WIDTH,
-            contextMenu.connectFrom ? CANVAS_CONNECT_CREATE_MENU_HEIGHT : CANVAS_CREATE_MENU_HEIGHT,
+            contextMenu.connectFrom
+              ? CANVAS_CONNECT_CREATE_MENU_HEIGHT
+              : CANVAS_CREATE_MENU_HEIGHT + (hasCanvasClipboard ? 48 : 0),
           )}
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
@@ -14342,6 +14443,19 @@ export default function WorkflowCanvas({
               {contextMenu.connectFrom ? "新节点会自动建立依赖连线" : "选择要添加的节点"}
             </div>
           </div>
+          {hasCanvasClipboard && !contextMenu.connectFrom && nodeClipboard && (
+            <div className="border-b border-white/10 py-1">
+              <button
+                type="button"
+                disabled={pastingNodes}
+                className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-xs text-zinc-100 transition-colors hover:bg-white/[0.07] disabled:cursor-wait disabled:opacity-50"
+                onClick={() => void pasteCanvasNodes({ x: contextMenu.flowX, y: contextMenu.flowY })}
+              >
+                <span>{nodeClipboard.nodeIds.length > 1 ? `粘贴 ${nodeClipboard.nodeIds.length} 个节点` : "粘贴节点"}</span>
+                <span className="text-[10px] text-zinc-500">Ctrl/⌘+V</span>
+              </button>
+            </div>
+          )}
           <div className="py-2">
             <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-600">节点</div>
             {CANVAS_NODE_CREATE_ITEMS.map((item) => (
@@ -14463,10 +14577,18 @@ export default function WorkflowCanvas({
       {nodeActionMenu && (
         <div
           className="openreel-canvas-action-menu fixed z-[80] w-44 overflow-hidden rounded-md border border-white/10 bg-[#11151d]/96 py-1 text-sm text-zinc-200 shadow-2xl shadow-black/50 backdrop-blur"
-          style={menuPositionStyle(nodeActionMenu.x, nodeActionMenu.y, 176, nodeActionMenu.mediaUrl ? 92 : 50)}
+          style={menuPositionStyle(nodeActionMenu.x, nodeActionMenu.y, 176, nodeActionMenu.mediaUrl ? 134 : 92)}
           onClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
         >
+          <button
+            type="button"
+            className="flex w-full appearance-none items-center justify-between bg-transparent px-3 py-2.5 text-left text-xs text-zinc-100 transition-colors hover:bg-white/10"
+            onClick={() => copyCanvasNodes(nodeActionMenu.nodeIds)}
+          >
+            <span>{nodeActionMenu.nodeIds.length > 1 ? `复制 ${nodeActionMenu.nodeIds.length} 个节点` : "复制节点"}</span>
+            <span className="text-[10px] text-zinc-500">Ctrl/⌘+C</span>
+          </button>
           {nodeActionMenu.mediaUrl && nodeActionMenu.mediaKind && (
             <button
               type="button"
