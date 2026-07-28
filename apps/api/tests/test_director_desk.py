@@ -20,6 +20,7 @@ from app.services.director_desk import (
     default_director_scene,
     normalize_director_state,
 )
+from app.services.director_glb import analyze_glb_document
 
 
 async def _setup_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -54,8 +55,11 @@ def _scene() -> dict:
     return scene
 
 
-def _fake_glb() -> bytes:
-    document = json.dumps({"asset": {"version": "2.0"}, "scene": 0, "scenes": [{}]}, separators=(",", ":")).encode("utf-8")
+def _fake_glb(document: dict | None = None) -> bytes:
+    document = json.dumps(
+        document or {"asset": {"version": "2.0"}, "scene": 0, "scenes": [{}]},
+        separators=(",", ":"),
+    ).encode("utf-8")
     padding = (4 - len(document) % 4) % 4
     document += b" " * padding
     length = 12 + 8 + len(document)
@@ -67,6 +71,40 @@ def _fake_glb() -> bytes:
         + b"JSON"
         + document
     )
+
+
+def _rigged_glb() -> bytes:
+    names = [
+        "mixamorig:Hips", "mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2",
+        "mixamorig:Neck", "mixamorig:Head",
+        "mixamorig:LeftShoulder", "mixamorig:LeftArm", "mixamorig:LeftForeArm", "mixamorig:LeftHand",
+        "mixamorig:RightShoulder", "mixamorig:RightArm", "mixamorig:RightForeArm", "mixamorig:RightHand",
+        "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", "mixamorig:LeftFoot", "mixamorig:LeftToeBase",
+        "mixamorig:RightUpLeg", "mixamorig:RightLeg", "mixamorig:RightFoot", "mixamorig:RightToeBase",
+    ]
+    for side in ("Left", "Right"):
+        for finger in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+            names.extend(f"mixamorig:{side}Hand{finger}{segment}" for segment in (1, 2, 3))
+    nodes = [
+        {"name": name, **({"children": [index + 1]} if index + 1 < len(names) else {})}
+        for index, name in enumerate(names)
+    ]
+    return _fake_glb({
+        "asset": {"version": "2.0", "generator": "Director rig test"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": nodes,
+        "skins": [{"name": "CharacterSkin", "joints": list(range(len(nodes))), "skeleton": 0}],
+        "accessors": [{"min": [0], "max": [1.25]}],
+        "animations": [{
+            "name": "Walk",
+            "samplers": [{"input": 0, "output": 0}],
+            "channels": [
+                {"sampler": 0, "target": {"node": 0, "path": "translation"}},
+                {"sampler": 0, "target": {"node": 14, "path": "rotation"}},
+            ],
+        }],
+    })
 
 
 def test_director_routes_are_registered() -> None:
@@ -106,6 +144,37 @@ def test_director_exposes_every_deforming_standard_rig_joint() -> None:
         "leftThumb1", "leftIndex3", "rightRing2", "rightPinky3",
         "leftToe", "rightToe",
     } <= MANNEQUIN_JOINTS
+
+
+def test_director_uses_explicit_vrm_humanoid_mapping_before_name_guessing() -> None:
+    vrm_bones = {
+        "hips": 0, "spine": 1, "chest": 2, "upperChest": 3, "neck": 4, "head": 5,
+        "leftUpperArm": 6, "leftLowerArm": 7, "leftHand": 8,
+        "rightUpperArm": 9, "rightLowerArm": 10, "rightHand": 11,
+        "leftUpperLeg": 12, "leftLowerLeg": 13, "leftFoot": 14,
+        "rightUpperLeg": 15, "rightLowerLeg": 16, "rightFoot": 17,
+        "leftThumbMetacarpal": 18, "leftThumbProximal": 19, "leftThumbDistal": 20,
+    }
+    document = {
+        "asset": {"version": "2.0"},
+        "extensionsUsed": ["VRMC_vrm"],
+        "extensions": {"VRMC_vrm": {"humanoid": {"humanBones": {
+            joint: {"node": node} for joint, node in vrm_bones.items()
+        }}}},
+        "nodes": [{"name": f"opaque-{index}"} for index in range(21)],
+        "skins": [{"joints": list(range(21))}],
+    }
+
+    humanoid = analyze_glb_document(document)["humanoid"]
+
+    assert humanoid["profile"] == "vrm"
+    assert humanoid["recognized"] is True
+    assert humanoid["joint_node_map"]["spineMiddle"] == 2
+    assert humanoid["joint_node_map"]["chest"] == 3
+    assert humanoid["joint_node_map"]["leftShoulder"] == 6
+    assert humanoid["joint_node_map"]["leftThumb1"] == 18
+    assert humanoid["joint_node_map"]["leftThumb2"] == 19
+    assert humanoid["joint_node_map"]["leftThumb3"] == 20
 
 
 @pytest.mark.asyncio
@@ -181,6 +250,9 @@ async def test_director_glb_is_project_scoped_and_referenced_models_cannot_be_de
         director, asset = await service.add_model("director-project", upload, expected_revision=0)
         assert director["revision"] == 1
         assert asset["url"].startswith("/api/projects/director-project/director/models/")
+        assert asset["analysis"]["bone_count"] == 0
+        assert asset["analysis"]["animation_count"] == 0
+        assert asset["analysis"]["humanoid"]["recognized"] is False
         target, resolved = await service.model_file("director-project", asset["id"])
         assert target.read_bytes() == _fake_glb()
         assert resolved["id"] == asset["id"]
@@ -205,6 +277,66 @@ async def test_director_glb_is_project_scoped_and_referenced_models_cannot_be_de
         with pytest.raises(DirectorDeskError, match="模型不存在") as other_error:
             await service.model_file("other-project", asset["id"])
         assert other_error.value.status_code == 404
+    await db_session.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_director_import_inventories_full_rig_and_embedded_animations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    await _setup_db(monkeypatch, tmp_path)
+    async with db_session.session_scope() as session:
+        service = DirectorDeskService(session)
+        upload = UploadFile(file=io.BytesIO(_rigged_glb()), filename="animated-character.glb")
+        director, asset = await service.add_model("director-project", upload, expected_revision=0)
+
+        analysis = asset["analysis"]
+        assert director["model_assets"][0]["analysis"] == analysis
+        assert analysis["skin_count"] == 1
+        assert analysis["bone_count"] == 52
+        assert len(analysis["bones"]) == 52
+        assert analysis["animation_count"] == 1
+        assert analysis["animations"] == [{
+            "index": 0,
+            "name": "Walk",
+            "duration": 1.25,
+            "channel_count": 2,
+            "target_node_count": 2,
+            "properties": ["rotation", "translation"],
+        }]
+        humanoid = analysis["humanoid"]
+        assert humanoid["recognized"] is True
+        assert humanoid["profile"] == "mixamo"
+        assert humanoid["mapped_joint_count"] == 52
+        assert humanoid["missing_joints"] == []
+        assert humanoid["joint_map"]["leftIndex3"] == "mixamorig:LeftHandIndex3"
+        assert humanoid["joint_node_map"]["rightToe"] == 21
+
+        scene = _scene()
+        scene["objects"].append({
+            "id": "animated-1",
+            "asset_id": asset["id"],
+            "name": "动画人物",
+            "color": "#a1a1aa",
+            "position": [0, 0, 0],
+            "rotation": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "visible": True,
+            "locked": False,
+            "rig": {
+                "mode": "animation",
+                "pose_preset": "relaxed",
+                "joints": {"leftWrist": [5, 0, 0]},
+                "animation_name": "Walk",
+                "animation_index": 0,
+                "animation_playing": True,
+                "animation_loop": True,
+                "animation_speed": 1.25,
+            },
+        })
+        saved = await service.save_scene("director-project", scene, expected_revision=1)
+        assert saved["scene"]["objects"][1]["rig"]["animation_name"] == "Walk"
     await db_session.engine.dispose()
 
 

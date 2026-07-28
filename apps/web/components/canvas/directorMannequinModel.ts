@@ -83,6 +83,10 @@ interface BoneFrame {
   baseLocal: THREE.Quaternion
 }
 
+export type DirectorRigJointBones = Partial<
+  Record<DirectorMannequinJoint, string | THREE.Bone>
+>
+
 const templateCache = new Map<DirectorMannequinState["anatomy"], Promise<THREE.Object3D>>()
 
 function modelUrl(anatomy: DirectorMannequinState["anatomy"]): string {
@@ -129,8 +133,10 @@ function prepareClone(template: THREE.Object3D, color: string): THREE.Object3D {
   return model
 }
 
-function bone(root: THREE.Object3D, name: string): THREE.Bone | null {
-  const value = root.getObjectByName(name)
+function bone(root: THREE.Object3D, binding: string | THREE.Bone | undefined): THREE.Bone | null {
+  if (binding instanceof THREE.Bone) return binding
+  if (!binding) return null
+  const value = root.getObjectByName(binding)
   return value instanceof THREE.Bone ? value : null
 }
 
@@ -190,8 +196,8 @@ function combineFrames(
 
 function captureBoneFrame(
   root: THREE.Object3D,
-  boneName: string,
-  childName: string,
+  boneName: string | THREE.Bone | undefined,
+  childName: string | THREE.Bone | undefined,
   baselineDirection: THREE.Vector3,
 ): BoneFrame | null {
   const target = bone(root, boneName)
@@ -199,7 +205,9 @@ function captureBoneFrame(
   if (!target || !child) return null
 
   const restWorld = target.getWorldQuaternion(new THREE.Quaternion())
-  const restDirection = child.position.clone().normalize().applyQuaternion(restWorld)
+  const restDirection = child.getWorldPosition(new THREE.Vector3())
+    .sub(target.getWorldPosition(new THREE.Vector3()))
+    .normalize()
   const alignment = new THREE.Quaternion().setFromUnitVectors(
     restDirection.normalize(),
     baselineDirection.clone().normalize(),
@@ -213,7 +221,7 @@ function captureBoneFrame(
 
 function captureRestBoneFrame(
   root: THREE.Object3D,
-  boneName: string,
+  boneName: string | THREE.Bone | undefined,
   worldCorrection = new THREE.Quaternion(),
 ): BoneFrame | null {
   const target = bone(root, boneName)
@@ -310,7 +318,11 @@ function applyLocalBoneRotation(
   frame.bone.updateWorldMatrix(false, true)
 }
 
-function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
+function applyPose(
+  model: THREE.Object3D,
+  state: DirectorMannequinState,
+  jointBones: DirectorRigJointBones,
+): void {
   const up = new THREE.Vector3(0, 1, 0)
   const down = new THREE.Vector3(0, -1, 0)
   model.updateMatrixWorld(true)
@@ -318,15 +330,17 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
   const frames = Object.fromEntries(
     DIRECTOR_MANNEQUIN_JOINTS.map((joint) => [
       joint,
-      captureRestBoneFrame(model, JOINT_BONES[joint]),
+      captureRestBoneFrame(model, jointBones[joint]),
     ]),
   ) as Record<DirectorMannequinJoint, BoneFrame | null>
-  frames.pelvis = captureBoneFrame(model, JOINT_BONES.pelvis, JOINT_BONES.spine, up)
-  frames.spine = captureBoneFrame(model, JOINT_BONES.spine, JOINT_BONES.spineMiddle, up)
-  frames.spineMiddle = captureBoneFrame(model, JOINT_BONES.spineMiddle, JOINT_BONES.chest, up)
-  frames.chest = captureBoneFrame(model, JOINT_BONES.chest, JOINT_BONES.neck, up)
-  frames.neck = captureBoneFrame(model, JOINT_BONES.neck, JOINT_BONES.head, up)
-  frames.head = captureBoneFrame(model, JOINT_BONES.head, "head_leaf", up)
+  frames.pelvis = captureBoneFrame(model, jointBones.pelvis, jointBones.spine, up)
+  frames.spine = captureBoneFrame(model, jointBones.spine, jointBones.spineMiddle, up)
+  frames.spineMiddle = captureBoneFrame(model, jointBones.spineMiddle, jointBones.chest, up)
+  frames.chest = captureBoneFrame(model, jointBones.chest, jointBones.neck, up)
+  frames.neck = captureBoneFrame(model, jointBones.neck, jointBones.head, up)
+  frames.head = jointBones === JOINT_BONES
+    ? captureBoneFrame(model, jointBones.head, "head_leaf", up)
+    : captureRestBoneFrame(model, jointBones.head)
 
   for (const side of ["left", "right"] as const) {
     const shoulderJoint = `${side}Shoulder` as const
@@ -337,29 +351,29 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
     const ankleJoint = `${side}Ankle` as const
     frames[shoulderJoint] = captureBoneFrame(
       model,
-      JOINT_BONES[shoulderJoint],
-      JOINT_BONES[elbowJoint],
+      jointBones[shoulderJoint],
+      jointBones[elbowJoint],
       down,
     )
     frames[elbowJoint] = captureBoneFrame(
       model,
-      JOINT_BONES[elbowJoint],
-      JOINT_BONES[wristJoint],
+      jointBones[elbowJoint],
+      jointBones[wristJoint],
       down,
     )
     frames[wristJoint] = captureBoneFrame(
       model,
-      JOINT_BONES[wristJoint],
-      JOINT_BONES[`${side}Middle1`],
+      jointBones[wristJoint],
+      jointBones[`${side}Middle1`],
       down,
     )
-    frames[hipJoint] = captureBoneFrame(model, JOINT_BONES[hipJoint], JOINT_BONES[kneeJoint], down)
-    frames[kneeJoint] = captureBoneFrame(model, JOINT_BONES[kneeJoint], JOINT_BONES[ankleJoint], down)
+    frames[hipJoint] = captureBoneFrame(model, jointBones[hipJoint], jointBones[kneeJoint], down)
+    frames[kneeJoint] = captureBoneFrame(model, jointBones[kneeJoint], jointBones[ankleJoint], down)
     // The imported foot is already authored with a flat sole. Preserve that
     // exact rest frame instead of treating the instep bone as the sole axis.
-    frames[ankleJoint] = captureRestBoneFrame(model, JOINT_BONES[ankleJoint])
+    frames[ankleJoint] = captureRestBoneFrame(model, jointBones[ankleJoint])
 
-    const wristBone = bone(model, JOINT_BONES[wristJoint])
+    const wristBone = bone(model, jointBones[wristJoint])
     const wristFrame = frames[wristJoint]
     const wristCorrection = wristBone && wristFrame
       ? wristFrame.baseWorld.clone().multiply(
@@ -371,7 +385,7 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
         const fingerJoint = `${side}${finger}${segment}` as DirectorMannequinJoint
         frames[fingerJoint] = captureRestBoneFrame(
           model,
-          JOINT_BONES[fingerJoint],
+          jointBones[fingerJoint],
           wristCorrection,
         )
       }
@@ -432,6 +446,15 @@ function applyPose(model: THREE.Object3D, state: DirectorMannequinState): void {
   }
 }
 
+export function applyDirectorRigPose(
+  model: THREE.Object3D,
+  rawState: Pick<DirectorMannequinState, "pose_preset" | "joints"> | undefined,
+  jointBones: DirectorRigJointBones,
+): void {
+  const state = normalizeDirectorMannequin(rawState)
+  applyPose(model, state, jointBones)
+}
+
 function groundFromFootSoles(group: THREE.Group): void {
   group.updateMatrixWorld(true)
   let soleFloor = Number.POSITIVE_INFINITY
@@ -478,7 +501,7 @@ export async function createDirectorMannequin(
   applyProportions(model, state)
   addFootSoles(model, color)
   const scale = modelScale(model, state)
-  applyPose(model, state)
+  applyPose(model, state, JOINT_BONES)
   group.scale.copy(scale)
   group.updateMatrixWorld(true)
   groundFromFootSoles(group)

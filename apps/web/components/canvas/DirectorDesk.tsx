@@ -5,8 +5,12 @@ import { createPortal } from "react-dom"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { TransformControls } from "three/addons/controls/TransformControls.js"
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
-import { createDirectorMannequin } from "./directorMannequinModel"
+import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js"
+import {
+  applyDirectorRigPose,
+  createDirectorMannequin,
+  type DirectorRigJointBones,
+} from "./directorMannequinModel"
 import {
   createProjectDirectorCapture,
   deleteProjectDirectorCapture,
@@ -27,12 +31,15 @@ import {
   createDirectorId,
   defaultDirectorDesk,
   newDirectorObject,
+  normalizeDirectorCustomRig,
   normalizeDirectorDesk,
   type DirectorActorLegendItem,
   type DirectorAspectRatio,
   type DirectorCapture,
+  type DirectorCustomRigState,
   type DirectorDeskState,
   type DirectorModelAsset,
+  type DirectorModelHumanoid,
   type DirectorObjectState,
   type DirectorSceneState,
   type DirectorTransformMode,
@@ -73,6 +80,7 @@ interface DirectorRuntime {
   root: THREE.Group
   grid: THREE.GridHelper
   objectRoots: Map<string, THREE.Group>
+  mixers: Map<string, THREE.AnimationMixer>
   resizeObserver: ResizeObserver
   viewport: HTMLDivElement
   buildToken: number
@@ -259,6 +267,40 @@ function applyObjectTransform(root: THREE.Object3D, object: DirectorObjectState)
   root.visible = object.visible
 }
 
+function anatomicalJointForStage(joint: DirectorMannequinJoint): DirectorMannequinJoint {
+  if (joint.startsWith("left")) return `right${joint.slice(4)}` as DirectorMannequinJoint
+  if (joint.startsWith("right")) return `left${joint.slice(5)}` as DirectorMannequinJoint
+  return joint
+}
+
+function resolveCustomRigBones(
+  gltf: GLTF,
+  humanoid: DirectorModelHumanoid,
+): DirectorRigJointBones {
+  const objectsByNode = new Map<number, THREE.Bone>()
+  gltf.scene.traverse((child) => {
+    if (!(child instanceof THREE.Bone)) return
+    const association = gltf.parser.associations.get(child) as { nodes?: number } | undefined
+    if (Number.isInteger(association?.nodes)) objectsByNode.set(association!.nodes!, child)
+  })
+  const result: DirectorRigJointBones = {}
+  for (const stageJoint of DIRECTOR_MANNEQUIN_JOINTS) {
+    const sourceJoint = anatomicalJointForStage(stageJoint)
+    const node = humanoid.joint_node_map[sourceJoint]
+    const target = node === undefined ? undefined : objectsByNode.get(node)
+    if (target) result[stageJoint] = target
+  }
+  return result
+}
+
+function stopRuntimeMixers(runtime: DirectorRuntime): void {
+  for (const mixer of runtime.mixers.values()) {
+    mixer.stopAllAction()
+    mixer.uncacheRoot(mixer.getRoot())
+  }
+  runtime.mixers.clear()
+}
+
 function snapshotRuntimeScene(runtime: DirectorRuntime, base: DirectorSceneState): DirectorSceneState {
   const next = cloneDirectorScene(base)
   next.camera = {
@@ -280,9 +322,15 @@ function snapshotRuntimeScene(runtime: DirectorRuntime, base: DirectorSceneState
   return next
 }
 
-function actorLegend(scene: DirectorSceneState): DirectorActorLegendItem[] {
+function actorLegend(
+  scene: DirectorSceneState,
+  modelAssets: DirectorModelAsset[] = [],
+): DirectorActorLegendItem[] {
+  const humanoidAssetIds = new Set(
+    modelAssets.filter((asset) => asset.analysis?.humanoid.recognized).map((asset) => asset.id),
+  )
   return scene.objects
-    .filter((item) => item.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID)
+    .filter((item) => item.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID || humanoidAssetIds.has(item.asset_id))
     .map((item) => ({ label: item.name, color: item.color, object_id: item.id }))
 }
 
@@ -419,6 +467,7 @@ export default function DirectorDesk({
     runtime.buildToken += 1
     const token = runtime.buildToken
     runtime.transform.detach()
+    stopRuntimeMixers(runtime)
     for (const root of runtime.objectRoots.values()) {
       runtime.root.remove(root)
       disposeObject(root)
@@ -475,12 +524,40 @@ export default function DirectorDesk({
         }
         root.remove(placeholder)
         disposeObject(placeholder)
-        const content = gltf.scene
-        const box = new THREE.Box3().setFromObject(content)
-        const size = box.getSize(new THREE.Vector3())
+        const model = gltf.scene
+        const analysis = asset.analysis
+        const rig = normalizeDirectorCustomRig(object.rig, asset)
+        model.updateMatrixWorld(true)
+        const restBox = new THREE.Box3().setFromObject(model)
+        const restSize = restBox.getSize(new THREE.Vector3())
+        if (rig.mode === "pose" && analysis?.humanoid.recognized) {
+          applyDirectorRigPose(model, rig, resolveCustomRigBones(gltf, analysis.humanoid))
+        } else if (rig.mode === "animation" && gltf.animations.length > 0) {
+          const clip = (rig.animation_index === null ? undefined : gltf.animations[rig.animation_index])
+            || gltf.animations.find((item) => item.name === rig.animation_name)
+            || gltf.animations[0]
+          const mixer = new THREE.AnimationMixer(model)
+          const action = mixer.clipAction(clip)
+          action.enabled = true
+          action.paused = !rig.animation_playing
+          action.timeScale = rig.animation_speed
+          action.clampWhenFinished = !rig.animation_loop
+          action.setLoop(rig.animation_loop ? THREE.LoopRepeat : THREE.LoopOnce, rig.animation_loop ? Infinity : 1)
+          action.play()
+          mixer.update(0)
+          runtime.mixers.set(object.id, mixer)
+        }
+        model.updateMatrixWorld(true)
+        const box = new THREE.Box3().setFromObject(model)
         const center = box.getCenter(new THREE.Vector3())
-        const largest = Math.max(size.x, size.y, size.z, 0.001)
-        const normalizedScale = 1.8 / largest
+        const largest = Math.max(restSize.x, restSize.y, restSize.z, 0.001)
+        const normalizationExtent = analysis?.humanoid.recognized
+          ? Math.max(restSize.y, 0.001)
+          : largest
+        const normalizedScale = 1.8 / normalizationExtent
+        const content = new THREE.Group()
+        content.name = `${asset.name} normalization frame`
+        content.add(model)
         content.scale.setScalar(normalizedScale)
         content.position.set(-center.x * normalizedScale, -box.min.y * normalizedScale, -center.z * normalizedScale)
         content.traverse((child) => {
@@ -599,6 +676,7 @@ export default function DirectorDesk({
       root,
       grid,
       objectRoots: new Map(),
+      mixers: new Map(),
       resizeObserver,
       viewport,
       buildToken: 0,
@@ -741,7 +819,10 @@ export default function DirectorDesk({
     orbit.addEventListener("start", onOrbitStart)
     orbit.addEventListener("end", onOrbitEnd)
 
+    const clock = new THREE.Clock()
     renderer.setAnimationLoop(() => {
+      const delta = Math.min(clock.getDelta(), 0.1)
+      for (const mixer of runtime.mixers.values()) mixer.update(delta)
       orbit.update()
       renderer.render(scene, camera)
     })
@@ -761,6 +842,7 @@ export default function DirectorDesk({
       orbit.removeEventListener("start", onOrbitStart)
       orbit.removeEventListener("end", onOrbitEnd)
       transform.detach()
+      stopRuntimeMixers(runtime)
       transform.dispose()
       orbit.dispose()
       for (const object of runtime.objectRoots.values()) disposeObject(object)
@@ -836,10 +918,23 @@ export default function DirectorDesk({
       : null,
     [selectedObject],
   )
+  const selectedCustomAsset = useMemo(
+    () => selectedObject && !selectedObject.asset_id.startsWith("builtin:")
+      ? director.model_assets.find((asset) => asset.id === selectedObject.asset_id) || null
+      : null,
+    [director.model_assets, selectedObject],
+  )
+  const selectedCustomRig = useMemo(
+    () => selectedCustomAsset && selectedObject
+      ? normalizeDirectorCustomRig(selectedObject.rig, selectedCustomAsset)
+      : null,
+    [selectedCustomAsset, selectedObject],
+  )
 
   const addObject = useCallback((assetId: string, defaultName: string) => {
     const scene = cloneDirectorScene(directorRef.current.scene)
-    const object = newDirectorObject(assetId, defaultName, scene.objects)
+    const asset = directorRef.current.model_assets.find((item) => item.id === assetId)
+    const object = newDirectorObject(assetId, defaultName, scene.objects, asset)
     scene.objects.push(object)
     replaceScene(scene, true)
     setSelectedObjectId(object.id)
@@ -924,6 +1019,47 @@ export default function DirectorDesk({
     }))
   }, [selectedJoint, updateSelectedMannequin])
 
+  const updateSelectedCustomRig = useCallback((
+    updater: (current: DirectorCustomRigState) => DirectorCustomRigState,
+  ) => {
+    if (!selectedObject || !selectedCustomAsset) return
+    const current = normalizeDirectorCustomRig(selectedObject.rig, selectedCustomAsset)
+    updateSelectedObject({ rig: normalizeDirectorCustomRig(updater(current), selectedCustomAsset) })
+  }, [selectedCustomAsset, selectedObject, updateSelectedObject])
+
+  const applyCustomPosePreset = useCallback((presetId: Exclude<DirectorMannequinPosePreset, "custom">) => {
+    updateSelectedCustomRig((current) => {
+      const pose = applyDirectorMannequinPosePreset(
+        normalizeDirectorMannequin({ pose_preset: current.pose_preset, joints: current.joints }),
+        presetId,
+      )
+      return { ...current, mode: "pose", pose_preset: pose.pose_preset, joints: pose.joints }
+    })
+  }, [updateSelectedCustomRig])
+
+  const updateCustomRigJoint = useCallback((axis: number, value: number) => {
+    if (!Number.isFinite(value)) return
+    updateSelectedCustomRig((current) => {
+      const rotation = [...current.joints[selectedJoint]] as [number, number, number]
+      rotation[axis] = value
+      return {
+        ...current,
+        mode: "pose",
+        pose_preset: "custom",
+        joints: { ...current.joints, [selectedJoint]: rotation },
+      }
+    })
+  }, [selectedJoint, updateSelectedCustomRig])
+
+  const resetCustomRigJoint = useCallback(() => {
+    updateSelectedCustomRig((current) => ({
+      ...current,
+      mode: "pose",
+      pose_preset: "custom",
+      joints: { ...current.joints, [selectedJoint]: [0, 0, 0] },
+    }))
+  }, [selectedJoint, updateSelectedCustomRig])
+
   const changeVectorValue = useCallback((
     field: "position" | "rotation" | "scale",
     index: number,
@@ -980,7 +1116,7 @@ export default function DirectorDesk({
     const ctx = canvas.getContext("2d")
     if (!ctx) throw new Error("无法创建截图画布")
     ctx.drawImage(source, 0, 0, width, height)
-    const legend = actorLegend(scene)
+    const legend = actorLegend(scene, directorRef.current.model_assets)
     if (legend.length > 0) {
       const lineHeight = Math.max(28, Math.round(height * 0.035))
       const panelWidth = Math.min(width * 0.42, 430)
@@ -1029,7 +1165,7 @@ export default function DirectorDesk({
       const response = await createProjectDirectorCapture<DirectorApiResponse>(projectId, {
         data_url: captureImage(scene),
         scene_snapshot: scene as unknown as Record<string, unknown>,
-        actor_legend: actorLegend(scene) as unknown as Array<Record<string, unknown>>,
+        actor_legend: actorLegend(scene, directorRef.current.model_assets) as unknown as Array<Record<string, unknown>>,
         expected_revision: directorRef.current.revision,
       })
       const next = mergeServerDirector(response.director, true)
@@ -1341,7 +1477,17 @@ export default function DirectorDesk({
                     <div key={asset.id} className="group flex items-center gap-2 rounded-xl border border-white/[0.065] bg-white/[0.018] p-2 transition hover:border-white/[0.12] hover:bg-white/[0.035]">
                       <button type="button" onClick={() => addObject(asset.id, asset.name.replace(/\.glb$/i, ""))} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-300/[0.07] text-violet-200/55"><BuiltinGlyph assetId="builtin:cube" /></span>
-                        <span className="min-w-0"><span className="block truncate text-[10px] text-zinc-300">{asset.name}</span><span className="mt-0.5 block text-[8px] text-zinc-600">{formatBytes(asset.size)} · 点击放置</span></span>
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5 truncate text-[10px] text-zinc-300">
+                            <span className="truncate">{asset.name}</span>
+                            {asset.analysis?.humanoid.recognized ? <span className="shrink-0 rounded bg-cyan-300/10 px-1 py-0.5 text-[7px] text-cyan-200/80">人形</span> : null}
+                          </span>
+                          <span className="mt-0.5 block text-[8px] text-zinc-600">
+                            {asset.analysis
+                              ? `${asset.analysis.bone_count} 骨骼 · ${asset.analysis.animation_count} 动作`
+                              : formatBytes(asset.size)} · 点击放置
+                          </span>
+                        </span>
                       </button>
                       <button type="button" title="删除模型" onClick={() => void removeModel(asset)} className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-700 opacity-0 transition hover:bg-red-400/10 hover:text-red-300 group-hover:opacity-100"><DirectorIcon name="trash" className="h-3 w-3" /></button>
                     </div>
@@ -1577,6 +1723,100 @@ export default function DirectorDesk({
                     <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 使用原版骨骼的分部位安全活动范围；手指含根节、中节、末节，足部含踝和前脚掌。</div>
                   </div>
                 </div>
+              </section>
+            ) : null}
+            {selectedCustomAsset && selectedCustomRig ? (
+              <section className="mt-3 overflow-hidden rounded-2xl border border-cyan-300/[0.12] bg-[linear-gradient(145deg,rgba(34,211,238,.045),rgba(255,255,255,.012))]">
+                <div className="flex items-center justify-between border-b border-white/[0.065] px-3 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-300/[0.09] text-cyan-100/80"><DirectorIcon name="sparkles" className="h-3.5 w-3.5" /></span>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium text-zinc-200">导入骨架与动作</div>
+                      <div className="truncate text-[8px] text-zinc-600">
+                        {selectedCustomAsset.analysis
+                          ? `${selectedCustomAsset.analysis.bone_count} 个骨骼 · ${selectedCustomAsset.analysis.animation_count} 个内置动作`
+                          : "等待模型分析"}
+                      </div>
+                    </div>
+                  </div>
+                  <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[8px]", selectedCustomAsset.analysis?.humanoid.recognized ? "border-emerald-300/20 bg-emerald-300/8 text-emerald-200/80" : "border-white/[0.07] bg-black/20 text-zinc-500")}>
+                    {selectedCustomAsset.analysis?.humanoid.recognized ? "已识别人形" : selectedCustomAsset.analysis?.bone_count ? "通用骨架" : "静态模型"}
+                  </span>
+                </div>
+
+                {selectedCustomAsset.analysis ? (
+                  <div className="space-y-4 p-3">
+                    <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1">
+                      {([{"id":"bind","label":"原始姿势"},{"id":"pose","label":"动作预设"},{"id":"animation","label":"内置动画"}] as const).map((option) => {
+                        const disabled = option.id === "pose"
+                          ? !selectedCustomAsset.analysis?.humanoid.recognized
+                          : option.id === "animation" && !selectedCustomAsset.analysis?.animations.length
+                        return <button key={option.id} type="button" disabled={disabled} onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: option.id }))} className={cn("h-7 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", selectedCustomRig.mode === option.id ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>{option.label}</button>
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-center">
+                      <div className="rounded-lg border border-white/[0.055] bg-black/15 px-1 py-2"><span className="block text-[11px] font-semibold tabular-nums text-zinc-300">{selectedCustomAsset.analysis.skin_count}</span><span className="text-[7px] text-zinc-700">蒙皮</span></div>
+                      <div className="rounded-lg border border-white/[0.055] bg-black/15 px-1 py-2"><span className="block text-[11px] font-semibold tabular-nums text-zinc-300">{selectedCustomAsset.analysis.humanoid.mapped_joint_count}/{selectedCustomAsset.analysis.humanoid.joint_count}</span><span className="text-[7px] text-zinc-700">人体映射</span></div>
+                      <div className="rounded-lg border border-white/[0.055] bg-black/15 px-1 py-2"><span className="block truncate text-[9px] font-semibold uppercase text-zinc-300">{selectedCustomAsset.analysis.humanoid.profile}</span><span className="text-[7px] text-zinc-700">骨架类型</span></div>
+                    </div>
+
+                    {selectedCustomAsset.analysis.animations.length > 0 ? (
+                      <div className="border-t border-white/[0.065] pt-3">
+                        <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">模型内置动作</span><span className="text-[8px] text-zinc-700">完整读取全部 animation clips</span></div>
+                        <select value={selectedCustomRig.animation_index ?? selectedCustomAsset.analysis.animations[0].index} onChange={(event) => {
+                          const animationIndex = Number(event.target.value)
+                          const animation = selectedCustomAsset.analysis?.animations.find((item) => item.index === animationIndex)
+                          updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: animationIndex, animation_name: animation?.name || null }))
+                        }} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
+                          {selectedCustomAsset.analysis.animations.map((animation) => <option key={`${animation.index}-${animation.name}`} value={animation.index}>#{animation.index + 1} {animation.name}{animation.duration !== null ? ` · ${animation.duration.toFixed(2)}s` : ""}</option>)}
+                        </select>
+                        <div className="mt-2 grid grid-cols-[1fr_1fr_76px] gap-1.5">
+                          <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_playing: !current.animation_playing }))} className="h-8 rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-400 transition hover:text-white">{selectedCustomRig.animation_playing ? "暂停" : "播放"}</button>
+                          <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_loop: !current.animation_loop }))} className={cn("h-8 rounded-lg border text-[8px] transition", selectedCustomRig.animation_loop ? "border-cyan-300/20 bg-cyan-300/8 text-cyan-100" : "border-white/[0.07] bg-black/15 text-zinc-500")}>循环 {selectedCustomRig.animation_loop ? "开" : "关"}</button>
+                          <select aria-label="动画速度" value={selectedCustomRig.animation_speed} onChange={(event) => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_speed: Number(event.target.value) }))} className="h-8 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-1 text-[8px] text-zinc-400 outline-none">
+                            {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {selectedCustomAsset.analysis.humanoid.recognized ? (
+                      <>
+                        <div className="border-t border-white/[0.065] pt-3">
+                          <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">重定向动作预设</span><span className="text-[8px] text-zinc-700">驱动已映射关节</span></div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => <button key={preset.id} type="button" title={preset.description} onClick={() => applyCustomPosePreset(preset.id)} className={cn("h-8 rounded-lg border text-[8px] font-medium transition", selectedCustomRig.mode === "pose" && selectedCustomRig.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>{preset.label}</button>)}
+                          </div>
+                        </div>
+
+                        <div className="border-t border-white/[0.065] pt-3">
+                          <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">映射关节微调</span><button type="button" onClick={resetCustomRigJoint} className="text-[8px] text-zinc-600 transition hover:text-zinc-200">归零当前关节</button></div>
+                          <select value={selectedJoint} onChange={(event) => setSelectedJoint(event.target.value as DirectorMannequinJoint)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
+                            {(["躯干", "左臂", "左手", "右臂", "右手", "左腿", "右腿"] as const).map((group) => <optgroup key={group} label={group}>{DIRECTOR_MANNEQUIN_JOINT_INFO.filter((joint) => joint.group === group).map((joint) => <option key={joint.id} value={joint.id}>{joint.label}{selectedCustomAsset.analysis?.humanoid.joint_map[anatomicalJointForStage(joint.id)] ? "" : "（未映射）"}</option>)}</optgroup>)}
+                          </select>
+                          <div className="mt-3 space-y-2.5">
+                            {(["X", "Y", "Z"] as const).map((axis, index) => {
+                              const value = selectedCustomRig.joints[selectedJoint][index]
+                              return <label key={axis} className="grid grid-cols-[16px_minmax(0,1fr)_48px] items-center gap-2"><span className={cn("text-[9px] font-semibold", index === 0 ? "text-rose-300/75" : index === 1 ? "text-emerald-300/75" : "text-sky-300/75")}>{axis}</span><input type="range" min={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][0]} max={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][1]} step="1" value={value} onChange={(event) => updateCustomRigJoint(index, Number(event.target.value))} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" /><span className="rounded-md bg-black/25 px-1.5 py-1 text-right text-[8px] tabular-nums text-zinc-400">{Math.round(value)}°</span></label>
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+
+                    <details className="border-t border-white/[0.065] pt-3 text-[8px] text-zinc-500">
+                      <summary className="cursor-pointer select-none font-medium text-zinc-400">完整识别结果 · {selectedCustomAsset.analysis.bone_count} 骨骼 / {selectedCustomAsset.analysis.animation_count} 动作</summary>
+                      {selectedCustomAsset.analysis.error ? <p className="mt-2 text-red-300/70">{selectedCustomAsset.analysis.error}</p> : null}
+                      <div className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-white/[0.055] bg-black/20 p-2 font-mono text-[7px] leading-3 text-zinc-600">
+                        {selectedCustomAsset.analysis.bones.length ? selectedCustomAsset.analysis.bones.map((item) => <div key={item.node}><span className="text-zinc-400">#{item.node} {item.name}</span>{item.parent_name ? ` ← ${item.parent_name}` : ""}</div>) : <div>没有 skin joints</div>}
+                      </div>
+                      {selectedCustomAsset.analysis.animations.length ? <div className="mt-2 space-y-1">{selectedCustomAsset.analysis.animations.map((item) => <div key={`${item.index}-${item.name}`} className="rounded-lg border border-white/[0.05] bg-black/15 px-2 py-1.5"><span className="text-zinc-400">{item.name}</span> · {item.channel_count} 通道 · {item.target_node_count} 节点 · {item.properties.join("/") || "未知属性"}</div>)}</div> : null}
+                    </details>
+                  </div>
+                ) : (
+                  <div className="p-3 text-[8px] leading-4 text-zinc-600">该模型尚无解析数据，重新载入导演台后会自动补充骨骼与动作识别。</div>
+                )}
               </section>
             ) : null}
             </>

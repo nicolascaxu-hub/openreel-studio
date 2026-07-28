@@ -17,6 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import settings
 from app.db.models import WorkflowNode
+from app.services.director_glb import DirectorGlbError, analyze_glb_file
 from app.services.node_service import NodeService
 from app.services.project_service import ProjectService
 
@@ -220,6 +221,45 @@ def _validate_mannequin(value: Any, *, name: str) -> None:
                 raise DirectorDeskError(f"{name}.joints.{joint} 超出旋转范围")
 
 
+def _validate_custom_rig(value: Any, *, name: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise DirectorDeskError(f"{name} 必须是对象")
+    mode = value.get("mode")
+    if mode is not None and mode not in {"bind", "pose", "animation"}:
+        raise DirectorDeskError(f"{name}.mode 必须是 bind、pose 或 animation")
+    pose_preset = value.get("pose_preset")
+    if pose_preset is not None and (
+        not isinstance(pose_preset, str) or len(pose_preset) > 64
+    ):
+        raise DirectorDeskError(f"{name}.pose_preset 无效")
+    _validate_mannequin({"joints": value.get("joints")}, name=name)
+    animation_name = value.get("animation_name")
+    if animation_name is not None and (
+        not isinstance(animation_name, str) or len(animation_name) > 256
+    ):
+        raise DirectorDeskError(f"{name}.animation_name 无效")
+    animation_index = value.get("animation_index")
+    if animation_index is not None and (
+        not isinstance(animation_index, int)
+        or isinstance(animation_index, bool)
+        or not 0 <= animation_index <= 10000
+    ):
+        raise DirectorDeskError(f"{name}.animation_index 无效")
+    for field in ("animation_playing", "animation_loop"):
+        if field in value and not isinstance(value[field], bool):
+            raise DirectorDeskError(f"{name}.{field} 必须是布尔值")
+    animation_speed = value.get("animation_speed")
+    if animation_speed is not None and (
+        not isinstance(animation_speed, (int, float))
+        or isinstance(animation_speed, bool)
+        or not math.isfinite(float(animation_speed))
+        or not 0.05 <= float(animation_speed) <= 4.0
+    ):
+        raise DirectorDeskError(f"{name}.animation_speed 必须在 0.05 到 4 之间")
+
+
 def validate_director_scene(scene: Any) -> dict[str, Any]:
     if not isinstance(scene, dict):
         raise DirectorDeskError("scene 必须是对象")
@@ -253,6 +293,8 @@ def validate_director_scene(scene: Any) -> dict[str, Any]:
         _finite_vector(item.get("scale"), length=3, name=f"objects[{index}].scale")
         if asset_id == "builtin:mannequin":
             _validate_mannequin(item.get("mannequin"), name=f"objects[{index}].mannequin")
+        if "rig" in item:
+            _validate_custom_rig(item.get("rig"), name=f"objects[{index}].rig")
     return scene
 
 
@@ -328,26 +370,37 @@ def _decode_capture_data_url(data_url: str) -> tuple[bytes, str]:
     return raw, ext
 
 
-def _validate_glb2(target: Path, size: int) -> None:
-    if size < 20:
-        raise DirectorDeskError("文件不是有效的 GLB 2.0 模型")
-    with target.open("rb") as handle:
-        header = handle.read(12)
-        if header[:4] != b"glTF" or int.from_bytes(header[4:8], "little") != 2:
-            raise DirectorDeskError("文件不是有效的 GLB 2.0 模型")
-        if int.from_bytes(header[8:12], "little") != size:
-            raise DirectorDeskError("GLB 文件长度声明无效")
-        chunk_header = handle.read(8)
-        chunk_length = int.from_bytes(chunk_header[:4], "little")
-        if chunk_header[4:8] != b"JSON" or chunk_length <= 0 or 20 + chunk_length > size:
-            raise DirectorDeskError("GLB 缺少有效 JSON 场景块")
-        try:
-            document = json.loads(handle.read(chunk_length).rstrip(b" \t\r\n\x00").decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise DirectorDeskError("GLB JSON 场景块无效") from exc
-    asset = document.get("asset") if isinstance(document, dict) else None
-    if not isinstance(asset, dict) or str(asset.get("version") or "") != "2.0":
-        raise DirectorDeskError("GLB asset.version 必须是 2.0")
+def _analyze_glb2(target: Path, size: int | None = None) -> dict[str, Any]:
+    try:
+        return analyze_glb_file(target, size)
+    except DirectorGlbError as exc:
+        raise DirectorDeskError(str(exc)) from exc
+
+
+def _unrecognized_model_analysis(error: str) -> dict[str, Any]:
+    return {
+        "format": "glb2",
+        "error": error,
+        "node_count": 0,
+        "mesh_count": 0,
+        "material_count": 0,
+        "skin_count": 0,
+        "skins": [],
+        "bone_count": 0,
+        "bones": [],
+        "animation_count": 0,
+        "animations": [],
+        "humanoid": {
+            "recognized": False,
+            "profile": "unknown",
+            "confidence": 0.0,
+            "mapped_joint_count": 0,
+            "joint_count": len(MANNEQUIN_JOINTS),
+            "joint_map": {},
+            "joint_node_map": {},
+            "missing_joints": sorted(MANNEQUIN_JOINTS),
+        },
+    }
 
 
 def _parse_node_input(node: WorkflowNode) -> dict[str, Any]:
@@ -376,6 +429,16 @@ class DirectorDeskService:
         if state is None:
             raise DirectorDeskError("项目不存在", status_code=404)
         director = normalize_director_state(state.get(DIRECTOR_STATE_KEY))
+        for asset in director.get("model_assets", []):
+            if not isinstance(asset, dict) or isinstance(asset.get("analysis"), dict):
+                continue
+            try:
+                target = _model_file(project_id, str(asset.get("file_name") or ""))
+                if not target.exists() or not target.is_file():
+                    raise DirectorDeskError("模型文件不存在")
+                asset["analysis"] = _analyze_glb2(target, target.stat().st_size)
+            except (DirectorDeskError, OSError) as exc:
+                asset["analysis"] = _unrecognized_model_analysis(str(exc))
         validate_director_state(director)
         return director
 
@@ -436,7 +499,7 @@ class DirectorDeskService:
                     if size > MAX_MODEL_BYTES:
                         raise DirectorDeskError("GLB 模型超过 50 MB", status_code=413)
                     handle.write(chunk)
-            _validate_glb2(target, size)
+            analysis = _analyze_glb2(target, size)
             asset = {
                 "id": model_id,
                 "name": raw_name,
@@ -444,6 +507,7 @@ class DirectorDeskService:
                 "url": f"/api/projects/{project_id}/director/models/{model_id}/file",
                 "size": size,
                 "created_at": datetime.now(timezone.utc).isoformat(),
+                "analysis": analysis,
             }
             director["model_assets"] = [*director.get("model_assets", []), asset]
             saved = await self._write(project_id, director, expected_revision=expected_revision)

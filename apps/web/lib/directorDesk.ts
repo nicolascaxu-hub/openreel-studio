@@ -1,6 +1,9 @@
 import {
+  DIRECTOR_MANNEQUIN_JOINTS,
   defaultDirectorMannequin,
   normalizeDirectorMannequin,
+  type DirectorMannequinJoint,
+  type DirectorMannequinPosePreset,
   type DirectorMannequinState,
 } from "@/lib/directorMannequin"
 
@@ -24,6 +27,7 @@ export interface DirectorObjectState {
   visible: boolean
   locked: boolean
   mannequin?: DirectorMannequinState
+  rig?: DirectorCustomRigState
 }
 
 export interface DirectorSceneState {
@@ -39,6 +43,68 @@ export interface DirectorModelAsset {
   url: string
   size: number
   created_at?: string
+  analysis?: DirectorModelAnalysis
+}
+
+export interface DirectorModelBone {
+  node: number
+  name: string
+  parent_node: number | null
+  parent_name: string | null
+}
+
+export interface DirectorModelSkin {
+  index: number
+  name: string
+  joint_count: number
+  skeleton_node: number | null
+}
+
+export interface DirectorModelAnimation {
+  index: number
+  name: string
+  duration: number | null
+  channel_count: number
+  target_node_count: number
+  properties: string[]
+}
+
+export interface DirectorModelHumanoid {
+  recognized: boolean
+  profile: string
+  confidence: number
+  mapped_joint_count: number
+  joint_count: number
+  joint_map: Partial<Record<DirectorMannequinJoint, string>>
+  joint_node_map: Partial<Record<DirectorMannequinJoint, number>>
+  missing_joints: DirectorMannequinJoint[]
+}
+
+export interface DirectorModelAnalysis {
+  format: "glb2"
+  generator?: string
+  error?: string
+  node_count: number
+  mesh_count: number
+  material_count: number
+  skin_count: number
+  skins: DirectorModelSkin[]
+  bone_count: number
+  bones: DirectorModelBone[]
+  animation_count: number
+  animations: DirectorModelAnimation[]
+  humanoid: DirectorModelHumanoid
+}
+
+export interface DirectorCustomRigState {
+  mode: "bind" | "pose" | "animation"
+  pose_preset: DirectorMannequinPosePreset
+  joints: Record<DirectorMannequinJoint, [number, number, number]>
+  animation_name: string | null
+  animation_index: number | null
+  animation_playing: boolean
+  animation_loop: boolean
+  animation_speed: number
 }
 
 export interface DirectorActorLegendItem {
@@ -141,6 +207,148 @@ function vector3(value: unknown, fallback: [number, number, number]): [number, n
   ]
 }
 
+function nullableIndex(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+function normalizeModelAnalysis(value: unknown): DirectorModelAnalysis | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const raw = value as Record<string, unknown>
+  const rawHumanoid = raw.humanoid && typeof raw.humanoid === "object" && !Array.isArray(raw.humanoid)
+    ? raw.humanoid as Record<string, unknown>
+    : {}
+  const rawJointMap = rawHumanoid.joint_map && typeof rawHumanoid.joint_map === "object" && !Array.isArray(rawHumanoid.joint_map)
+    ? rawHumanoid.joint_map as Record<string, unknown>
+    : {}
+  const rawJointNodeMap = rawHumanoid.joint_node_map && typeof rawHumanoid.joint_node_map === "object" && !Array.isArray(rawHumanoid.joint_node_map)
+    ? rawHumanoid.joint_node_map as Record<string, unknown>
+    : {}
+  const jointMap: Partial<Record<DirectorMannequinJoint, string>> = {}
+  const jointNodeMap: Partial<Record<DirectorMannequinJoint, number>> = {}
+  for (const joint of DIRECTOR_MANNEQUIN_JOINTS) {
+    if (typeof rawJointMap[joint] === "string" && String(rawJointMap[joint]).trim()) {
+      jointMap[joint] = String(rawJointMap[joint])
+    }
+    const node = nullableIndex(rawJointNodeMap[joint])
+    if (node !== null) jointNodeMap[joint] = node
+  }
+  const missingSet = new Set(
+    (Array.isArray(rawHumanoid.missing_joints) ? rawHumanoid.missing_joints : []).map(String),
+  )
+  const bones = (Array.isArray(raw.bones) ? raw.bones : []).flatMap((item): DirectorModelBone[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return []
+    const bone = item as Record<string, unknown>
+    const node = nullableIndex(bone.node)
+    if (node === null) return []
+    return [{
+      node,
+      name: String(bone.name || `Node ${node}`),
+      parent_node: nullableIndex(bone.parent_node),
+      parent_name: bone.parent_name ? String(bone.parent_name) : null,
+    }]
+  })
+  const skins = (Array.isArray(raw.skins) ? raw.skins : []).flatMap((item): DirectorModelSkin[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return []
+    const skin = item as Record<string, unknown>
+    const index = nullableIndex(skin.index)
+    if (index === null) return []
+    return [{
+      index,
+      name: String(skin.name || `Skin ${index + 1}`),
+      joint_count: Math.max(0, Math.floor(finiteNumber(skin.joint_count, 0))),
+      skeleton_node: nullableIndex(skin.skeleton_node),
+    }]
+  })
+  const animations = (Array.isArray(raw.animations) ? raw.animations : []).flatMap((item): DirectorModelAnimation[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return []
+    const animation = item as Record<string, unknown>
+    const index = nullableIndex(animation.index)
+    if (index === null) return []
+    const duration = animation.duration === null || animation.duration === undefined
+      ? Number.NaN
+      : Number(animation.duration)
+    return [{
+      index,
+      name: String(animation.name || `Animation ${index + 1}`),
+      duration: Number.isFinite(duration) && duration >= 0 ? duration : null,
+      channel_count: Math.max(0, Math.floor(finiteNumber(animation.channel_count, 0))),
+      target_node_count: Math.max(0, Math.floor(finiteNumber(animation.target_node_count, 0))),
+      properties: (Array.isArray(animation.properties) ? animation.properties : []).map(String),
+    }]
+  })
+  return {
+    format: "glb2",
+    generator: raw.generator ? String(raw.generator) : undefined,
+    error: raw.error ? String(raw.error) : undefined,
+    node_count: Math.max(0, Math.floor(finiteNumber(raw.node_count, 0))),
+    mesh_count: Math.max(0, Math.floor(finiteNumber(raw.mesh_count, 0))),
+    material_count: Math.max(0, Math.floor(finiteNumber(raw.material_count, 0))),
+    skin_count: Math.max(skins.length, Math.floor(finiteNumber(raw.skin_count, 0))),
+    skins,
+    bone_count: Math.max(bones.length, Math.floor(finiteNumber(raw.bone_count, 0))),
+    bones,
+    animation_count: Math.max(animations.length, Math.floor(finiteNumber(raw.animation_count, 0))),
+    animations,
+    humanoid: {
+      recognized: rawHumanoid.recognized === true,
+      profile: String(rawHumanoid.profile || "generic"),
+      confidence: Math.min(1, Math.max(0, finiteNumber(rawHumanoid.confidence, 0))),
+      mapped_joint_count: Math.max(0, Math.floor(finiteNumber(rawHumanoid.mapped_joint_count, Object.keys(jointMap).length))),
+      joint_count: Math.max(DIRECTOR_MANNEQUIN_JOINTS.length, Math.floor(finiteNumber(rawHumanoid.joint_count, DIRECTOR_MANNEQUIN_JOINTS.length))),
+      joint_map: jointMap,
+      joint_node_map: jointNodeMap,
+      missing_joints: DIRECTOR_MANNEQUIN_JOINTS.filter((joint) => missingSet.has(joint) || !(joint in jointMap)),
+    },
+  }
+}
+
+export function defaultDirectorCustomRig(asset?: DirectorModelAsset): DirectorCustomRigState {
+  const mannequin = defaultDirectorMannequin()
+  const firstAnimation = asset?.analysis?.animations[0]?.name || null
+  const firstAnimationIndex = asset?.analysis?.animations[0]?.index ?? null
+  return {
+    mode: firstAnimation ? "animation" : asset?.analysis?.humanoid.recognized ? "pose" : "bind",
+    pose_preset: mannequin.pose_preset,
+    joints: mannequin.joints,
+    animation_name: firstAnimation,
+    animation_index: firstAnimationIndex,
+    animation_playing: Boolean(firstAnimation),
+    animation_loop: true,
+    animation_speed: 1,
+  }
+}
+
+export function normalizeDirectorCustomRig(
+  value: unknown,
+  asset?: DirectorModelAsset,
+): DirectorCustomRigState {
+  const fallback = defaultDirectorCustomRig(asset)
+  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback
+  const raw = value as Record<string, unknown>
+  const mannequin = normalizeDirectorMannequin({
+    pose_preset: raw.pose_preset,
+    joints: raw.joints,
+  })
+  const mode = raw.mode === "pose" || raw.mode === "animation" || raw.mode === "bind"
+    ? raw.mode
+    : fallback.mode
+  const speed = Math.min(4, Math.max(0.05, finiteNumber(raw.animation_speed, 1)))
+  return {
+    mode,
+    pose_preset: mannequin.pose_preset,
+    joints: mannequin.joints,
+    animation_name: typeof raw.animation_name === "string" && raw.animation_name
+      ? raw.animation_name
+      : fallback.animation_name,
+    animation_index: nullableIndex(raw.animation_index) ?? fallback.animation_index,
+    animation_playing: raw.animation_playing !== false,
+    animation_loop: raw.animation_loop !== false,
+    animation_speed: speed,
+  }
+}
+
 export function normalizeDirectorScene(value: unknown): DirectorSceneState {
   const source = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -176,6 +384,9 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
         mannequin: assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
           ? normalizeDirectorMannequin(raw.mannequin)
           : undefined,
+        rig: !assetId.startsWith("builtin:") && raw.rig !== undefined
+          ? normalizeDirectorCustomRig(raw.rig)
+          : undefined,
       }]
     }),
   }
@@ -204,6 +415,7 @@ export function normalizeDirectorDesk(value: unknown): DirectorDeskState {
         url,
         size: Math.max(0, finiteNumber(raw.size, 0)),
         created_at: raw.created_at ? String(raw.created_at) : undefined,
+        analysis: normalizeModelAnalysis(raw.analysis),
       }]
     }),
     captures: captures.slice(0, 200).flatMap((item, index): DirectorCapture[] => {
@@ -246,6 +458,7 @@ export function newDirectorObject(
   assetId: string,
   defaultName: string,
   existing: DirectorObjectState[],
+  asset?: DirectorModelAsset,
 ): DirectorObjectState {
   const sameAssetCount = existing.filter((item) => item.asset_id === assetId).length
   const mannequinCount = existing.filter((item) => item.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID).length
@@ -262,5 +475,6 @@ export function newDirectorObject(
     visible: true,
     locked: false,
     mannequin: assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID ? defaultDirectorMannequin() : undefined,
+    rig: asset ? defaultDirectorCustomRig(asset) : undefined,
   }
 }
