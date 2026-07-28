@@ -1,9 +1,24 @@
 import type { DirectorModelAnalysis, DirectorModelAsset } from "@/lib/directorDesk"
 import { DIRECTOR_MANNEQUIN_JOINTS, type DirectorMannequinJoint } from "@/lib/directorMannequin"
+import commonModelCatalog from "@/lib/directorCommonModels.json"
+import { DIRECTOR_SOURCE_PROP_ASSETS } from "@/lib/directorSourceProps"
+
+export interface DirectorBundledModelStats {
+  node_count: number
+  mesh_count: number
+  material_count: number
+  bone_count: number
+  animation_count: number
+}
 
 export interface DirectorBundledModelAsset extends DirectorModelAsset {
   summary: string
   license: string
+  category: string
+  keywords: string[]
+  source_kind: "glb" | "source"
+  display_size: number
+  stats: DirectorBundledModelStats
 }
 
 const modelBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "")
@@ -69,7 +84,7 @@ const riggedFigureJointNodeMap: Partial<Record<DirectorMannequinJoint, number>> 
   rightToe: 6,
 }
 
-export const DIRECTOR_BUNDLED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
+const DIRECTOR_FEATURED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
   {
     id: "bundled:fox",
     name: "动画狐狸",
@@ -78,6 +93,11 @@ export const DIRECTOR_BUNDLED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
     size: 162852,
     summary: "24 根骨骼，内置观察、行走、奔跑三段动画",
     license: "模型 CC0；绑定、动画及 glTF 转换 CC BY 4.0",
+    category: "角色动作",
+    keywords: ["狐狸", "动物", "行走", "奔跑", "fox"],
+    source_kind: "glb",
+    display_size: 1.2,
+    stats: { node_count: 26, mesh_count: 1, material_count: 1, bone_count: 24, animation_count: 3 },
     analysis: {
       analysis_version: 2,
       format: "glb2",
@@ -136,6 +156,11 @@ export const DIRECTOR_BUNDLED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
     size: 50116,
     summary: "19 根人体骨骼，自动映射躯干、手臂与腿部关节",
     license: "CC BY 4.0 · Cesium",
+    category: "角色动作",
+    keywords: ["人物", "骨骼", "角色", "human"],
+    source_kind: "glb",
+    display_size: 1.8,
+    stats: { node_count: 22, mesh_count: 1, material_count: 1, bone_count: 19, animation_count: 1 },
     analysis: {
       analysis_version: 2,
       format: "glb2",
@@ -196,6 +221,11 @@ export const DIRECTOR_BUNDLED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
     size: 11944,
     summary: "旋转与位移双通道关键帧动画测试模型",
     license: "CC BY 4.0 · Cesium",
+    category: "动画测试",
+    keywords: ["方块", "关键帧", "动画", "box"],
+    source_kind: "glb",
+    display_size: 1.2,
+    stats: { node_count: 4, mesh_count: 2, material_count: 2, bone_count: 0, animation_count: 1 },
     analysis: {
       analysis_version: 2,
       format: "glb2",
@@ -222,6 +252,11 @@ export const DIRECTOR_BUNDLED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
     size: 5422412,
     summary: "清漆、透射与织物材质完整展示模型",
     license: "CC0 1.0 · Guido Odendahl / Eric Chadwick",
+    category: "交通车辆",
+    keywords: ["汽车", "玩具车", "车辆", "car"],
+    source_kind: "glb",
+    display_size: 4.2,
+    stats: { node_count: 11, mesh_count: 3, material_count: 3, bone_count: 0, animation_count: 0 },
     analysis: {
       analysis_version: 2,
       format: "glb2",
@@ -240,7 +275,27 @@ export const DIRECTOR_BUNDLED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
   },
 ]
 
+const DIRECTOR_KENNEY_MODEL_ASSETS: DirectorBundledModelAsset[] = commonModelCatalog.models.map((asset) => ({
+  id: asset.id,
+  name: asset.name,
+  file_name: asset.file_name,
+  url: modelUrl(asset.file_path),
+  size: asset.size,
+  summary: asset.summary,
+  license: asset.license,
+  category: asset.category,
+  keywords: asset.keywords,
+  source_kind: "glb",
+  display_size: asset.display_size,
+  stats: asset.stats,
+}))
+
+export const DIRECTOR_BUNDLED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
+  ...DIRECTOR_FEATURED_MODEL_ASSETS,
+  ...DIRECTOR_KENNEY_MODEL_ASSETS,
+  ...DIRECTOR_SOURCE_PROP_ASSETS,
+]
+
 export const DIRECTOR_BUNDLED_MODEL_BY_ID = new Map(
   DIRECTOR_BUNDLED_MODEL_ASSETS.map((asset) => [asset.id, asset]),
 )
-

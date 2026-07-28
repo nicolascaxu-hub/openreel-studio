@@ -52,6 +52,7 @@ import {
   DIRECTOR_BUNDLED_MODEL_ASSETS,
   DIRECTOR_BUNDLED_MODEL_BY_ID,
 } from "@/lib/directorBundledModels"
+import { createDirectorSourceProp } from "@/lib/directorSourceProps"
 import {
   applyDirectorMannequinBodyPreset,
   applyDirectorMannequinPosePreset,
@@ -194,6 +195,28 @@ const DIRECTOR_MOUSE_CONTROLS = [
   ["中键拖动", "平移观察视角，不受浏览器右键手势影响"],
   ["右键短按", "打开对象、相机或场景上下文菜单"],
 ] as const
+
+const DIRECTOR_MODEL_CATEGORY_ORDER = [
+  "家居家具",
+  "厨卫家电",
+  "办公电子",
+  "随身物品",
+  "餐饮食物",
+  "商业零售",
+  "医疗教育",
+  "交通车辆",
+  "道路设施",
+  "拍摄器材",
+  "自然户外",
+  "建筑场景",
+  "工具杂物",
+  "角色动作",
+  "动画测试",
+]
+
+const DIRECTOR_MODEL_CATEGORIES = DIRECTOR_MODEL_CATEGORY_ORDER.filter((category) => (
+  DIRECTOR_BUNDLED_MODEL_ASSETS.some((asset) => asset.category === category)
+))
 
 type DirectorIconName =
   | "arrow-left"
@@ -359,6 +382,17 @@ function directorModelAssetById(
     || uploadedAssets.find((asset) => asset.id === assetId)
 }
 
+function isDirectorRigAsset(asset: DirectorModelAsset | undefined): asset is DirectorModelAsset {
+  return Boolean(
+    asset?.analysis
+    && (
+      asset.analysis.bone_count > 0
+      || asset.analysis.animation_count > 0
+      || asset.analysis.humanoid.recognized
+    ),
+  )
+}
+
 function allDirectorModelAssets(uploadedAssets: DirectorModelAsset[]): DirectorModelAsset[] {
   return [...DIRECTOR_BUNDLED_MODEL_ASSETS, ...uploadedAssets]
 }
@@ -379,8 +413,9 @@ function thumbnailRenderer(): THREE.WebGLRenderer {
 
 async function renderDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
   const renderer = thumbnailRenderer()
-  const gltf = await new GLTFLoader().loadAsync(directorModelUrl(asset))
-  const model = gltf.scene
+  const sourceModel = createDirectorSourceProp(asset.id)
+  const gltf = sourceModel ? null : await new GLTFLoader().loadAsync(directorModelUrl(asset))
+  const model = sourceModel || gltf!.scene
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 1000)
   scene.add(new THREE.HemisphereLight(0xf4f8ff, 0x172033, 2.4))
@@ -393,7 +428,7 @@ async function renderDirectorModelThumbnail(asset: DirectorModelAsset): Promise<
   scene.add(model)
 
   let mixer: THREE.AnimationMixer | null = null
-  if (gltf.animations.length > 0) {
+  if (gltf && gltf.animations.length > 0) {
     const clip = gltf.animations[0]
     mixer = new THREE.AnimationMixer(model)
     mixer.clipAction(clip).play()
@@ -454,10 +489,29 @@ function getDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
 
 function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
   const cacheKey = modelThumbnailCacheKey(asset)
+  const previewRef = useRef<HTMLSpanElement | null>(null)
   const [thumbnail, setThumbnail] = useState<string | null>(() => directorModelThumbnailCache.get(cacheKey) || null)
   const [failed, setFailed] = useState(false)
+  const [shouldLoad, setShouldLoad] = useState(() => directorModelThumbnailCache.has(cacheKey))
 
   useEffect(() => {
+    if (shouldLoad) return
+    const target = previewRef.current
+    if (!target || typeof IntersectionObserver === "undefined") {
+      setShouldLoad(true)
+      return
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      setShouldLoad(true)
+      observer.disconnect()
+    }, { rootMargin: "220px" })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [shouldLoad])
+
+  useEffect(() => {
+    if (!shouldLoad) return
     let current = true
     const cached = directorModelThumbnailCache.get(cacheKey)
     if (cached) {
@@ -473,20 +527,23 @@ function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
       if (current) setFailed(true)
     })
     return () => { current = false }
-  }, [asset, cacheKey])
+  }, [asset, cacheKey, shouldLoad])
 
   return (
     <span
+      ref={previewRef}
       aria-label={`${asset.name} 模型预览`}
-      data-model-preview={failed ? "failed" : thumbnail ? "ready" : "loading"}
+      data-model-preview={failed ? "failed" : thumbnail ? "ready" : shouldLoad ? "loading" : "idle"}
       className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.07] bg-[radial-gradient(circle_at_50%_32%,rgba(129,140,248,.2),rgba(15,23,42,.78)_58%,rgba(3,7,18,.96))]"
     >
       {thumbnail ? (
         <img src={thumbnail} alt="" draggable={false} className="h-full w-full object-contain p-0.5" />
       ) : failed ? (
         <span className="flex flex-col items-center text-zinc-600"><BuiltinGlyph assetId="builtin:cube" /><span className="-mt-1 text-[6px]">预览失败</span></span>
-      ) : (
+      ) : shouldLoad ? (
         <span className="h-4 w-4 animate-spin rounded-full border border-violet-200/20 border-t-violet-200/80" />
+      ) : (
+        <span className="h-5 w-5 rounded-lg border border-white/[0.08] bg-white/[0.025]" />
       )}
       <span className="absolute bottom-1 right-1 rounded bg-black/55 px-1 py-0.5 text-[6px] font-semibold tracking-[0.08em] text-cyan-100/75">3D</span>
     </span>
@@ -813,6 +870,8 @@ export default function DirectorDesk({
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [viewportContextMenu, setViewportContextMenu] = useState<DirectorViewportContextMenu | null>(null)
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
+  const [modelCategory, setModelCategory] = useState("家居家具")
+  const [modelQuery, setModelQuery] = useState("")
   const [inspectorTab, setInspectorTab] = useState<"object" | "camera" | "scene">("camera")
   const [objectInspectorTab, setObjectInspectorTab] = useState<"transform" | "rig">("transform")
   const [rigInspectorTab, setRigInspectorTab] = useState<"setup" | "motion" | "joints" | "analysis">("motion")
@@ -820,6 +879,16 @@ export default function DirectorDesk({
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
   const [snapToGrid, setSnapToGrid] = useState(false)
   const [selectedJoint, setSelectedJoint] = useState<DirectorMannequinJoint>("spine")
+
+  const filteredBundledModels = useMemo(() => {
+    const query = modelQuery.trim().toLocaleLowerCase()
+    return DIRECTOR_BUNDLED_MODEL_ASSETS.filter((asset) => {
+      if (modelCategory !== "全部" && asset.category !== modelCategory) return false
+      if (!query) return true
+      return [asset.name, asset.category, asset.summary, ...asset.keywords]
+        .some((value) => value.toLocaleLowerCase().includes(query))
+    })
+  }, [modelCategory, modelQuery])
 
   const setLocalDirector = useCallback((next: DirectorDeskState) => {
     directorRef.current = next
@@ -925,6 +994,11 @@ export default function DirectorDesk({
       })
       return
     }
+    const sourceProp = createDirectorSourceProp(object.asset_id)
+    if (sourceProp) {
+      root.add(sourceProp)
+      return
+    }
     if (object.asset_id.startsWith("builtin:")) {
       root.add(createBuiltinModel(object.asset_id, object.color))
       return
@@ -985,7 +1059,8 @@ export default function DirectorDesk({
       const normalizationExtent = analysis?.humanoid.recognized
         ? Math.max(restSize.y, 0.001)
         : largest
-      const normalizedScale = 1.8 / normalizationExtent
+      const displaySize = DIRECTOR_BUNDLED_MODEL_BY_ID.get(asset.id)?.display_size || 1.8
+      const normalizedScale = displaySize / normalizationExtent
       const content = new THREE.Group()
       content.name = `${asset.name} normalization frame`
       content.add(model)
@@ -1587,9 +1662,11 @@ export default function DirectorDesk({
     [selectedObject],
   )
   const selectedCustomAsset = useMemo(
-    () => selectedObject && !selectedObject.asset_id.startsWith("builtin:")
-      ? directorModelAssetById(selectedObject.asset_id, director.model_assets) || null
-      : null,
+    () => {
+      if (!selectedObject || selectedObject.asset_id.startsWith("builtin:")) return null
+      const asset = directorModelAssetById(selectedObject.asset_id, director.model_assets)
+      return isDirectorRigAsset(asset) ? asset : null
+    },
     [director.model_assets, selectedObject],
   )
   const selectedCustomRig = useMemo(
@@ -1618,7 +1695,7 @@ export default function DirectorDesk({
   const addObject = useCallback((assetId: string, defaultName: string) => {
     const scene = cloneDirectorScene(directorRef.current.scene)
     const asset = directorModelAssetById(assetId, directorRef.current.model_assets)
-    const object = newDirectorObject(assetId, defaultName, scene.objects, asset)
+    const object = newDirectorObject(assetId, defaultName, scene.objects, isDirectorRigAsset(asset) ? asset : undefined)
     scene.objects.push(object)
     replaceScene(scene, true)
     setSelectedCameraId(null)
@@ -2546,12 +2623,37 @@ export default function DirectorDesk({
                 <div className="mb-2 mt-5 flex items-center justify-between">
                   <div>
                     <div className="text-[11px] font-semibold text-zinc-200">项目模型</div>
-                    <div className="mt-0.5 text-[9px] text-zinc-600">随源码提供 · 可直接加载</div>
+                    <div className="mt-0.5 text-[9px] text-zinc-600">短剧常用物品 · 离线可用</div>
                   </div>
                   <span className="rounded-full border border-cyan-300/[0.12] bg-cyan-300/[0.04] px-2 py-0.5 text-[8px] text-cyan-100/60">{DIRECTOR_BUNDLED_MODEL_ASSETS.length} 项</span>
                 </div>
+                <div className="mb-2 grid grid-cols-[minmax(0,1fr)_88px] gap-1.5">
+                  <label className="relative block">
+                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-700">⌕</span>
+                    <input
+                      value={modelQuery}
+                      onChange={(event) => setModelQuery(event.target.value)}
+                      aria-label="搜索项目模型"
+                      placeholder="搜索物品"
+                      className="h-8 w-full rounded-lg border border-white/[0.075] bg-black/20 pl-6 pr-2 text-[9px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-300/25"
+                    />
+                  </label>
+                  <select
+                    aria-label="模型分类"
+                    value={modelCategory}
+                    onChange={(event) => setModelCategory(event.target.value)}
+                    className="h-8 rounded-lg border border-white/[0.075] bg-[#0b0e16] px-1.5 text-[8px] text-zinc-400 outline-none focus:border-cyan-300/25"
+                  >
+                    <option value="全部">全部分类</option>
+                    {DIRECTOR_MODEL_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </div>
+                <div className="mb-2 flex items-center justify-between text-[7px] text-zinc-700">
+                  <span>{modelCategory === "全部" ? "全部分类" : modelCategory}</span>
+                  <span>{filteredBundledModels.length} 个结果</span>
+                </div>
                 <div className="space-y-1.5">
-                  {DIRECTOR_BUNDLED_MODEL_ASSETS.map((asset) => (
+                  {filteredBundledModels.map((asset) => (
                     <button
                       key={asset.id}
                       type="button"
@@ -2564,13 +2666,17 @@ export default function DirectorDesk({
                         <span className="flex items-center gap-1.5 text-[10px] text-zinc-300 group-hover:text-white">
                           <span className="truncate">{asset.name}</span>
                           {asset.analysis?.humanoid.recognized ? <span className="shrink-0 rounded bg-cyan-300/10 px-1 py-0.5 text-[7px] text-cyan-200/80">人形</span> : null}
+                          <span className="shrink-0 rounded bg-white/[0.04] px-1 py-0.5 text-[6px] text-zinc-600">{asset.category}</span>
                         </span>
                         <span className="mt-0.5 block line-clamp-2 text-[8px] leading-3 text-zinc-600">{asset.summary}</span>
-                        <span className="mt-1 block text-[7px] text-zinc-700">{asset.analysis?.bone_count || 0} 骨骼 · {modelClipCounts(asset.analysis).animations} 动画 · {formatBytes(asset.size)}</span>
+                        <span className="mt-1 block text-[7px] text-zinc-700" title={asset.license}>{asset.source_kind === "source" ? "源码组合" : `${asset.stats.mesh_count} 网格`} · {asset.stats.animation_count} 动画 · {asset.source_kind === "source" ? "离线内置" : formatBytes(asset.size)}</span>
                       </span>
                       <span className="text-zinc-700 opacity-0 transition group-hover:text-cyan-200 group-hover:opacity-100">＋</span>
                     </button>
                   ))}
+                  {filteredBundledModels.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-white/[0.08] px-3 py-5 text-center text-[9px] text-zinc-600">没有匹配的模型，请更换关键词或分类。</div>
+                  ) : null}
                 </div>
 
                 <div className="mb-2 mt-5 flex items-center justify-between">

@@ -1,0 +1,12 @@
+Kenney model packs
+
+Created and distributed by Kenney (https://kenney.nl/).
+
+License: Creative Commons Zero (CC0 1.0 Universal)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+You can use this content for personal, educational, and commercial purposes.
+Crediting “Kenney” or “www.kenney.nl” is appreciated but not required.
+
+The exact source pack pages and archive URLs used by OpenReel are recorded in
+apps/web/lib/directorCommonModels.json.

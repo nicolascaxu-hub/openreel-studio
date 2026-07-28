@@ -1,0 +1,3940 @@
+{
+  "version": 1,
+  "license": "CC0 1.0 Universal",
+  "source": "Kenney",
+  "sources": [
+    {
+      "key": "furniture",
+      "label": "Kenney Furniture Kit",
+      "page": "https://kenney.nl/assets/furniture-kit",
+      "archive": "https://kenney.nl/media/pages/assets/furniture-kit/440e0608a4-1677580847/kenney_furniture-kit.zip"
+    },
+    {
+      "key": "food",
+      "label": "Kenney Food Kit",
+      "page": "https://kenney.nl/assets/food-kit",
+      "archive": "https://kenney.nl/media/pages/assets/food-kit/83086fa91c-1719418518/kenney_food-kit.zip"
+    },
+    {
+      "key": "vehicles",
+      "label": "Kenney Car Kit",
+      "page": "https://kenney.nl/assets/car-kit",
+      "archive": "https://kenney.nl/media/pages/assets/car-kit/1a312ec241-1775131960/kenney_car-kit.zip"
+    },
+    {
+      "key": "commercial",
+      "label": "Kenney City Kit (Commercial)",
+      "page": "https://kenney.nl/assets/city-kit-commercial",
+      "archive": "https://kenney.nl/media/pages/assets/city-kit-commercial/a742d900eb-1753115042/kenney_city-kit-commercial_2.1.zip"
+    },
+    {
+      "key": "industrial",
+      "label": "Kenney City Kit (Industrial)",
+      "page": "https://kenney.nl/assets/city-kit-industrial",
+      "archive": "https://kenney.nl/media/pages/assets/city-kit-industrial/5fcb837741-1750838303/kenney_city-kit-industrial_1.0.zip"
+    },
+    {
+      "key": "roads",
+      "label": "Kenney City Kit (Roads)",
+      "page": "https://kenney.nl/assets/city-kit-roads",
+      "archive": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip"
+    },
+    {
+      "key": "nature",
+      "label": "Kenney Nature Kit",
+      "page": "https://kenney.nl/assets/nature-kit",
+      "archive": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip"
+    }
+  ],
+  "models": [
+    {
+      "id": "bundled:kenney:furniture:bedDouble",
+      "name": "双人床",
+      "file_name": "bedDouble.glb",
+      "file_path": "kenney/furniture/bedDouble.glb",
+      "size": 23368,
+      "sha256": "c49b33e7d797d2ba1111895587dba7ff63b17a712eb9b4ceeb40a598f73e476c",
+      "category": "家居家具",
+      "keywords": [
+        "床",
+        "卧室",
+        "酒店",
+        "bedroom",
+        "bed"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.2,
+      "stats": {
+        "node_count": 4,
+        "mesh_count": 4,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bedSingle",
+      "name": "单人床",
+      "file_name": "bedSingle.glb",
+      "file_path": "kenney/furniture/bedSingle.glb",
+      "size": 18636,
+      "sha256": "ca00c63f9a12da3138d902b2f5f18e0360fb6e8a5ac42ccb4bc3f185724b65d1",
+      "category": "家居家具",
+      "keywords": [
+        "床",
+        "卧室",
+        "宿舍",
+        "bedroom",
+        "bed"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.0,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bedBunk",
+      "name": "上下床",
+      "file_name": "bedBunk.glb",
+      "file_path": "kenney/furniture/bedBunk.glb",
+      "size": 40784,
+      "sha256": "a3eccbc4a04340dd84878d959e15eede76f517fb8d4de6862ca46877c88d764e",
+      "category": "家居家具",
+      "keywords": [
+        "床",
+        "宿舍",
+        "儿童房",
+        "bunk",
+        "bed"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.3,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 5,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:loungeDesignSofa",
+      "name": "客厅沙发",
+      "file_name": "loungeDesignSofa.glb",
+      "file_path": "kenney/furniture/loungeDesignSofa.glb",
+      "size": 9128,
+      "sha256": "b4f4e6850118e409da301df678228c703b6ac02e94fbb9dbde61543af817fa53",
+      "category": "家居家具",
+      "keywords": [
+        "沙发",
+        "客厅",
+        "sofa",
+        "living-room"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.4,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:loungeChair",
+      "name": "单人沙发",
+      "file_name": "loungeChair.glb",
+      "file_path": "kenney/furniture/loungeChair.glb",
+      "size": 9648,
+      "sha256": "ddfe6bc4b3451bca61666d7b614552d6ed2a03d82fc76244b72ae3155874dc6c",
+      "category": "家居家具",
+      "keywords": [
+        "沙发",
+        "椅子",
+        "armchair"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.3,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:tableCoffee",
+      "name": "咖啡桌",
+      "file_name": "tableCoffee.glb",
+      "file_path": "kenney/furniture/tableCoffee.glb",
+      "size": 8256,
+      "sha256": "e38bea760fbd514efbb75528d09b4752c91af44677bbb97e6d4386c263525179",
+      "category": "家居家具",
+      "keywords": [
+        "茶几",
+        "桌",
+        "客厅",
+        "coffee-table"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.4,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:table",
+      "name": "餐桌",
+      "file_name": "table.glb",
+      "file_path": "kenney/furniture/table.glb",
+      "size": 8196,
+      "sha256": "ff1a94498d023957f4bc3ff6f55a7a82977d336dbf01a573b3364f03afe5ff61",
+      "category": "家居家具",
+      "keywords": [
+        "桌子",
+        "餐厅",
+        "dining-table"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.9,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:tableRound",
+      "name": "圆桌",
+      "file_name": "tableRound.glb",
+      "file_path": "kenney/furniture/tableRound.glb",
+      "size": 6444,
+      "sha256": "f8daea9124a542a00b7bdacfddac82dc468573d43e44d7b54dd6316e9695754b",
+      "category": "家居家具",
+      "keywords": [
+        "桌子",
+        "餐厅",
+        "round-table"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.8,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:chairCushion",
+      "name": "餐椅",
+      "file_name": "chairCushion.glb",
+      "file_path": "kenney/furniture/chairCushion.glb",
+      "size": 12588,
+      "sha256": "33544228984857f2cb502b58452fed72157335f9b1caf29e96da5c9094c53fdc",
+      "category": "家居家具",
+      "keywords": [
+        "椅子",
+        "餐厅",
+        "chair"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.1,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:stoolBar",
+      "name": "吧椅",
+      "file_name": "stoolBar.glb",
+      "file_path": "kenney/furniture/stoolBar.glb",
+      "size": 11816,
+      "sha256": "a86167a9f92401a61fec7e509ad089ecc552d0f299743add3aeb919acb24e341",
+      "category": "家居家具",
+      "keywords": [
+        "凳子",
+        "酒吧",
+        "stool"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:sideTableDrawers",
+      "name": "床头柜",
+      "file_name": "sideTableDrawers.glb",
+      "file_path": "kenney/furniture/sideTableDrawers.glb",
+      "size": 19072,
+      "sha256": "911145653c11b103b2c2e84f3d019205d1886186015c3b52aceddc3801ae8fdf",
+      "category": "家居家具",
+      "keywords": [
+        "柜子",
+        "卧室",
+        "nightstand"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.9,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bookcaseOpen",
+      "name": "开放书架",
+      "file_name": "bookcaseOpen.glb",
+      "file_path": "kenney/furniture/bookcaseOpen.glb",
+      "size": 18020,
+      "sha256": "750702218d68c062b15dfef6ab06a4014d1cfa8bd05f02e57c53b7e13bec157c",
+      "category": "家居家具",
+      "keywords": [
+        "书柜",
+        "书架",
+        "bookshelf"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:books",
+      "name": "一摞书",
+      "file_name": "books.glb",
+      "file_path": "kenney/furniture/books.glb",
+      "size": 6864,
+      "sha256": "b8dc56e5d29f6fc1f4727fccb1b9642627fee9942c48060a00034e98df02701c",
+      "category": "家居家具",
+      "keywords": [
+        "书籍",
+        "文件",
+        "books"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.45,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:coatRackStanding",
+      "name": "落地衣架",
+      "file_name": "coatRackStanding.glb",
+      "file_path": "kenney/furniture/coatRackStanding.glb",
+      "size": 13288,
+      "sha256": "d8231c22dab63ceb9fc8678f6c8ceafc62afa8726b51a73b4ce349043d3cdc91",
+      "category": "家居家具",
+      "keywords": [
+        "衣架",
+        "门厅",
+        "coat-rack"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.9,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:cabinetTelevision",
+      "name": "电视柜",
+      "file_name": "cabinetTelevision.glb",
+      "file_path": "kenney/furniture/cabinetTelevision.glb",
+      "size": 10524,
+      "sha256": "811719593d676ff76f7b5904d52c845ce0396af2bc9a6a2636c4818ead320b99",
+      "category": "家居家具",
+      "keywords": [
+        "柜子",
+        "客厅",
+        "tv-cabinet"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.8,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:televisionModern",
+      "name": "电视机",
+      "file_name": "televisionModern.glb",
+      "file_path": "kenney/furniture/televisionModern.glb",
+      "size": 6368,
+      "sha256": "d89519ad0a5f28b5b0dccb0d83209dccf610cda959578238dd21bbf9e219cfc6",
+      "category": "家居家具",
+      "keywords": [
+        "电视",
+        "屏幕",
+        "tv"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.6,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:lampRoundFloor",
+      "name": "落地灯",
+      "file_name": "lampRoundFloor.glb",
+      "file_path": "kenney/furniture/lampRoundFloor.glb",
+      "size": 6600,
+      "sha256": "50fe1b5b588edf15bfa9cc880f71a02a4fda6036350b24733d0ef4de5cc5e908",
+      "category": "家居家具",
+      "keywords": [
+        "灯具",
+        "floor-lamp"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.8,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:lampRoundTable",
+      "name": "台灯",
+      "file_name": "lampRoundTable.glb",
+      "file_path": "kenney/furniture/lampRoundTable.glb",
+      "size": 6604,
+      "sha256": "75bb644caaa3da003b4fcad7a931722dd61cd2858aab70cf660021d5061fa1b2",
+      "category": "家居家具",
+      "keywords": [
+        "灯具",
+        "table-lamp"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.7,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:pottedPlant",
+      "name": "室内盆栽",
+      "file_name": "pottedPlant.glb",
+      "file_path": "kenney/furniture/pottedPlant.glb",
+      "size": 7576,
+      "sha256": "5b760eda2766f75fda36b2c5df652a1662f82981ef64cd8fa7fe7bcd386b3a15",
+      "category": "家居家具",
+      "keywords": [
+        "植物",
+        "绿植",
+        "plant"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:rugRectangle",
+      "name": "长方地毯",
+      "file_name": "rugRectangle.glb",
+      "file_path": "kenney/furniture/rugRectangle.glb",
+      "size": 3188,
+      "sha256": "a989d2d59c04e3071e0c90388b113a9a8f339ce1814ef984c51cb6dcd7c8e0eb",
+      "category": "家居家具",
+      "keywords": [
+        "地毯",
+        "rug",
+        "carpet"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.3,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:pillow",
+      "name": "枕头",
+      "file_name": "pillow.glb",
+      "file_path": "kenney/furniture/pillow.glb",
+      "size": 5044,
+      "sha256": "6fae7c190d0b676ef3efd35e5178cef21dffb5c80e1257d8b537ad424da0e5f6",
+      "category": "家居家具",
+      "keywords": [
+        "抱枕",
+        "pillow"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.65,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:ceilingFan",
+      "name": "吊扇",
+      "file_name": "ceilingFan.glb",
+      "file_path": "kenney/furniture/ceilingFan.glb",
+      "size": 15284,
+      "sha256": "5fdf7b3c4328875462c9887c6b1f2fad08126ea42e758cf86534639b9ea72044",
+      "category": "家居家具",
+      "keywords": [
+        "风扇",
+        "ceiling-fan"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.6,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bear",
+      "name": "玩具熊",
+      "file_name": "bear.glb",
+      "file_path": "kenney/furniture/bear.glb",
+      "size": 11884,
+      "sha256": "fd87c08f81dcd652b1f7f61afae9d1f040fa1322ac4ddda6f543ed423b954aed",
+      "category": "家居家具",
+      "keywords": [
+        "玩具",
+        "毛绒熊",
+        "teddy",
+        "bear"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.8,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:cardboardBoxClosed",
+      "name": "封闭纸箱",
+      "file_name": "cardboardBoxClosed.glb",
+      "file_path": "kenney/furniture/cardboardBoxClosed.glb",
+      "size": 5400,
+      "sha256": "4af079dca52960912764574950f0549ff2ae1224b3db1528718629473a2d5d81",
+      "category": "家居家具",
+      "keywords": [
+        "纸箱",
+        "快递",
+        "搬家",
+        "box"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.8,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:cardboardBoxOpen",
+      "name": "打开纸箱",
+      "file_name": "cardboardBoxOpen.glb",
+      "file_path": "kenney/furniture/cardboardBoxOpen.glb",
+      "size": 5404,
+      "sha256": "960da412564774c75e7b32f9af0100895e1edb877fc1e70dd34ee2422a2196d4",
+      "category": "家居家具",
+      "keywords": [
+        "纸箱",
+        "快递",
+        "搬家",
+        "box"
+      ],
+      "summary": "家居家具常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.8,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bathroomCabinetDrawer",
+      "name": "浴室柜",
+      "file_name": "bathroomCabinetDrawer.glb",
+      "file_path": "kenney/furniture/bathroomCabinetDrawer.glb",
+      "size": 34744,
+      "sha256": "f32d09c6dab20fe823d238310f75ce81f24e893a91c2078b12efd3f7fe6c6b10",
+      "category": "厨卫家电",
+      "keywords": [
+        "浴室",
+        "柜子",
+        "bathroom"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bathroomMirror",
+      "name": "浴室镜",
+      "file_name": "bathroomMirror.glb",
+      "file_path": "kenney/furniture/bathroomMirror.glb",
+      "size": 6792,
+      "sha256": "940b986894101ea59b50541554b6dc608a22b133057975849259009012984175",
+      "category": "厨卫家电",
+      "keywords": [
+        "镜子",
+        "浴室",
+        "mirror"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bathroomSink",
+      "name": "洗手池",
+      "file_name": "bathroomSink.glb",
+      "file_path": "kenney/furniture/bathroomSink.glb",
+      "size": 22536,
+      "sha256": "39d4f19608cab7e0fed52303b2c689f5f51fae1bad9b6913cb53d838875e797e",
+      "category": "厨卫家电",
+      "keywords": [
+        "水池",
+        "浴室",
+        "sink"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.1,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:bathtub",
+      "name": "浴缸",
+      "file_name": "bathtub.glb",
+      "file_path": "kenney/furniture/bathtub.glb",
+      "size": 35500,
+      "sha256": "54c405c7035aab63dc41e709dc3c50fc5bcfbc4cddc91ffc54188075a6d25d01",
+      "category": "厨卫家电",
+      "keywords": [
+        "浴室",
+        "洗澡",
+        "bathtub"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.9,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:shower",
+      "name": "淋浴间",
+      "file_name": "shower.glb",
+      "file_path": "kenney/furniture/shower.glb",
+      "size": 52020,
+      "sha256": "25c1cebad681fe369dc04839a8f08f5da2ccbd99b3a70aa83fe2e4d1590c6951",
+      "category": "厨卫家电",
+      "keywords": [
+        "浴室",
+        "洗澡",
+        "shower"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.1,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:toilet",
+      "name": "马桶",
+      "file_name": "toilet.glb",
+      "file_path": "kenney/furniture/toilet.glb",
+      "size": 18112,
+      "sha256": "16165cfd03c56c2cb443b800570810a22ef770f65e7a468f6761d9dc14eaaeae",
+      "category": "厨卫家电",
+      "keywords": [
+        "卫生间",
+        "toilet"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.1,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenBar",
+      "name": "厨房岛台",
+      "file_name": "kitchenBar.glb",
+      "file_path": "kenney/furniture/kitchenBar.glb",
+      "size": 6004,
+      "sha256": "792c3d31e60c8a8d8c7a28cf7d1efe004c5a601adc1b163a8799dde32c1b559d",
+      "category": "厨卫家电",
+      "keywords": [
+        "厨房",
+        "吧台",
+        "island"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.9,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenBlender",
+      "name": "料理机",
+      "file_name": "kitchenBlender.glb",
+      "file_path": "kenney/furniture/kitchenBlender.glb",
+      "size": 18728,
+      "sha256": "f471defb5b2b1cf3b949a1a8aaef0a8b727afe662b0815068cf4e963325a3c1f",
+      "category": "厨卫家电",
+      "keywords": [
+        "搅拌机",
+        "厨房",
+        "blender"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.55,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenCabinet",
+      "name": "厨房地柜",
+      "file_name": "kitchenCabinet.glb",
+      "file_path": "kenney/furniture/kitchenCabinet.glb",
+      "size": 10444,
+      "sha256": "7238c57778935ae25db5e57e9f7af3ba7068c71b005ff7cfbff3b6f3b1a13200",
+      "category": "厨卫家电",
+      "keywords": [
+        "橱柜",
+        "厨房",
+        "cabinet"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenCabinetUpper",
+      "name": "厨房吊柜",
+      "file_name": "kitchenCabinetUpper.glb",
+      "file_path": "kenney/furniture/kitchenCabinetUpper.glb",
+      "size": 8168,
+      "sha256": "8f2496feed85a745ffb6e554075b8450d647f8f68b01d6a010fcac1510fc173a",
+      "category": "厨卫家电",
+      "keywords": [
+        "橱柜",
+        "厨房",
+        "cabinet"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.1,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenCoffeeMachine",
+      "name": "咖啡机",
+      "file_name": "kitchenCoffeeMachine.glb",
+      "file_path": "kenney/furniture/kitchenCoffeeMachine.glb",
+      "size": 13332,
+      "sha256": "063f582c6fa0f00a9f24e3393dac2295491c4becdaf5513c893ab1a2826b6ec3",
+      "category": "厨卫家电",
+      "keywords": [
+        "厨房",
+        "咖啡",
+        "coffee-machine"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.65,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenFridge",
+      "name": "冰箱",
+      "file_name": "kitchenFridge.glb",
+      "file_path": "kenney/furniture/kitchenFridge.glb",
+      "size": 20116,
+      "sha256": "8af4f4bbb1b5525ad8226e97926a5af60fa8fb20a3cb74dbda5328a9d320dbab",
+      "category": "厨卫家电",
+      "keywords": [
+        "厨房",
+        "电器",
+        "refrigerator"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.0,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenMicrowave",
+      "name": "微波炉",
+      "file_name": "kitchenMicrowave.glb",
+      "file_path": "kenney/furniture/kitchenMicrowave.glb",
+      "size": 11248,
+      "sha256": "dd6a6c919f4bebc6e2080fe419262cf97a0d6461ead3f3998aa3c9edf4d2bd27",
+      "category": "厨卫家电",
+      "keywords": [
+        "厨房",
+        "电器",
+        "microwave"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.75,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 4,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenSink",
+      "name": "厨房水槽",
+      "file_name": "kitchenSink.glb",
+      "file_path": "kenney/furniture/kitchenSink.glb",
+      "size": 23480,
+      "sha256": "7b9610277d71f00dcf1bba49cf4d98d77ce5177e84bf76c7da2f8893e542f743",
+      "category": "厨卫家电",
+      "keywords": [
+        "厨房",
+        "水池",
+        "sink"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 6,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:kitchenStove",
+      "name": "燃气灶台",
+      "file_name": "kitchenStove.glb",
+      "file_path": "kenney/furniture/kitchenStove.glb",
+      "size": 54324,
+      "sha256": "3239edb36295dfca9530a9b9a6ad0aff98ce62e7cf8d13ca2a5a1a6b2a904656",
+      "category": "厨卫家电",
+      "keywords": [
+        "厨房",
+        "炉灶",
+        "stove"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 5,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:toaster",
+      "name": "烤面包机",
+      "file_name": "toaster.glb",
+      "file_path": "kenney/furniture/toaster.glb",
+      "size": 14924,
+      "sha256": "38c1fb7b122be9997758c8ee855d87f28014cf282f24d66d39f4e8d8b236d2af",
+      "category": "厨卫家电",
+      "keywords": [
+        "厨房",
+        "电器",
+        "toaster"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.45,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:trashcan",
+      "name": "家用垃圾桶",
+      "file_name": "trashcan.glb",
+      "file_path": "kenney/furniture/trashcan.glb",
+      "size": 6452,
+      "sha256": "e0ccc1fe50cbd05386477fdff527171d1cf7c0de2ba7ff3233f8d9561feb2561",
+      "category": "厨卫家电",
+      "keywords": [
+        "垃圾桶",
+        "bin"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.75,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:washer",
+      "name": "洗衣机",
+      "file_name": "washer.glb",
+      "file_path": "kenney/furniture/washer.glb",
+      "size": 48104,
+      "sha256": "0c9704df1817d2699b72305b96cde097c9558bacabaef2fd5ab1ff4c03b81abf",
+      "category": "厨卫家电",
+      "keywords": [
+        "家电",
+        "laundry",
+        "washer"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.1,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 6,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:dryer",
+      "name": "烘干机",
+      "file_name": "dryer.glb",
+      "file_path": "kenney/furniture/dryer.glb",
+      "size": 17760,
+      "sha256": "d8b727612fdfc141c0b56360f75b897f1b71d3420c8c0942b5ec626bd3c8303c",
+      "category": "厨卫家电",
+      "keywords": [
+        "家电",
+        "laundry",
+        "dryer"
+      ],
+      "summary": "厨卫家电常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.1,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:computerKeyboard",
+      "name": "电脑键盘",
+      "file_name": "computerKeyboard.glb",
+      "file_path": "kenney/furniture/computerKeyboard.glb",
+      "size": 3476,
+      "sha256": "9d9135789de2120e9f41ce3f0a56dd1b15f40adcc7888739bb842a2d820da322",
+      "category": "办公电子",
+      "keywords": [
+        "键盘",
+        "办公",
+        "keyboard"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.55,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:computerMouse",
+      "name": "电脑鼠标",
+      "file_name": "computerMouse.glb",
+      "file_path": "kenney/furniture/computerMouse.glb",
+      "size": 5868,
+      "sha256": "d3ad1a923f0f7707ef367bb969eb94c9076e211c98c830ba52e133fadc5cdfc0",
+      "category": "办公电子",
+      "keywords": [
+        "鼠标",
+        "办公",
+        "mouse"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:computerScreen",
+      "name": "桌面显示器",
+      "file_name": "computerScreen.glb",
+      "file_path": "kenney/furniture/computerScreen.glb",
+      "size": 6404,
+      "sha256": "5942cbad29a2d2b956619569926e81d50a4174403d592fece6556e57632dc643",
+      "category": "办公电子",
+      "keywords": [
+        "电脑",
+        "屏幕",
+        "monitor"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.85,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:desk",
+      "name": "办公桌",
+      "file_name": "desk.glb",
+      "file_path": "kenney/furniture/desk.glb",
+      "size": 15048,
+      "sha256": "0164fe828f028b321730fb8c74502e353583f751be74da1682d42fff7d3c5a42",
+      "category": "办公电子",
+      "keywords": [
+        "桌子",
+        "办公",
+        "office-desk"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.8,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:deskCorner",
+      "name": "转角办公桌",
+      "file_name": "deskCorner.glb",
+      "file_path": "kenney/furniture/deskCorner.glb",
+      "size": 17984,
+      "sha256": "a6a77ba0083d5ecd34ad50f738867b03ed7b7f469429bb1acc78f423bcc3f034",
+      "category": "办公电子",
+      "keywords": [
+        "桌子",
+        "办公",
+        "corner-desk"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:chairDesk",
+      "name": "办公椅",
+      "file_name": "chairDesk.glb",
+      "file_path": "kenney/furniture/chairDesk.glb",
+      "size": 39016,
+      "sha256": "46406619186034cbe92b19b79a5f1a8e3f442a17a70a7524ef2c0ad0f35095c6",
+      "category": "办公电子",
+      "keywords": [
+        "椅子",
+        "办公",
+        "office-chair"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 2,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:laptop",
+      "name": "笔记本电脑",
+      "file_name": "laptop.glb",
+      "file_path": "kenney/furniture/laptop.glb",
+      "size": 5540,
+      "sha256": "5fa8a1f4a71ab8d82ef64da77a6973ffd350c6d4557516069a4ffd4bb8d808af",
+      "category": "办公电子",
+      "keywords": [
+        "电脑",
+        "办公",
+        "laptop"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.65,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:radio",
+      "name": "收音机",
+      "file_name": "radio.glb",
+      "file_path": "kenney/furniture/radio.glb",
+      "size": 25020,
+      "sha256": "1ba93d6ba6f049750853b4652b92f286f2898e527695a0705b75cc7615897fed",
+      "category": "办公电子",
+      "keywords": [
+        "音响",
+        "radio"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.55,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:speaker",
+      "name": "落地音箱",
+      "file_name": "speaker.glb",
+      "file_path": "kenney/furniture/speaker.glb",
+      "size": 15744,
+      "sha256": "78230b9fb382a937cb19e4bf7556ee9402d33ac80b1baaee2d2eb89493cfa1fc",
+      "category": "办公电子",
+      "keywords": [
+        "音响",
+        "speaker"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:speakerSmall",
+      "name": "桌面音箱",
+      "file_name": "speakerSmall.glb",
+      "file_path": "kenney/furniture/speakerSmall.glb",
+      "size": 15244,
+      "sha256": "34db09984703282822f3f57fc9a31bfdfa6a8f6bf8251893d0c907e7ee6601b2",
+      "category": "办公电子",
+      "keywords": [
+        "音响",
+        "speaker"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 0.45,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:furniture:tableCross",
+      "name": "会议桌",
+      "file_name": "tableCross.glb",
+      "file_path": "kenney/furniture/tableCross.glb",
+      "size": 12140,
+      "sha256": "f0d83392aff5df82f6c9585cadff694643dbd30a4ff2b8bb01a00a7a161338a3",
+      "category": "办公电子",
+      "keywords": [
+        "桌子",
+        "会议",
+        "meeting-table"
+      ],
+      "summary": "办公电子常用模型 · Kenney Furniture Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "display_size": 2.2,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:apple",
+      "name": "苹果",
+      "file_name": "apple.glb",
+      "file_path": "kenney/food/apple.glb",
+      "size": 14376,
+      "sha256": "2a80ab65d5bc2cb4f2bca1e8176cbb591849a288596d4b2e76e411338761a526",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "apple"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:banana",
+      "name": "香蕉",
+      "file_name": "banana.glb",
+      "file_path": "kenney/food/banana.glb",
+      "size": 12348,
+      "sha256": "67c90aa8bef35b8886d6b67c0c4c3249556e28176c893d451b95cd83a156908c",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "banana"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:orange",
+      "name": "橙子",
+      "file_name": "orange.glb",
+      "file_path": "kenney/food/orange.glb",
+      "size": 13088,
+      "sha256": "a85c498e77fcab7da23386699d5af5cda1bcdf2c068b83b9db2fa2da48a06a30",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "orange"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:grapes",
+      "name": "葡萄",
+      "file_name": "grapes.glb",
+      "file_path": "kenney/food/grapes.glb",
+      "size": 58992,
+      "sha256": "4ea095cc74bbea4215b4e1a35a95af0b6997b9290091a2babc480ad6840ea5b2",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "grapes"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:strawberry",
+      "name": "草莓",
+      "file_name": "strawberry.glb",
+      "file_path": "kenney/food/strawberry.glb",
+      "size": 16620,
+      "sha256": "685828642a92681b474c29abbd9cabe98c7bcade62cc50da57ec6658a5b7e8f7",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "strawberry"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.18,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:watermelon",
+      "name": "西瓜",
+      "file_name": "watermelon.glb",
+      "file_path": "kenney/food/watermelon.glb",
+      "size": 93884,
+      "sha256": "5992fa8ea001949b01a5e2b035693b885146c575f740e5c4505532c4e7e6f1ba",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "watermelon"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.42,
+      "stats": {
+        "node_count": 8,
+        "mesh_count": 8,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:pineapple",
+      "name": "菠萝",
+      "file_name": "pineapple.glb",
+      "file_path": "kenney/food/pineapple.glb",
+      "size": 20248,
+      "sha256": "dfa3b656350273eeddb92fd6a8bf6b90b3bae63b3285880eb66c8835e9c86b91",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "pineapple"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.42,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:avocado",
+      "name": "牛油果",
+      "file_name": "avocado.glb",
+      "file_path": "kenney/food/avocado.glb",
+      "size": 6076,
+      "sha256": "bce429e7259d7b48ce8e6b9a5744f649392001a9241130bccee1e1baa9c6eb3f",
+      "category": "餐饮食物",
+      "keywords": [
+        "水果",
+        "avocado"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:carrot",
+      "name": "胡萝卜",
+      "file_name": "carrot.glb",
+      "file_path": "kenney/food/carrot.glb",
+      "size": 16364,
+      "sha256": "621949f7fb7947a810a3f6adca7d6166c8f7ef5a1016737cd0d245d12d60ab4e",
+      "category": "餐饮食物",
+      "keywords": [
+        "蔬菜",
+        "carrot"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:broccoli",
+      "name": "西兰花",
+      "file_name": "broccoli.glb",
+      "file_path": "kenney/food/broccoli.glb",
+      "size": 20452,
+      "sha256": "ea4f789cf8ca924eba1f031d88e7984ff4705acdfb23977a1211cea9c77f2a41",
+      "category": "餐饮食物",
+      "keywords": [
+        "蔬菜",
+        "broccoli"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:tomato",
+      "name": "番茄",
+      "file_name": "tomato.glb",
+      "file_path": "kenney/food/tomato.glb",
+      "size": 14084,
+      "sha256": "c2179712b2fd4f5832f79f09f7188c4bc92f05798229d0e58264e1ca2558f4cc",
+      "category": "餐饮食物",
+      "keywords": [
+        "蔬菜",
+        "tomato"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:pumpkin",
+      "name": "南瓜",
+      "file_name": "pumpkin.glb",
+      "file_path": "kenney/food/pumpkin.glb",
+      "size": 20436,
+      "sha256": "57f1667bfd266afd5eb650e81a7d207078f5d76cbd1a17351bf7503794f69592",
+      "category": "餐饮食物",
+      "keywords": [
+        "蔬菜",
+        "pumpkin"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.38,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:bread",
+      "name": "面包",
+      "file_name": "bread.glb",
+      "file_path": "kenney/food/bread.glb",
+      "size": 9468,
+      "sha256": "9bd9db117db654cf1157439d1257a8fc5915ea77a94fb876a5056522b9e49f46",
+      "category": "餐饮食物",
+      "keywords": [
+        "主食",
+        "bread"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.35,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:croissant",
+      "name": "牛角包",
+      "file_name": "croissant.glb",
+      "file_path": "kenney/food/croissant.glb",
+      "size": 14352,
+      "sha256": "f2f8ee64d7850b262a6af2492cd042fa8eb6506cde49d439360ad1a3df48fe9e",
+      "category": "餐饮食物",
+      "keywords": [
+        "面包",
+        "croissant"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:burger",
+      "name": "汉堡",
+      "file_name": "burger.glb",
+      "file_path": "kenney/food/burger.glb",
+      "size": 34536,
+      "sha256": "b982f15d980ef49f3aa295fda03b1926b0b9a29d3d000d139e111d734474c99b",
+      "category": "餐饮食物",
+      "keywords": [
+        "快餐",
+        "burger"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 7,
+        "mesh_count": 6,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:pizza",
+      "name": "披萨",
+      "file_name": "pizza.glb",
+      "file_path": "kenney/food/pizza.glb",
+      "size": 106780,
+      "sha256": "e98eda0a63421bc4e86f063ebd096a21e50254b169ddbba945d2473b59390951",
+      "category": "餐饮食物",
+      "keywords": [
+        "快餐",
+        "pizza"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.42,
+      "stats": {
+        "node_count": 8,
+        "mesh_count": 8,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:sandwich",
+      "name": "三明治",
+      "file_name": "sandwich.glb",
+      "file_path": "kenney/food/sandwich.glb",
+      "size": 19724,
+      "sha256": "eba221f9fc24bdaad73467e58ce9c09ec4134baeec01f178e7bb3e87ce3b941e",
+      "category": "餐饮食物",
+      "keywords": [
+        "快餐",
+        "sandwich"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 4,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:chinese",
+      "name": "中式外卖盒",
+      "file_name": "chinese.glb",
+      "file_path": "kenney/food/chinese.glb",
+      "size": 19384,
+      "sha256": "6aa08a486ba711b7565062b691d286d16b3916cc01574a4fcb8287d7369e0396",
+      "category": "餐饮食物",
+      "keywords": [
+        "外卖",
+        "中餐",
+        "takeout"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.3,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:dim-sum",
+      "name": "点心",
+      "file_name": "dim-sum.glb",
+      "file_path": "kenney/food/dim-sum.glb",
+      "size": 7180,
+      "sha256": "ca9df635aea7e553de8b61ed40a8fa314c0e9769caa210d740ad75a21a4c5c80",
+      "category": "餐饮食物",
+      "keywords": [
+        "中餐",
+        "dimsum"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.25,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:sushi-salmon",
+      "name": "三文鱼寿司",
+      "file_name": "sushi-salmon.glb",
+      "file_path": "kenney/food/sushi-salmon.glb",
+      "size": 8852,
+      "sha256": "c68c1364b8a1caba3c57c40ed68b767464c637e10c5e1e4c9428a69ab7819013",
+      "category": "餐饮食物",
+      "keywords": [
+        "日料",
+        "sushi"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:taco",
+      "name": "塔可",
+      "file_name": "taco.glb",
+      "file_path": "kenney/food/taco.glb",
+      "size": 17476,
+      "sha256": "1fdbf0df44c90c04d82d9e88f3b6f4d95932e34af2cc90c34683ff8e43cfa4f9",
+      "category": "餐饮食物",
+      "keywords": [
+        "快餐",
+        "taco"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.26,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:salad",
+      "name": "沙拉",
+      "file_name": "salad.glb",
+      "file_path": "kenney/food/salad.glb",
+      "size": 17200,
+      "sha256": "efed57fb8b4263057e27137daf92171879f71a12036d18de58b357ccbac25aa6",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐食",
+        "salad"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.35,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:turkey",
+      "name": "烤火鸡",
+      "file_name": "turkey.glb",
+      "file_path": "kenney/food/turkey.glb",
+      "size": 37192,
+      "sha256": "7d5edab26f512fdc8a5be1e31023b559b0755fcebff06ef766842e0dd356dbf5",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐食",
+        "turkey"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.5,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 3,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:egg-cooked",
+      "name": "煎蛋",
+      "file_name": "egg-cooked.glb",
+      "file_path": "kenney/food/egg-cooked.glb",
+      "size": 6752,
+      "sha256": "f33c84a8126b947b06f6433bb55e508aaa6e1c9ec2ee3c401251d5acf7456bf7",
+      "category": "餐饮食物",
+      "keywords": [
+        "早餐",
+        "egg"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:fish",
+      "name": "整鱼",
+      "file_name": "fish.glb",
+      "file_path": "kenney/food/fish.glb",
+      "size": 31672,
+      "sha256": "5bb8109f83f7ec4609427c6d6de76572c4fc4d055dfc16d47f2c397290c0e29d",
+      "category": "餐饮食物",
+      "keywords": [
+        "海鲜",
+        "fish"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.38,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:meat-cooked",
+      "name": "煎肉排",
+      "file_name": "meat-cooked.glb",
+      "file_path": "kenney/food/meat-cooked.glb",
+      "size": 10540,
+      "sha256": "704fc34f56f3ce18c12383e3be8938c4b7da1843365b1e12b68b3529e06bf8ed",
+      "category": "餐饮食物",
+      "keywords": [
+        "肉类",
+        "steak"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.32,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:cake-birthday",
+      "name": "生日蛋糕",
+      "file_name": "cake-birthday.glb",
+      "file_path": "kenney/food/cake-birthday.glb",
+      "size": 115324,
+      "sha256": "3102379c244fa77cdd4818c316037f576f3fb172d28f161ae9e8deead55dac69",
+      "category": "餐饮食物",
+      "keywords": [
+        "甜点",
+        "蛋糕",
+        "birthday-cake"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.45,
+      "stats": {
+        "node_count": 6,
+        "mesh_count": 6,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:donut",
+      "name": "甜甜圈",
+      "file_name": "donut.glb",
+      "file_path": "kenney/food/donut.glb",
+      "size": 11360,
+      "sha256": "7dcd094f063efb215b2e1740c426f5b899776ce63e223ce1b1377af6c7d9ef2f",
+      "category": "餐饮食物",
+      "keywords": [
+        "甜点",
+        "donut"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.22,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:cookie",
+      "name": "曲奇饼干",
+      "file_name": "cookie.glb",
+      "file_path": "kenney/food/cookie.glb",
+      "size": 7532,
+      "sha256": "7fa0d30c679f9abc9b884ab10509817d9f0ac813dbb1b36041f05118ca50a68a",
+      "category": "餐饮食物",
+      "keywords": [
+        "甜点",
+        "cookie"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.18,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:bowl",
+      "name": "餐碗",
+      "file_name": "bowl.glb",
+      "file_path": "kenney/food/bowl.glb",
+      "size": 6340,
+      "sha256": "92463570dced6e0898cdc11c218c477efa9b1693d6d3c0e661b67119f294ca7b",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "bowl"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:cup-coffee",
+      "name": "咖啡杯",
+      "file_name": "cup-coffee.glb",
+      "file_path": "kenney/food/cup-coffee.glb",
+      "size": 7872,
+      "sha256": "d74652ad1821bc5dedf1b2e1deb4e0ca0c498aa73880e7df5b91e5e729af6f81",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "coffee",
+        "cup"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.25,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:mug",
+      "name": "马克杯",
+      "file_name": "mug.glb",
+      "file_path": "kenney/food/mug.glb",
+      "size": 20236,
+      "sha256": "5215ef74dbbc3a1c0ecf8d0937adde745bbcbd65d8facd228d9f3371991da435",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "mug"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.25,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:glass-wine",
+      "name": "高脚酒杯",
+      "file_name": "glass-wine.glb",
+      "file_path": "kenney/food/glass-wine.glb",
+      "size": 23984,
+      "sha256": "7021e2a701419b48fcfba5a1344f12049d84fd6e68fc9e54fbe051ae522a23bb",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "wine-glass"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.28,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:plate-dinner",
+      "name": "餐盘",
+      "file_name": "plate-dinner.glb",
+      "file_path": "kenney/food/plate-dinner.glb",
+      "size": 27908,
+      "sha256": "f6085c9caae201e0d2f0e6ea816ba3ed38e22df0eb08b10c0b9356b0212ad18f",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "plate"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.32,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:utensil-fork",
+      "name": "餐叉",
+      "file_name": "utensil-fork.glb",
+      "file_path": "kenney/food/utensil-fork.glb",
+      "size": 4816,
+      "sha256": "9b470b64539caaa7f233171a7bda4555eee7688672efab8e1522cbfbae40c7b5",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "fork"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.24,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:utensil-knife",
+      "name": "餐刀",
+      "file_name": "utensil-knife.glb",
+      "file_path": "kenney/food/utensil-knife.glb",
+      "size": 3492,
+      "sha256": "a8478aa01fa5113bba0cd39fdf9c1de3436d4b6c5a6dbc4a826e7fed958badc7",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "knife"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.25,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:utensil-spoon",
+      "name": "餐勺",
+      "file_name": "utensil-spoon.glb",
+      "file_path": "kenney/food/utensil-spoon.glb",
+      "size": 6128,
+      "sha256": "dbb39cce42ceaad607f80a3ee0b25a6f7d8f5feec3688f0c66fb585f4621e5f5",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "spoon"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.24,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:chopstick",
+      "name": "筷子",
+      "file_name": "chopstick.glb",
+      "file_path": "kenney/food/chopstick.glb",
+      "size": 3008,
+      "sha256": "4cc0380c714daf7a7996d9c5591983a92609c9771ca544089e962ef338788a59",
+      "category": "餐饮食物",
+      "keywords": [
+        "餐具",
+        "chopsticks"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.26,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:cooking-knife",
+      "name": "菜刀",
+      "file_name": "cooking-knife.glb",
+      "file_path": "kenney/food/cooking-knife.glb",
+      "size": 5380,
+      "sha256": "4bec734243cb3e8fa636e17a4ef27828bdaecfc8ac23bd847b9b86f6945cb4d2",
+      "category": "餐饮食物",
+      "keywords": [
+        "厨具",
+        "knife"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.35,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:frying-pan",
+      "name": "平底锅",
+      "file_name": "frying-pan.glb",
+      "file_path": "kenney/food/frying-pan.glb",
+      "size": 19216,
+      "sha256": "66cd36e3361d47f068cd1fc06df422b550058adde2017f306ed93dad7c3d2b9f",
+      "category": "餐饮食物",
+      "keywords": [
+        "厨具",
+        "pan"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.5,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:pot-stew",
+      "name": "炖锅",
+      "file_name": "pot-stew.glb",
+      "file_path": "kenney/food/pot-stew.glb",
+      "size": 29560,
+      "sha256": "311ba282a85bd722b5093f512579a168e3da949617600196b60d782c11afd6b8",
+      "category": "餐饮食物",
+      "keywords": [
+        "厨具",
+        "pot"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.48,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:cutting-board",
+      "name": "砧板",
+      "file_name": "cutting-board.glb",
+      "file_path": "kenney/food/cutting-board.glb",
+      "size": 10652,
+      "sha256": "067f8a9331d16c65487a748747de2cddab2a77826f23bd7379e4f5da186c78ea",
+      "category": "餐饮食物",
+      "keywords": [
+        "厨具",
+        "cutting-board"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.45,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:soda-bottle",
+      "name": "饮料瓶",
+      "file_name": "soda-bottle.glb",
+      "file_path": "kenney/food/soda-bottle.glb",
+      "size": 11324,
+      "sha256": "879a49cec70fed49244256c9250e72fdf27dcdc5d2dbb093c9ac9c9a08170f4d",
+      "category": "餐饮食物",
+      "keywords": [
+        "饮料",
+        "bottle"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.32,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:soda-can",
+      "name": "易拉罐",
+      "file_name": "soda-can.glb",
+      "file_path": "kenney/food/soda-can.glb",
+      "size": 16384,
+      "sha256": "4ae68cbd532e69353ae1392e95bb57afa7cb2acc98f3bb46dc5a017c765c89fe",
+      "category": "餐饮食物",
+      "keywords": [
+        "饮料",
+        "can"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.2,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:food:wine-red",
+      "name": "红酒瓶",
+      "file_name": "wine-red.glb",
+      "file_path": "kenney/food/wine-red.glb",
+      "size": 14200,
+      "sha256": "b86653d8c62c58e3935234d8af7256a6b3d141ec6008c275a473cc850ff3ac17",
+      "category": "餐饮食物",
+      "keywords": [
+        "酒水",
+        "wine"
+      ],
+      "summary": "餐饮食物常用模型 · Kenney Food Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/food-kit",
+      "display_size": 0.38,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:ambulance",
+      "name": "救护车",
+      "file_name": "ambulance.glb",
+      "file_path": "kenney/vehicles/ambulance.glb",
+      "size": 233612,
+      "sha256": "9e429e2b6202c0d78d0c38b2adbaae6b77716bb2a0f6fbb2811556e1fb31edba",
+      "category": "交通车辆",
+      "keywords": [
+        "医疗",
+        "车辆",
+        "ambulance"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.8,
+      "stats": {
+        "node_count": 7,
+        "mesh_count": 7,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:delivery",
+      "name": "快递货车",
+      "file_name": "delivery.glb",
+      "file_path": "kenney/vehicles/delivery.glb",
+      "size": 240264,
+      "sha256": "426a3e3a2c242c05c889b1445ba02ef95b2c8b7cd6f597e1275ef736a826014b",
+      "category": "交通车辆",
+      "keywords": [
+        "物流",
+        "车辆",
+        "delivery"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.8,
+      "stats": {
+        "node_count": 6,
+        "mesh_count": 6,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:firetruck",
+      "name": "消防车",
+      "file_name": "firetruck.glb",
+      "file_path": "kenney/vehicles/firetruck.glb",
+      "size": 232448,
+      "sha256": "c0c0a22809316536468da7e9c7f57b8ec1a8e387ec3a1cde032976c6d8a6c7a4",
+      "category": "交通车辆",
+      "keywords": [
+        "消防",
+        "车辆",
+        "firetruck"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 5.4,
+      "stats": {
+        "node_count": 6,
+        "mesh_count": 6,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:garbage-truck",
+      "name": "垃圾清运车",
+      "file_name": "garbage-truck.glb",
+      "file_path": "kenney/vehicles/garbage-truck.glb",
+      "size": 268224,
+      "sha256": "6f2943e0ba4c6d86eb69a9243224259d6e0f169f474228439cda0579d49d3509",
+      "category": "交通车辆",
+      "keywords": [
+        "环卫",
+        "车辆",
+        "garbage-truck"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 5.2,
+      "stats": {
+        "node_count": 7,
+        "mesh_count": 7,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:hatchback-sports",
+      "name": "两厢轿车",
+      "file_name": "hatchback-sports.glb",
+      "file_path": "kenney/vehicles/hatchback-sports.glb",
+      "size": 197804,
+      "sha256": "bd5c9d4c3b4bdd254a66b8426563a68b1487ae7a5076df3a2488e6ffed7be64f",
+      "category": "交通车辆",
+      "keywords": [
+        "汽车",
+        "hatchback"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.2,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 5,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:police",
+      "name": "警车",
+      "file_name": "police.glb",
+      "file_path": "kenney/vehicles/police.glb",
+      "size": 195336,
+      "sha256": "a617b880594f56239b7ac4cf6fd4d74ebdae3ba6c5d842e77c76a5906eff352a",
+      "category": "交通车辆",
+      "keywords": [
+        "警察",
+        "车辆",
+        "police-car"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.5,
+      "stats": {
+        "node_count": 6,
+        "mesh_count": 6,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:sedan-sports",
+      "name": "运动轿车",
+      "file_name": "sedan-sports.glb",
+      "file_path": "kenney/vehicles/sedan-sports.glb",
+      "size": 177676,
+      "sha256": "2889c428ca1dd9c975c3ff760eb8757883490410555ab60b818f712f583826d6",
+      "category": "交通车辆",
+      "keywords": [
+        "汽车",
+        "sports-car"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.4,
+      "stats": {
+        "node_count": 6,
+        "mesh_count": 6,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:sedan",
+      "name": "家用轿车",
+      "file_name": "sedan.glb",
+      "file_path": "kenney/vehicles/sedan.glb",
+      "size": 172216,
+      "sha256": "b532ea7d2c59f7f6b22b138cf1955218a2c1898f1cea932af4d3fd563c3959b7",
+      "category": "交通车辆",
+      "keywords": [
+        "汽车",
+        "sedan"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.5,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 5,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:suv",
+      "name": "越野车",
+      "file_name": "suv.glb",
+      "file_path": "kenney/vehicles/suv.glb",
+      "size": 207572,
+      "sha256": "9df31f6e89e927a8176fc792aa125f0b19dc1ba29d2025bfef7c4f4d6ab1778a",
+      "category": "交通车辆",
+      "keywords": [
+        "汽车",
+        "suv"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.7,
+      "stats": {
+        "node_count": 6,
+        "mesh_count": 6,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:taxi",
+      "name": "出租车",
+      "file_name": "taxi.glb",
+      "file_path": "kenney/vehicles/taxi.glb",
+      "size": 175608,
+      "sha256": "3803539718ffd3b84b515dbce8ed6b489f1ff5be58edb1903d2c5db5c584bdc7",
+      "category": "交通车辆",
+      "keywords": [
+        "汽车",
+        "taxi"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.5,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 5,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:truck",
+      "name": "厢式卡车",
+      "file_name": "truck.glb",
+      "file_path": "kenney/vehicles/truck.glb",
+      "size": 176360,
+      "sha256": "5e1bc66c343501dd7d5734b57e672dd949bf95d7abdce680c6508cef99d374f8",
+      "category": "交通车辆",
+      "keywords": [
+        "货车",
+        "truck"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 5.2,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 5,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:van",
+      "name": "面包车",
+      "file_name": "van.glb",
+      "file_path": "kenney/vehicles/van.glb",
+      "size": 175664,
+      "sha256": "ed4ed56e8e5ed98db050af09ed2062b3b6bb7b93eab1e563cb6774b387b233a1",
+      "category": "交通车辆",
+      "keywords": [
+        "汽车",
+        "van"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.8,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 5,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:vehicles:tractor",
+      "name": "拖拉机",
+      "file_name": "tractor.glb",
+      "file_path": "kenney/vehicles/tractor.glb",
+      "size": 175960,
+      "sha256": "48b30b3e4bb0adb48378c473dc27ee5ae4d9296ec758c85816f17121a3ce8371",
+      "category": "交通车辆",
+      "keywords": [
+        "农用车",
+        "tractor"
+      ],
+      "summary": "交通车辆常用模型 · Kenney Car Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/car-kit",
+      "display_size": 4.2,
+      "stats": {
+        "node_count": 5,
+        "mesh_count": 5,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:building-a",
+      "name": "临街商铺",
+      "file_name": "building-a.glb",
+      "file_path": "kenney/commercial/building-a.glb",
+      "size": 108936,
+      "sha256": "5cf220f90ee3f21e7abe38055ca409a48aa8ef1d5ffab6e2deb99e5a5e1ed5e0",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "商店",
+        "storefront"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 8.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:building-b",
+      "name": "餐厅建筑",
+      "file_name": "building-b.glb",
+      "file_path": "kenney/commercial/building-b.glb",
+      "size": 106408,
+      "sha256": "3b5d3ac0799c024781d92bb15971d42f4f8e380554dc5cf6a40c2f07d948947a",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "餐厅",
+        "restaurant"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 8.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:building-c",
+      "name": "办公楼",
+      "file_name": "building-c.glb",
+      "file_path": "kenney/commercial/building-c.glb",
+      "size": 102788,
+      "sha256": "f6887608a95a165503561730252c30506938803731c6546efca12bd47b1666bd",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "办公",
+        "office"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 9.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:building-d",
+      "name": "城市公寓",
+      "file_name": "building-d.glb",
+      "file_path": "kenney/commercial/building-d.glb",
+      "size": 95160,
+      "sha256": "40605608e9aca0c98e294acff4af0f74afa417a51d589be490ca98f33ce4c2f5",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "住宅",
+        "apartment"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 9.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:building-e",
+      "name": "酒店建筑",
+      "file_name": "building-e.glb",
+      "file_path": "kenney/commercial/building-e.glb",
+      "size": 128208,
+      "sha256": "edbe5b49858a3c83e72d3cf496129c06082ef3a3d6005769f8883138e275b456",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "酒店",
+        "hotel"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 9.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:building-f",
+      "name": "便利店建筑",
+      "file_name": "building-f.glb",
+      "file_path": "kenney/commercial/building-f.glb",
+      "size": 148952,
+      "sha256": "633a25f7fb3ccf98e304a885a36ed900aecee5bde7ecd554729dec753cceea78",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "商店",
+        "convenience-store"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 8.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:building-skyscraper-a",
+      "name": "城市高层建筑",
+      "file_name": "building-skyscraper-a.glb",
+      "file_path": "kenney/commercial/building-skyscraper-a.glb",
+      "size": 111336,
+      "sha256": "d8339bbb75944ff91d1ec9a70ec6dead71bd98b94a42d3dd0fc1f3b107ddbe85",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "写字楼",
+        "skyscraper"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 12.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:detail-awning-wide",
+      "name": "商铺遮阳棚",
+      "file_name": "detail-awning-wide.glb",
+      "file_path": "kenney/commercial/detail-awning-wide.glb",
+      "size": 5544,
+      "sha256": "d37ba34be414cef84db966e548e2c558088aec3fdf68763565b9caf95c11ac5f",
+      "category": "建筑场景",
+      "keywords": [
+        "商店",
+        "遮阳棚",
+        "awning"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 3.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:commercial:detail-parasol-a",
+      "name": "商业遮阳伞",
+      "file_name": "detail-parasol-a.glb",
+      "file_path": "kenney/commercial/detail-parasol-a.glb",
+      "size": 10320,
+      "sha256": "70e636bea8dc67c3bfd19b163333e824356118458c8c401017322ec43c10a7f7",
+      "category": "建筑场景",
+      "keywords": [
+        "户外",
+        "遮阳伞",
+        "parasol"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Commercial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "display_size": 2.6,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:industrial:building-a",
+      "name": "厂房",
+      "file_name": "building-a.glb",
+      "file_path": "kenney/industrial/building-a.glb",
+      "size": 176884,
+      "sha256": "62b0b9ffbcea8dd914a899cacd10b54629bf7013db7bd221f2708c7ba8b054ea",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "工厂",
+        "factory"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Industrial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-industrial",
+      "display_size": 9.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:industrial:building-b",
+      "name": "仓库",
+      "file_name": "building-b.glb",
+      "file_path": "kenney/industrial/building-b.glb",
+      "size": 211608,
+      "sha256": "b199574a95e26d10bfa55e1b6846f982876426e11deac401431607377d099752",
+      "category": "建筑场景",
+      "keywords": [
+        "建筑",
+        "仓库",
+        "warehouse"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Industrial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-industrial",
+      "display_size": 9.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:industrial:chimney-large",
+      "name": "工业烟囱",
+      "file_name": "chimney-large.glb",
+      "file_path": "kenney/industrial/chimney-large.glb",
+      "size": 21408,
+      "sha256": "c9929b82a913d0372ee8849440ee9ecd79a9609aac46fb091074fdeafb731126",
+      "category": "建筑场景",
+      "keywords": [
+        "工厂",
+        "烟囱",
+        "chimney"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Industrial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-industrial",
+      "display_size": 8.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:industrial:detail-tank",
+      "name": "工业储罐",
+      "file_name": "detail-tank.glb",
+      "file_path": "kenney/industrial/detail-tank.glb",
+      "size": 23456,
+      "sha256": "b1edc2953c590c16f1d8280dfeb9073af6c710ac3d587f3dba144f69363d799b",
+      "category": "建筑场景",
+      "keywords": [
+        "工厂",
+        "储罐",
+        "tank"
+      ],
+      "summary": "建筑场景常用模型 · Kenney City Kit (Industrial)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-industrial",
+      "display_size": 5.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:construction-barrier",
+      "name": "施工围栏",
+      "file_name": "construction-barrier.glb",
+      "file_path": "kenney/roads/construction-barrier.glb",
+      "size": 6556,
+      "sha256": "c2dc9e69b306093a66f9380d793d9f9d81c9331febf18d3188a6312f145bbe75",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "施工",
+        "barrier"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 2.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:construction-cone",
+      "name": "交通锥",
+      "file_name": "construction-cone.glb",
+      "file_path": "kenney/roads/construction-cone.glb",
+      "size": 7068,
+      "sha256": "287f086b9f89e00470716168b3c5bffd99c16797c9b449715287e65fb39dd37c",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "路障",
+        "cone"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 0.75,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:construction-light",
+      "name": "施工警示灯",
+      "file_name": "construction-light.glb",
+      "file_path": "kenney/roads/construction-light.glb",
+      "size": 10516,
+      "sha256": "29e427c06c235475af3ff0c3f7045e89bbb8a6d1d6df93261e3922ca4d1b1bcc",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "警示灯",
+        "light"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:light-curved",
+      "name": "弯杆路灯",
+      "file_name": "light-curved.glb",
+      "file_path": "kenney/roads/light-curved.glb",
+      "size": 9496,
+      "sha256": "e9ff06ead9d9b14eddd7bf40fa20e31b898fde2d59ade940eebe60685d335f6d",
+      "category": "道路设施",
+      "keywords": [
+        "街道",
+        "路灯",
+        "streetlight"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 5.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:light-square-double",
+      "name": "双头路灯",
+      "file_name": "light-square-double.glb",
+      "file_path": "kenney/roads/light-square-double.glb",
+      "size": 9216,
+      "sha256": "ad55001503635f40d996a65a3d8bc1926c40f5f17c3eeb300088d05a7ae11174",
+      "category": "道路设施",
+      "keywords": [
+        "街道",
+        "路灯",
+        "streetlight"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 5.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:road-crossing",
+      "name": "人行横道",
+      "file_name": "road-crossing.glb",
+      "file_path": "kenney/roads/road-crossing.glb",
+      "size": 8720,
+      "sha256": "ffe5c924f9a14f53616988f157db825fafdaddeb76662379044cbe26ddedd932",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "斑马线",
+        "crossing"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 5.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:road-crossroad",
+      "name": "十字路口",
+      "file_name": "road-crossroad.glb",
+      "file_path": "kenney/roads/road-crossroad.glb",
+      "size": 10100,
+      "sha256": "26de3ec9c54f909331ff071060310f6b9e454c4ed3213394b7b52352ce2a45f9",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "路口",
+        "crossroad"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 6.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:road-roundabout",
+      "name": "环岛道路",
+      "file_name": "road-roundabout.glb",
+      "file_path": "kenney/roads/road-roundabout.glb",
+      "size": 105896,
+      "sha256": "ce27c2eb2e4ff6a37cfe705bdf442fc41d9207adac54b32faf3e59ce3dc980ca",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "环岛",
+        "roundabout"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 6.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:road-straight",
+      "name": "直行道路",
+      "file_name": "road-straight.glb",
+      "file_path": "kenney/roads/road-straight.glb",
+      "size": 5264,
+      "sha256": "c3d524d39ff60ae4ca418aa99e83af25ee87ddbdc3c1a021774f30314bf73ca4",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "road"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 5.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:road-bridge",
+      "name": "公路桥面",
+      "file_name": "road-bridge.glb",
+      "file_path": "kenney/roads/road-bridge.glb",
+      "size": 25628,
+      "sha256": "def3492f02f1fbae2149d94aabb46ac4df792e03a625ebac02010a16169cff72",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "桥",
+        "bridge"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 6.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:road-end",
+      "name": "道路尽头",
+      "file_name": "road-end.glb",
+      "file_path": "kenney/roads/road-end.glb",
+      "size": 4960,
+      "sha256": "0205b5ff8efa84418c625fc99c6b31b71df7d905a06825230c68c6921b391362",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "road-end"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 5.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:roads:sign-highway-detailed",
+      "name": "道路指示牌",
+      "file_name": "sign-highway-detailed.glb",
+      "file_path": "kenney/roads/sign-highway-detailed.glb",
+      "size": 23552,
+      "sha256": "7b56dbca534da55786d6978b12dd8fd3e9c3746b4a89c5f99d4274e3e12ec498",
+      "category": "道路设施",
+      "keywords": [
+        "道路",
+        "标牌",
+        "sign"
+      ],
+      "summary": "道路设施常用模型 · Kenney City Kit (Roads)",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/city-kit-roads",
+      "display_size": 3.0,
+      "stats": {
+        "node_count": 1,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:cactus_tall",
+      "name": "高仙人掌",
+      "file_name": "cactus_tall.glb",
+      "file_path": "kenney/nature/cactus_tall.glb",
+      "size": 9668,
+      "sha256": "d43a1aca5952e1f8a104d64a0edfec09c39f15102ca6bdc531460dd5a2c53d25",
+      "category": "自然户外",
+      "keywords": [
+        "植物",
+        "沙漠",
+        "cactus"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 2.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:campfire_stones",
+      "name": "石围篝火",
+      "file_name": "campfire_stones.glb",
+      "file_path": "kenney/nature/campfire_stones.glb",
+      "size": 17344,
+      "sha256": "54869db23243a3f4905bc00bd4cd93b1037b28556ab3ef93e7a893a093791e35",
+      "category": "自然户外",
+      "keywords": [
+        "露营",
+        "火堆",
+        "campfire"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:canoe",
+      "name": "独木舟",
+      "file_name": "canoe.glb",
+      "file_path": "kenney/nature/canoe.glb",
+      "size": 15780,
+      "sha256": "ad9c7a315f55accbce8d1ee3dc853f919f01f97ab4e3096bb235d1815aed6941",
+      "category": "自然户外",
+      "keywords": [
+        "船",
+        "水面",
+        "canoe"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 3.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:canoe_paddle",
+      "name": "船桨",
+      "file_name": "canoe_paddle.glb",
+      "file_path": "kenney/nature/canoe_paddle.glb",
+      "size": 3952,
+      "sha256": "7f8e0bc5beacfa1e4ae12f942ab045b1f7a13a04b497859f749bf7999b99d0bd",
+      "category": "自然户外",
+      "keywords": [
+        "船桨",
+        "paddle"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 1.8,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:fence_gate",
+      "name": "木栅栏门",
+      "file_name": "fence_gate.glb",
+      "file_path": "kenney/nature/fence_gate.glb",
+      "size": 27652,
+      "sha256": "34d10d5620179b8a211a01eea837caa828c0782422f0b408e1a5838788888436",
+      "category": "自然户外",
+      "keywords": [
+        "栅栏",
+        "fence",
+        "gate"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 2.0,
+      "stats": {
+        "node_count": 3,
+        "mesh_count": 2,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:flower_redA",
+      "name": "红花簇",
+      "file_name": "flower_redA.glb",
+      "file_path": "kenney/nature/flower_redA.glb",
+      "size": 7104,
+      "sha256": "171930b7789ddbf735af3745576b5393750beb9133b9ff4a444bb6bb2986c020",
+      "category": "自然户外",
+      "keywords": [
+        "花朵",
+        "flower"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 0.45,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:grass_large",
+      "name": "草丛",
+      "file_name": "grass_large.glb",
+      "file_path": "kenney/nature/grass_large.glb",
+      "size": 18504,
+      "sha256": "af49a595624abca7249824eeefb944d4baf974abeeb5b16110d175da3563d6cd",
+      "category": "自然户外",
+      "keywords": [
+        "草地",
+        "grass"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 0.7,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:plant_bushDetailed",
+      "name": "灌木丛",
+      "file_name": "plant_bushDetailed.glb",
+      "file_path": "kenney/nature/plant_bushDetailed.glb",
+      "size": 10172,
+      "sha256": "2e0487020d68ccf664435db9d829c78ae00e6d2785ee3ec10b9f89cc70a10406",
+      "category": "自然户外",
+      "keywords": [
+        "植物",
+        "bush"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 1,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:pot_large",
+      "name": "户外花盆",
+      "file_name": "pot_large.glb",
+      "file_path": "kenney/nature/pot_large.glb",
+      "size": 6168,
+      "sha256": "57e60214bc6ab1dc3764c9ffe80091ff45f2bfd49fbc313c1b68dcaab1537aef",
+      "category": "自然户外",
+      "keywords": [
+        "花盆",
+        "pot"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 0.8,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:rock_largeA",
+      "name": "大型岩石",
+      "file_name": "rock_largeA.glb",
+      "file_path": "kenney/nature/rock_largeA.glb",
+      "size": 7552,
+      "sha256": "6dd15390fd96501dcd1454765a17ba61dbbd8d47705dfe5149c8dd92b353ce25",
+      "category": "自然户外",
+      "keywords": [
+        "石头",
+        "rock"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 1.8,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:log_stack",
+      "name": "木柴堆",
+      "file_name": "log_stack.glb",
+      "file_path": "kenney/nature/log_stack.glb",
+      "size": 10896,
+      "sha256": "90eaae4a01ba1f25c2f0c6d83087e4a7a8fac684f2452615245333968d118d68",
+      "category": "自然户外",
+      "keywords": [
+        "木材",
+        "log"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 1.2,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:tent_detailedOpen",
+      "name": "露营帐篷",
+      "file_name": "tent_detailedOpen.glb",
+      "file_path": "kenney/nature/tent_detailedOpen.glb",
+      "size": 15324,
+      "sha256": "d54d9665d07e0ff9680e56731c9f5338fc25d93788504d63b8375f54e6444193",
+      "category": "自然户外",
+      "keywords": [
+        "露营",
+        "tent"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 2.6,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:tree_oak",
+      "name": "橡树",
+      "file_name": "tree_oak.glb",
+      "file_path": "kenney/nature/tree_oak.glb",
+      "size": 14644,
+      "sha256": "d7fd8773674928c50c11b66d12c636d49bdcc15a8b1c7fbb98e6f63a3439a3f3",
+      "category": "自然户外",
+      "keywords": [
+        "树木",
+        "oak",
+        "tree"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 5.0,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:tree_palmTall",
+      "name": "高棕榈树",
+      "file_name": "tree_palmTall.glb",
+      "file_path": "kenney/nature/tree_palmTall.glb",
+      "size": 15592,
+      "sha256": "cbd2c2ea7d0316be7514d44699527c566ce91e0542e8b6c6bf431a155e5655f6",
+      "category": "自然户外",
+      "keywords": [
+        "树木",
+        "palm"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 5.5,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:tree_pineTallA_detailed",
+      "name": "高松树",
+      "file_name": "tree_pineTallA_detailed.glb",
+      "file_path": "kenney/nature/tree_pineTallA_detailed.glb",
+      "size": 10708,
+      "sha256": "9ba6337460e718b8baf165b23c02f39455e3d5757b1911505410c46bc88a86b5",
+      "category": "自然户外",
+      "keywords": [
+        "树木",
+        "pine"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 5.5,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:bridge_wood",
+      "name": "木桥",
+      "file_name": "bridge_wood.glb",
+      "file_path": "kenney/nature/bridge_wood.glb",
+      "size": 15692,
+      "sha256": "3da4c208b0f72b7f2ba42db521b62ec4b0278050c75256a6982c40d21aab5701",
+      "category": "自然户外",
+      "keywords": [
+        "桥梁",
+        "wood",
+        "bridge"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 3.5,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:crops_cornStageD",
+      "name": "成熟玉米植株",
+      "file_name": "crops_cornStageD.glb",
+      "file_path": "kenney/nature/crops_cornStageD.glb",
+      "size": 29316,
+      "sha256": "d90d9cbba85e99526b254adee638495f914480831ab41d00807378c004c112c3",
+      "category": "自然户外",
+      "keywords": [
+        "农田",
+        "玉米",
+        "corn"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 2.0,
+      "stats": {
+        "node_count": 6,
+        "mesh_count": 5,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:crop_pumpkin",
+      "name": "南瓜植株",
+      "file_name": "crop_pumpkin.glb",
+      "file_path": "kenney/nature/crop_pumpkin.glb",
+      "size": 10840,
+      "sha256": "5b4878c5996033629419c26ac32153ce8ac06bbbdac98e4fa8a5cbab98f78077",
+      "category": "自然户外",
+      "keywords": [
+        "农田",
+        "南瓜",
+        "pumpkin"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 0.8,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 2,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:sign",
+      "name": "木制指示牌",
+      "file_name": "sign.glb",
+      "file_path": "kenney/nature/sign.glb",
+      "size": 5040,
+      "sha256": "c658c21672ecd63c5d3e53f06f875d68e6509edb1ab7e3b75374df7c61e7dd0c",
+      "category": "自然户外",
+      "keywords": [
+        "标牌",
+        "sign"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 1.6,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    },
+    {
+      "id": "bundled:kenney:nature:statue_column",
+      "name": "石质立柱",
+      "file_name": "statue_column.glb",
+      "file_path": "kenney/nature/statue_column.glb",
+      "size": 10472,
+      "sha256": "5d7f6c8bce8d1dc7ee62b1841376cda331c4359acfa2b9a11dd7e78c14ea9dbb",
+      "category": "自然户外",
+      "keywords": [
+        "雕塑",
+        "柱子",
+        "statue"
+      ],
+      "summary": "自然户外常用模型 · Kenney Nature Kit",
+      "license": "CC0 1.0 Universal · Kenney",
+      "source": "https://kenney.nl/assets/nature-kit",
+      "display_size": 2.5,
+      "stats": {
+        "node_count": 2,
+        "mesh_count": 1,
+        "material_count": 3,
+        "bone_count": 0,
+        "animation_count": 0
+      }
+    }
+  ]
+}
