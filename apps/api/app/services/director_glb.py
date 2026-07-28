@@ -299,6 +299,93 @@ def _vrm_humanoid_nodes(document: dict[str, Any]) -> dict[str, int]:
     return mapped
 
 
+def _ordered_joint_chain(indices: list[int], parent_by_node: dict[int, int]) -> list[int]:
+    members = set(indices)
+
+    def chain_depth(index: int) -> tuple[int, int]:
+        depth = 0
+        current = parent_by_node.get(index)
+        seen: set[int] = set()
+        while current in members and current not in seen:
+            seen.add(current)
+            depth += 1
+            current = parent_by_node.get(current)
+        return depth, index
+
+    return sorted(indices, key=chain_depth)
+
+
+def _generic_limb_side(name: str, limb: str) -> str | None:
+    normalized = _normalized_name(name)
+    for side, short in (("left", "l"), ("right", "r")):
+        patterns = (
+            rf"{side}{limb}joint(?:\d|$)",
+            rf"{limb}joint{side}(?:\d|$)",
+            rf"{limb}joint{short}(?:\d|$)",
+        )
+        if any(re.search(pattern, normalized) for pattern in patterns):
+            return side
+    return None
+
+
+def _generic_humanoid_nodes(
+    nodes: list[Any],
+    bone_indices: set[int],
+    parent_by_node: dict[int, int],
+) -> dict[str, int]:
+    """Map common numbered joint chains whose names describe anatomy but not standard bone roles."""
+    mapped: dict[str, int] = {}
+    named = {
+        index: _node_name(nodes, index)
+        for index in bone_indices
+        if 0 <= index < len(nodes)
+    }
+
+    torso = _ordered_joint_chain([
+        index for index, name in named.items()
+        if "torsojoint" in _normalized_name(name)
+    ], parent_by_node)
+    if torso:
+        mapped["pelvis"] = torso[0]
+    if len(torso) >= 2:
+        mapped["spine"] = torso[1]
+    if len(torso) >= 4:
+        mapped["spineMiddle"] = torso[-2]
+    if len(torso) >= 3:
+        mapped["chest"] = torso[-1]
+
+    neck = _ordered_joint_chain([
+        index for index, name in named.items()
+        if "neckjoint" in _normalized_name(name)
+    ], parent_by_node)
+    if neck:
+        mapped["neck"] = neck[0]
+    if len(neck) >= 2:
+        mapped["head"] = neck[-1]
+
+    for side in ("left", "right"):
+        arm = _ordered_joint_chain([
+            index for index, name in named.items()
+            if _generic_limb_side(name, "arm") == side
+        ], parent_by_node)
+        if len(arm) >= 3:
+            mapped[f"{side}Shoulder"] = arm[0]
+            mapped[f"{side}Elbow"] = arm[1]
+            mapped[f"{side}Wrist"] = arm[2]
+
+        leg = _ordered_joint_chain([
+            index for index, name in named.items()
+            if _generic_limb_side(name, "leg") == side
+        ], parent_by_node)
+        if len(leg) >= 3:
+            mapped[f"{side}Hip"] = leg[0]
+            mapped[f"{side}Knee"] = leg[1]
+            mapped[f"{side}Ankle"] = leg[2]
+        if len(leg) >= 4:
+            mapped[f"{side}Toe"] = leg[-1]
+    return mapped
+
+
 def _map_humanoid(
     nodes: list[Any],
     bone_indices: set[int],
@@ -367,7 +454,8 @@ def analyze_glb_document(document: dict[str, Any]) -> dict[str, Any]:
             "skeleton_node": skeleton,
         })
 
-    explicit_humanoid_nodes = _vrm_humanoid_nodes(document)
+    explicit_humanoid_nodes = _generic_humanoid_nodes(nodes, bone_indices, parent_by_node)
+    explicit_humanoid_nodes.update(_vrm_humanoid_nodes(document))
     bone_indices.update(
         index for index in explicit_humanoid_nodes.values()
         if 0 <= index < len(nodes)

@@ -260,6 +260,146 @@ function disposeObject(object: THREE.Object3D): void {
   })
 }
 
+const DIRECTOR_MODEL_THUMBNAIL_SIZE = 144
+const directorModelThumbnailCache = new Map<string, string>()
+const directorModelThumbnailPending = new Map<string, Promise<string>>()
+let directorModelThumbnailQueue: Promise<void> = Promise.resolve()
+let directorModelThumbnailRenderer: THREE.WebGLRenderer | null = null
+
+function modelThumbnailCacheKey(asset: DirectorModelAsset): string {
+  return `${asset.id}:${asset.size}:${asset.created_at || ""}`
+}
+
+function thumbnailRenderer(): THREE.WebGLRenderer {
+  if (directorModelThumbnailRenderer) return directorModelThumbnailRenderer
+  const canvas = document.createElement("canvas")
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true })
+  renderer.setPixelRatio(1)
+  renderer.setSize(DIRECTOR_MODEL_THUMBNAIL_SIZE, DIRECTOR_MODEL_THUMBNAIL_SIZE, false)
+  renderer.outputColorSpace = THREE.SRGBColorSpace
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1.12
+  renderer.setClearColor(0x000000, 0)
+  directorModelThumbnailRenderer = renderer
+  return renderer
+}
+
+async function renderDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
+  const renderer = thumbnailRenderer()
+  const gltf = await new GLTFLoader().loadAsync(resolveMediaUrl(asset.url))
+  const model = gltf.scene
+  const scene = new THREE.Scene()
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 1000)
+  scene.add(new THREE.HemisphereLight(0xf4f8ff, 0x172033, 2.4))
+  const key = new THREE.DirectionalLight(0xffffff, 3.1)
+  key.position.set(3, 5, 4)
+  scene.add(key)
+  const rim = new THREE.DirectionalLight(0x8bbcff, 1.4)
+  rim.position.set(-4, 2.5, -2)
+  scene.add(rim)
+  scene.add(model)
+
+  let mixer: THREE.AnimationMixer | null = null
+  if (gltf.animations.length > 0) {
+    const clip = gltf.animations[0]
+    mixer = new THREE.AnimationMixer(model)
+    mixer.clipAction(clip).play()
+    mixer.update(Math.min(Math.max(clip.duration * 0.16, 0.08), 0.42))
+  }
+
+  model.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(model)
+  if (box.isEmpty()) {
+    mixer?.stopAllAction()
+    disposeObject(model)
+    throw new Error("模型没有可预览的网格")
+  }
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const fov = THREE.MathUtils.degToRad(camera.fov)
+  const fitHeightDistance = size.y / (2 * Math.tan(fov / 2))
+  const fitWidthDistance = size.x / (2 * Math.tan(fov / 2))
+  const distance = Math.max(fitHeightDistance, fitWidthDistance, size.z * 1.8, 0.4) * 1.22
+  const direction = new THREE.Vector3(0.78, 0.22, 1.45).normalize()
+  camera.position.copy(center).addScaledVector(direction, distance)
+  camera.near = Math.max(distance / 100, 0.001)
+  camera.far = Math.max(distance * 8, 10)
+  camera.lookAt(center)
+  camera.updateProjectionMatrix()
+  renderer.render(scene, camera)
+  const thumbnail = renderer.domElement.toDataURL("image/webp", 0.86)
+
+  if (mixer) {
+    mixer.stopAllAction()
+    mixer.uncacheRoot(model)
+  }
+  scene.remove(model)
+  disposeObject(model)
+  renderer.renderLists.dispose()
+  return thumbnail
+}
+
+function getDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
+  const key = modelThumbnailCacheKey(asset)
+  const cached = directorModelThumbnailCache.get(key)
+  if (cached) return Promise.resolve(cached)
+  const pending = directorModelThumbnailPending.get(key)
+  if (pending) return pending
+  const task = directorModelThumbnailQueue.then(async () => {
+    const thumbnail = await renderDirectorModelThumbnail(asset)
+    directorModelThumbnailCache.set(key, thumbnail)
+    return thumbnail
+  })
+  directorModelThumbnailPending.set(key, task)
+  directorModelThumbnailQueue = task.then(() => undefined, () => undefined)
+  void task.then(
+    () => directorModelThumbnailPending.delete(key),
+    () => directorModelThumbnailPending.delete(key),
+  )
+  return task
+}
+
+function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
+  const cacheKey = modelThumbnailCacheKey(asset)
+  const [thumbnail, setThumbnail] = useState<string | null>(() => directorModelThumbnailCache.get(cacheKey) || null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let current = true
+    const cached = directorModelThumbnailCache.get(cacheKey)
+    if (cached) {
+      setThumbnail(cached)
+      setFailed(false)
+      return () => { current = false }
+    }
+    setThumbnail(null)
+    setFailed(false)
+    void getDirectorModelThumbnail(asset).then((value) => {
+      if (current) setThumbnail(value)
+    }).catch(() => {
+      if (current) setFailed(true)
+    })
+    return () => { current = false }
+  }, [asset, cacheKey])
+
+  return (
+    <span
+      aria-label={`${asset.name} 模型预览`}
+      data-model-preview={failed ? "failed" : thumbnail ? "ready" : "loading"}
+      className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.07] bg-[radial-gradient(circle_at_50%_32%,rgba(129,140,248,.2),rgba(15,23,42,.78)_58%,rgba(3,7,18,.96))]"
+    >
+      {thumbnail ? (
+        <img src={thumbnail} alt="" draggable={false} className="h-full w-full object-contain p-0.5" />
+      ) : failed ? (
+        <span className="flex flex-col items-center text-zinc-600"><BuiltinGlyph assetId="builtin:cube" /><span className="-mt-1 text-[6px]">预览失败</span></span>
+      ) : (
+        <span className="h-4 w-4 animate-spin rounded-full border border-violet-200/20 border-t-violet-200/80" />
+      )}
+      <span className="absolute bottom-1 right-1 rounded bg-black/55 px-1 py-0.5 text-[6px] font-semibold tracking-[0.08em] text-cyan-100/75">3D</span>
+    </span>
+  )
+}
+
 function applyObjectTransform(root: THREE.Object3D, object: DirectorObjectState): void {
   root.position.set(...object.position)
   root.rotation.set(...object.rotation)
@@ -1529,7 +1669,7 @@ export default function DirectorDesk({
                   ) : director.model_assets.map((asset) => (
                     <div key={asset.id} className="group flex items-center gap-2 rounded-xl border border-white/[0.065] bg-white/[0.018] p-2 transition hover:border-white/[0.12] hover:bg-white/[0.035]">
                       <button type="button" onClick={() => addObject(asset.id, asset.name.replace(/\.glb$/i, ""))} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-300/[0.07] text-violet-200/55"><BuiltinGlyph assetId="builtin:cube" /></span>
+                        <DirectorModelThumbnail asset={asset} />
                         <span className="min-w-0">
                           <span className="flex items-center gap-1.5 truncate text-[10px] text-zinc-300">
                             <span className="truncate">{asset.name}</span>

@@ -177,6 +177,48 @@ def test_director_uses_explicit_vrm_humanoid_mapping_before_name_guessing() -> N
     assert humanoid["joint_node_map"]["leftThumb3"] == 20
 
 
+def test_director_recognizes_numbered_generic_humanoid_joint_chains() -> None:
+    names = [
+        "Skeleton_torso_joint_1",
+        "leg_joint_R_1", "leg_joint_R_2", "leg_joint_R_3", "leg_joint_R_5",
+        "leg_joint_L_1", "leg_joint_L_2", "leg_joint_L_3", "leg_joint_L_5",
+        "Skeleton_torso_joint_2", "torso_joint_3",
+        "Skeleton_arm_joint_R", "Skeleton_arm_joint_R__2_", "Skeleton_arm_joint_R__3_",
+        "Skeleton_arm_joint_L__4_", "Skeleton_arm_joint_L__3_", "Skeleton_arm_joint_L__2_",
+        "Skeleton_neck_joint_1", "Skeleton_neck_joint_2",
+    ]
+    children = {
+        0: [1, 5, 9],
+        1: [2], 2: [3], 3: [4],
+        5: [6], 6: [7], 7: [8],
+        9: [10],
+        10: [11, 14, 17],
+        11: [12], 12: [13],
+        14: [15], 15: [16],
+        17: [18],
+    }
+    document = {
+        "asset": {"version": "2.0", "generator": "numbered generic rig"},
+        "nodes": [
+            {"name": name, **({"children": children[index]} if index in children else {})}
+            for index, name in enumerate(names)
+        ],
+        "skins": [{"joints": list(range(len(names))), "skeleton": 0}],
+    }
+
+    humanoid = analyze_glb_document(document)["humanoid"]
+
+    assert humanoid["profile"] == "generic"
+    assert humanoid["recognized"] is True
+    assert humanoid["joint_node_map"]["pelvis"] == 0
+    assert humanoid["joint_node_map"]["spine"] == 9
+    assert humanoid["joint_node_map"]["head"] == 18
+    assert humanoid["joint_node_map"]["rightShoulder"] == 11
+    assert humanoid["joint_node_map"]["rightWrist"] == 13
+    assert humanoid["joint_node_map"]["leftHip"] == 5
+    assert humanoid["joint_node_map"]["leftToe"] == 8
+
+
 @pytest.mark.asyncio
 async def test_director_capture_stays_in_timeline_until_explicit_promotion(
     monkeypatch: pytest.MonkeyPatch,
