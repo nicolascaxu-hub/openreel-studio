@@ -187,7 +187,7 @@ const DIRECTOR_MOUSE_CONTROLS = [
   ["左键单击", "选择人物或物体；点击相机直接进入对应视角"],
   ["左键拖动", "拖动物体；拖动空白区域环绕观察"],
   ["滚轮", "以指针位置为中心缩放"],
-  ["右键拖动", "平移观察视角"],
+  ["中键拖动", "平移观察视角，不受浏览器右键手势影响"],
   ["右键短按", "打开对象、相机或场景上下文菜单"],
 ] as const
 
@@ -1035,6 +1035,30 @@ export default function DirectorDesk({
   }, [projectId, setLocalDirector])
 
   useEffect(() => {
+    const guardToken = `openreel-director-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const guardState = () => ({
+      ...(typeof window.history.state === "object" && window.history.state ? window.history.state : {}),
+      __openreelDirectorGuard: guardToken,
+    })
+    const armGuard = () => {
+      if (window.history.state?.__openreelDirectorGuard === guardToken) return
+      window.history.pushState(guardState(), "", window.location.href)
+    }
+    let active = true
+    const onPopState = () => {
+      if (!active) return
+      armGuard()
+    }
+    armGuard()
+    window.addEventListener("popstate", onPopState)
+    return () => {
+      active = false
+      window.removeEventListener("popstate", onPopState)
+      if (window.history.state?.__openreelDirectorGuard === guardToken) window.history.back()
+    }
+  }, [])
+
+  useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport || !loaded) return
     const scene = new THREE.Scene()
@@ -1081,6 +1105,7 @@ export default function DirectorDesk({
     orbit.rotateSpeed = 0.68
     orbit.zoomSpeed = 0.78
     orbit.panSpeed = 0.72
+    orbit.mouseButtons.MIDDLE = THREE.MOUSE.PAN
     orbit.screenSpacePanning = false
     orbit.zoomToCursor = true
     orbit.minDistance = 0.5
@@ -2675,7 +2700,7 @@ export default function DirectorDesk({
               ))}
             </div>
 
-            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{cameraViewMode === "overview" ? showCameraGuides ? "机位辅助线 · 已显示" : "干净总览 · 点击相机进入取景" : `正在预览 · ${selectedCamera.name}`}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右拖平移 · 右键菜单</span></div>
+            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{cameraViewMode === "overview" ? showCameraGuides ? "机位辅助线 · 已显示" : "干净总览 · 点击相机进入取景" : `正在预览 · ${selectedCamera.name}`}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">中键平移 · 右键菜单</span></div>
             {error && <div className="absolute bottom-4 right-4 z-30 flex max-w-sm items-start gap-2 rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2.5 text-[10px] leading-4 text-red-100 shadow-[0_18px_44px_rgba(0,0,0,.4)] backdrop-blur-xl"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-300" />{error}</div>}
           </div>
         </main>
@@ -3057,7 +3082,7 @@ export default function DirectorDesk({
                 </div>
               </section>
 
-              <div className="rounded-xl border border-cyan-300/[0.09] bg-cyan-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-cyan-200/70">鼠标导航：</span>右键短按打开菜单；按住右键拖动只平移导演台视角，浏览器导航手势已在视口内禁用。</div>
+              <div className="rounded-xl border border-cyan-300/[0.09] bg-cyan-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-cyan-200/70">鼠标导航：</span>右键短按打开菜单，中键拖动平移视角；导演台打开期间会拦截浏览器后退手势。</div>
             </div>
           ) : null}
           </div>
