@@ -81,9 +81,9 @@ interface DirectorRuntime {
   grid: THREE.GridHelper
   objectRoots: Map<string, THREE.Group>
   mixers: Map<string, THREE.AnimationMixer>
+  objectBuildTokens: Map<string, number>
   resizeObserver: ResizeObserver
   viewport: HTMLDivElement
-  buildToken: number
   disposed: boolean
 }
 
@@ -301,6 +301,25 @@ function stopRuntimeMixers(runtime: DirectorRuntime): void {
   runtime.mixers.clear()
 }
 
+function stopRuntimeMixer(runtime: DirectorRuntime, objectId: string): void {
+  const mixer = runtime.mixers.get(objectId)
+  if (!mixer) return
+  mixer.stopAllAction()
+  mixer.uncacheRoot(mixer.getRoot())
+  runtime.mixers.delete(objectId)
+}
+
+function removeRuntimeObject(runtime: DirectorRuntime, objectId: string): void {
+  runtime.objectBuildTokens.set(objectId, (runtime.objectBuildTokens.get(objectId) || 0) + 1)
+  stopRuntimeMixer(runtime, objectId)
+  const root = runtime.objectRoots.get(objectId)
+  if (!root) return
+  if (runtime.transform.object === root) runtime.transform.detach()
+  runtime.root.remove(root)
+  runtime.objectRoots.delete(objectId)
+  disposeObject(root)
+}
+
 function snapshotRuntimeScene(runtime: DirectorRuntime, base: DirectorSceneState): DirectorSceneState {
   const next = cloneDirectorScene(base)
   next.camera = {
@@ -461,117 +480,136 @@ export default function DirectorDesk({
     void enqueueSceneSave(nextScene)
   }, [enqueueSceneSave, setLocalDirector])
 
-  const rebuildRuntime = useCallback(() => {
-    const runtime = runtimeRef.current
-    if (!runtime || runtime.disposed) return
-    runtime.buildToken += 1
-    const token = runtime.buildToken
-    runtime.transform.detach()
-    stopRuntimeMixers(runtime)
-    for (const root of runtime.objectRoots.values()) {
-      runtime.root.remove(root)
-      disposeObject(root)
-    }
-    runtime.objectRoots.clear()
-    const state = directorRef.current
-    const modelById = new Map(state.model_assets.map((asset) => [asset.id, asset]))
+  const buildRuntimeObject = useCallback((
+    runtime: DirectorRuntime,
+    object: DirectorObjectState,
+    asset?: DirectorModelAsset,
+  ) => {
+    const token = (runtime.objectBuildTokens.get(object.id) || 0) + 1
+    runtime.objectBuildTokens.set(object.id, token)
     const loader = new GLTFLoader()
-    for (const object of state.scene.objects) {
-      const root = new THREE.Group()
-      root.userData.directorObjectId = object.id
-      root.name = object.name
-      applyObjectTransform(root, object)
-      runtime.objectRoots.set(object.id, root)
-      runtime.root.add(root)
-      if (object.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID) {
-        const placeholder = createBuiltinModel("builtin:cylinder", object.color)
-        placeholder.name = "人体模型加载中"
-        placeholder.scale.set(0.34, 1.28, 0.34)
-        root.add(placeholder)
-        setLoadingModels((value) => value + 1)
-        void createDirectorMannequin(object.mannequin, object.color).then((content) => {
-          if (runtime.disposed || runtime.buildToken !== token || !runtime.objectRoots.has(object.id)) {
-            disposeObject(content)
-            return
-          }
-          root.remove(placeholder)
-          disposeObject(placeholder)
-          root.add(content)
-        }).catch((loadError) => {
-          root.userData.loadError = loadError instanceof Error ? loadError.message : String(loadError)
-        }).finally(() => {
-          setLoadingModels((value) => Math.max(0, value - 1))
-        })
-        continue
-      }
-      if (object.asset_id.startsWith("builtin:")) {
-        root.add(createBuiltinModel(object.asset_id, object.color))
-        continue
-      }
-      const asset = modelById.get(object.asset_id)
-      const placeholder = createBuiltinModel("builtin:cube", "#52525b")
-      placeholder.name = "模型加载中"
+    const root = new THREE.Group()
+    root.userData.directorObjectId = object.id
+    root.name = object.name
+    applyObjectTransform(root, object)
+    runtime.objectRoots.set(object.id, root)
+    runtime.root.add(root)
+    const isCurrent = () => (
+      !runtime.disposed
+      && runtime.objectBuildTokens.get(object.id) === token
+      && runtime.objectRoots.get(object.id) === root
+    )
+    if (object.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID) {
+      const placeholder = createBuiltinModel("builtin:cylinder", object.color)
+      placeholder.name = "人体模型加载中"
+      placeholder.scale.set(0.34, 1.28, 0.34)
       root.add(placeholder)
-      if (!asset) {
-        root.userData.loadError = "模型资产不存在"
-        continue
-      }
       setLoadingModels((value) => value + 1)
-      void loader.loadAsync(resolveMediaUrl(asset.url)).then((gltf) => {
-        if (runtime.disposed || runtime.buildToken !== token || !runtime.objectRoots.has(object.id)) {
-          disposeObject(gltf.scene)
+      void createDirectorMannequin(object.mannequin, object.color).then((content) => {
+        if (!isCurrent()) {
+          disposeObject(content)
           return
         }
         root.remove(placeholder)
         disposeObject(placeholder)
-        const model = gltf.scene
-        const analysis = asset.analysis
-        const rig = normalizeDirectorCustomRig(object.rig, asset)
-        model.updateMatrixWorld(true)
-        const restBox = new THREE.Box3().setFromObject(model)
-        const restSize = restBox.getSize(new THREE.Vector3())
-        if (rig.mode === "pose" && analysis?.humanoid.recognized) {
-          applyDirectorRigPose(model, rig, resolveCustomRigBones(gltf, analysis.humanoid))
-        } else if (rig.mode === "animation" && gltf.animations.length > 0) {
-          const clip = (rig.animation_index === null ? undefined : gltf.animations[rig.animation_index])
-            || gltf.animations.find((item) => item.name === rig.animation_name)
-            || gltf.animations[0]
-          const mixer = new THREE.AnimationMixer(model)
-          const action = mixer.clipAction(clip)
-          action.enabled = true
-          action.paused = !rig.animation_playing
-          action.timeScale = rig.animation_speed
-          action.clampWhenFinished = !rig.animation_loop
-          action.setLoop(rig.animation_loop ? THREE.LoopRepeat : THREE.LoopOnce, rig.animation_loop ? Infinity : 1)
-          action.play()
-          mixer.update(0)
-          runtime.mixers.set(object.id, mixer)
-        }
-        model.updateMatrixWorld(true)
-        const box = new THREE.Box3().setFromObject(model)
-        const center = box.getCenter(new THREE.Vector3())
-        const largest = Math.max(restSize.x, restSize.y, restSize.z, 0.001)
-        const normalizationExtent = analysis?.humanoid.recognized
-          ? Math.max(restSize.y, 0.001)
-          : largest
-        const normalizedScale = 1.8 / normalizationExtent
-        const content = new THREE.Group()
-        content.name = `${asset.name} normalization frame`
-        content.add(model)
-        content.scale.setScalar(normalizedScale)
-        content.position.set(-center.x * normalizedScale, -box.min.y * normalizedScale, -center.z * normalizedScale)
-        content.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.castShadow = true
-            child.receiveShadow = true
-          }
-        })
         root.add(content)
       }).catch((loadError) => {
         root.userData.loadError = loadError instanceof Error ? loadError.message : String(loadError)
       }).finally(() => {
         setLoadingModels((value) => Math.max(0, value - 1))
       })
+      return
+    }
+    if (object.asset_id.startsWith("builtin:")) {
+      root.add(createBuiltinModel(object.asset_id, object.color))
+      return
+    }
+    const placeholder = createBuiltinModel("builtin:cube", "#52525b")
+    placeholder.name = "模型加载中"
+    root.add(placeholder)
+    if (!asset) {
+      root.userData.loadError = "模型资产不存在"
+      return
+    }
+    setLoadingModels((value) => value + 1)
+    void loader.loadAsync(resolveMediaUrl(asset.url)).then((gltf) => {
+      if (!isCurrent()) {
+        disposeObject(gltf.scene)
+        return
+      }
+      root.remove(placeholder)
+      disposeObject(placeholder)
+      const model = gltf.scene
+      const analysis = asset.analysis
+      const rig = normalizeDirectorCustomRig(object.rig, asset)
+      model.updateMatrixWorld(true)
+      const restBox = new THREE.Box3().setFromObject(model)
+      const restSize = restBox.getSize(new THREE.Vector3())
+      if (rig.mode === "pose" && analysis?.humanoid.recognized) {
+        applyDirectorRigPose(model, rig, resolveCustomRigBones(gltf, analysis.humanoid))
+      } else if (rig.mode === "animation" && gltf.animations.length > 0) {
+        const clip = (rig.animation_index === null ? undefined : gltf.animations[rig.animation_index])
+          || gltf.animations.find((item) => item.name === rig.animation_name)
+          || gltf.animations[0]
+        const mixer = new THREE.AnimationMixer(model)
+        const action = mixer.clipAction(clip)
+        action.enabled = true
+        action.paused = !rig.animation_playing
+        action.timeScale = rig.animation_speed
+        action.clampWhenFinished = !rig.animation_loop
+        action.setLoop(rig.animation_loop ? THREE.LoopRepeat : THREE.LoopOnce, rig.animation_loop ? Infinity : 1)
+        action.play()
+        mixer.update(0)
+        runtime.mixers.set(object.id, mixer)
+      }
+      model.updateMatrixWorld(true)
+      const box = new THREE.Box3().setFromObject(model)
+      const center = box.getCenter(new THREE.Vector3())
+      const largest = Math.max(restSize.x, restSize.y, restSize.z, 0.001)
+      const normalizationExtent = analysis?.humanoid.recognized
+        ? Math.max(restSize.y, 0.001)
+        : largest
+      const normalizedScale = 1.8 / normalizationExtent
+      const content = new THREE.Group()
+      content.name = `${asset.name} normalization frame`
+      content.add(model)
+      content.scale.setScalar(normalizedScale)
+      content.position.set(-center.x * normalizedScale, -box.min.y * normalizedScale, -center.z * normalizedScale)
+      content.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true
+          child.receiveShadow = true
+        }
+      })
+      root.add(content)
+    }).catch((loadError) => {
+      root.userData.loadError = loadError instanceof Error ? loadError.message : String(loadError)
+    }).finally(() => {
+      setLoadingModels((value) => Math.max(0, value - 1))
+    })
+  }, [])
+
+  const rebuildRuntimeObject = useCallback((objectId: string) => {
+    const runtime = runtimeRef.current
+    if (!runtime || runtime.disposed) return
+    const state = directorRef.current
+    const object = state.scene.objects.find((item) => item.id === objectId)
+    removeRuntimeObject(runtime, objectId)
+    if (!object) return
+    const asset = state.model_assets.find((item) => item.id === object.asset_id)
+    buildRuntimeObject(runtime, object, asset)
+  }, [buildRuntimeObject])
+
+  const rebuildRuntime = useCallback(() => {
+    const runtime = runtimeRef.current
+    if (!runtime || runtime.disposed) return
+    runtime.transform.detach()
+    stopRuntimeMixers(runtime)
+    for (const objectId of [...runtime.objectRoots.keys()]) removeRuntimeObject(runtime, objectId)
+    const state = directorRef.current
+    const modelById = new Map(state.model_assets.map((asset) => [asset.id, asset]))
+    for (const object of state.scene.objects) {
+      buildRuntimeObject(runtime, object, modelById.get(object.asset_id))
     }
     runtime.camera.position.set(...state.scene.camera.position)
     runtime.camera.fov = state.scene.camera.fov
@@ -580,7 +618,7 @@ export default function DirectorDesk({
     runtime.orbit.update()
     runtime.root.userData.aspectRatio = state.scene.aspect_ratio
     resizeDirectorRuntime(runtime)
-  }, [])
+  }, [buildRuntimeObject])
 
   rebuildRuntimeRef.current = rebuildRuntime
 
@@ -677,9 +715,9 @@ export default function DirectorDesk({
       grid,
       objectRoots: new Map(),
       mixers: new Map(),
+      objectBuildTokens: new Map(),
       resizeObserver,
       viewport,
-      buildToken: 0,
       disposed: false,
     }
     runtimeRef.current = runtime
@@ -829,7 +867,6 @@ export default function DirectorDesk({
 
     return () => {
       runtime.disposed = true
-      runtime.buildToken += 1
       renderer.setAnimationLoop(null)
       resizeObserver.disconnect()
       renderer.domElement.removeEventListener("pointerdown", onPointerDown, true)
@@ -964,11 +1001,27 @@ export default function DirectorDesk({
 
   const updateSelectedObject = useCallback((patch: Partial<DirectorObjectState>) => {
     if (!selectedObjectId) return
-    const scene = cloneDirectorScene(directorRef.current.scene)
-    scene.objects = scene.objects.map((item) => item.id === selectedObjectId ? { ...item, ...patch } : item)
-    replaceScene(scene, true)
+    const current = directorRef.current
+    const previousObject = current.scene.objects.find((item) => item.id === selectedObjectId)
+    if (!previousObject) return
+    const nextObject = { ...previousObject, ...patch }
+    const scene = cloneDirectorScene(current.scene)
+    scene.objects = scene.objects.map((item) => item.id === selectedObjectId ? nextObject : item)
+    undoRef.current = [...undoRef.current.slice(-49), cloneDirectorScene(current.scene)]
+    redoRef.current = []
+    setLocalDirector({ ...current, scene })
+    const contentChanged = ["asset_id", "color", "mannequin", "rig"].some((key) => key in patch)
+    const runtime = runtimeRef.current
+    const root = runtime?.objectRoots.get(selectedObjectId)
+    if (contentChanged || !runtime || !root) {
+      rebuildRuntimeObject(selectedObjectId)
+    } else {
+      root.name = nextObject.name
+      applyObjectTransform(root, nextObject)
+    }
+    void enqueueSceneSave(scene)
     setSelectedObjectId(selectedObjectId)
-  }, [replaceScene, selectedObjectId])
+  }, [enqueueSceneSave, rebuildRuntimeObject, selectedObjectId, setLocalDirector])
 
   const updateSelectedMannequin = useCallback((
     updater: (current: ReturnType<typeof normalizeDirectorMannequin>) => ReturnType<typeof normalizeDirectorMannequin>,
