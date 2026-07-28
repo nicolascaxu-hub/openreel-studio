@@ -134,6 +134,48 @@ const MANNEQUIN_PROPORTION_CONTROLS: Array<{
   { key: "head_scale", label: "头部比例", min: 0.78, max: 1.25, step: 0.01 },
 ]
 
+const DIRECTOR_SHORTCUT_GROUPS = [
+  {
+    title: "选择与变换",
+    items: [
+      ["W", "移动"],
+      ["E", "旋转"],
+      ["R", "缩放"],
+      ["F / 小键盘 .", "聚焦选择"],
+      ["Delete", "删除选择"],
+      ["Ctrl/⌘ D", "复制对象"],
+    ],
+  },
+  {
+    title: "视图",
+    items: [
+      ["小键盘 0", "总览 / 当前机位"],
+      ["小键盘 1 / 3 / 7", "正面 / 侧面 / 顶视"],
+      ["Home", "显示全部"],
+      ["H", "显示 / 隐藏机位线"],
+      ["Esc", "返回总览或取消选择"],
+    ],
+  },
+  {
+    title: "多机位",
+    items: [
+      ["1–9", "直接切换机位"],
+      ["[ / ]", "上一个 / 下一个机位"],
+      ["Shift A", "当前视角新增机位"],
+      ["Ctrl/⌘ Alt 小键盘 0", "当前机位对齐视角"],
+      ["Ctrl/⌘ Enter", "截图全部机位"],
+    ],
+  },
+  {
+    title: "编辑",
+    items: [
+      ["Ctrl/⌘ Z", "撤销"],
+      ["Ctrl/⌘ Shift Z", "重做"],
+      ["?", "打开 / 关闭快捷键"],
+    ],
+  },
+] as const
+
 type DirectorIconName =
   | "arrow-left"
   | "camera"
@@ -539,6 +581,23 @@ function applyRuntimeCameraView(
   setDirectorCameraRigVisibility(runtime, mode === "overview")
 }
 
+function frameRuntimeObjects(runtime: DirectorRuntime, objects: THREE.Object3D[]): boolean {
+  if (objects.length === 0) return false
+  const bounds = new THREE.Box3()
+  for (const object of objects) bounds.expandByObject(object)
+  if (bounds.isEmpty()) return false
+  const sphere = bounds.getBoundingSphere(new THREE.Sphere())
+  const direction = runtime.camera.position.clone().sub(runtime.orbit.target)
+  if (direction.lengthSq() < 0.0001) direction.set(1, 0.65, 1)
+  direction.normalize()
+  const halfFov = THREE.MathUtils.degToRad(Math.max(20, runtime.camera.fov)) / 2
+  const distance = Math.max(1.8, sphere.radius / Math.max(0.2, Math.sin(halfFov)) * 1.35)
+  runtime.orbit.target.copy(sphere.center)
+  runtime.camera.position.copy(sphere.center).addScaledVector(direction, distance)
+  runtime.orbit.update()
+  return true
+}
+
 function anatomicalJointForStage(joint: DirectorMannequinJoint): DirectorMannequinJoint {
   if (joint.startsWith("left")) return `right${joint.slice(4)}` as DirectorMannequinJoint
   if (joint.startsWith("right")) return `left${joint.slice(5)}` as DirectorMannequinJoint
@@ -716,6 +775,7 @@ export default function DirectorDesk({
   const [showGrid, setShowGrid] = useState(true)
   const [showThirds, setShowThirds] = useState(false)
   const [showCameraGuides, setShowCameraGuides] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
   const [cameraViewMode, setCameraViewMode] = useState<"overview" | "camera">("overview")
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
@@ -1653,6 +1713,107 @@ export default function DirectorDesk({
     })
   }, [updateSelectedCamera])
 
+  const applyOverviewPreset = useCallback((preset: "front" | "right" | "top") => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
+    const target = runtime.orbit.target.toArray() as [number, number, number]
+    const distance = Math.max(2, runtime.camera.position.distanceTo(runtime.orbit.target))
+    scene.viewport_camera = {
+      target,
+      position: preset === "front"
+        ? [target[0], target[1], target[2] + distance]
+        : preset === "right"
+          ? [target[0] + distance, target[1], target[2]]
+          : [target[0] + 0.001, target[1] + distance, target[2] + 0.001],
+      fov: runtime.camera.fov,
+    }
+    cameraViewModeRef.current = "overview"
+    setCameraViewMode("overview")
+    setSelectedCameraId(null)
+    persistCameraScene(scene, { recordHistory: false, rebuildRigs: false })
+  }, [persistCameraScene])
+
+  const toggleCameraView = useCallback(() => {
+    switchCameraView(cameraViewModeRef.current === "camera" ? "overview" : "camera")
+  }, [switchCameraView])
+
+  const activateCameraByIndex = useCallback((index: number) => {
+    const camera = directorRef.current.scene.cameras[index]
+    if (camera) activateCamera(camera.id, true)
+  }, [activateCamera])
+
+  const cycleCamera = useCallback((offset: number) => {
+    const scene = directorRef.current.scene
+    const index = Math.max(0, scene.cameras.findIndex((camera) => camera.id === scene.active_camera_id))
+    const nextIndex = (index + offset + scene.cameras.length) % scene.cameras.length
+    activateCamera(scene.cameras[nextIndex].id, true)
+  }, [activateCamera])
+
+  const alignActiveCameraToView = useCallback(() => {
+    const runtime = runtimeRef.current
+    if (!runtime || runtime.cameraViewMode !== "overview") return
+    const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
+    const cameraId = scene.active_camera_id
+    const pose: DirectorCameraPose = {
+      position: runtime.camera.position.toArray() as [number, number, number],
+      target: runtime.orbit.target.toArray() as [number, number, number],
+      fov: runtime.camera.fov,
+    }
+    scene.cameras = scene.cameras.map((camera) => camera.id === cameraId ? { ...camera, ...pose } : camera)
+    setSelectedObjectId(null)
+    setSelectedCameraId(cameraId)
+    cameraViewModeRef.current = "camera"
+    setCameraViewMode("camera")
+    persistCameraScene(scene)
+  }, [persistCameraScene])
+
+  const focusSelection = useCallback(() => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    const cameraId = selectedCameraId
+    const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
+    setLocalDirector({ ...directorRef.current, scene })
+    cameraViewModeRef.current = "overview"
+    setCameraViewMode("overview")
+    applyRuntimeCameraView(runtime, scene, "overview")
+    const target = selectedObjectId
+      ? runtime.objectRoots.get(selectedObjectId)
+      : cameraId
+        ? runtime.cameraRigs.get(cameraId)?.visual
+        : null
+    const objects = target
+      ? [target]
+      : [
+          ...[...runtime.objectRoots.values()].filter((object) => object.visible),
+          ...[...runtime.cameraRigs.values()].map((rig) => rig.visual),
+        ]
+    if (!frameRuntimeObjects(runtime, objects)) return
+    if (!cameraId) setSelectedCameraId(null)
+    commitRuntimeScene()
+  }, [commitRuntimeScene, selectedCameraId, selectedObjectId, setLocalDirector])
+
+  const frameAll = useCallback(() => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
+    setLocalDirector({ ...directorRef.current, scene })
+    cameraViewModeRef.current = "overview"
+    setCameraViewMode("overview")
+    setSelectedCameraId(null)
+    applyRuntimeCameraView(runtime, scene, "overview")
+    const objects = [
+      ...[...runtime.objectRoots.values()].filter((object) => object.visible),
+      ...[...runtime.cameraRigs.values()].map((rig) => rig.visual),
+    ]
+    if (frameRuntimeObjects(runtime, objects)) commitRuntimeScene()
+  }, [commitRuntimeScene, setLocalDirector])
+
+  const deleteSelection = useCallback(() => {
+    if (selectedCameraId) removeCamera(selectedCameraId)
+    else deleteSelectedObject()
+  }, [deleteSelectedObject, removeCamera, selectedCameraId])
+
   const captureImage = useCallback((scene: DirectorSceneState, shot: DirectorCameraState): string => {
     const runtime = runtimeRef.current
     if (!runtime) throw new Error("导演台尚未准备完成")
@@ -1898,25 +2059,88 @@ export default function DirectorDesk({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest("input, textarea, select, button")) return
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return
       const modifier = event.ctrlKey || event.metaKey
-      if (modifier && event.key.toLowerCase() === "z") {
+      const key = event.key.toLowerCase()
+      const run = (action: () => void) => {
+        event.preventDefault()
+        action()
+      }
+      if (event.key === "?" || (event.code === "Slash" && event.shiftKey)) {
+        run(() => setShowShortcuts((value) => !value))
+      } else if (event.key === "Escape") {
+        run(() => {
+          if (showShortcuts) {
+            setShowShortcuts(false)
+          } else if (cameraViewModeRef.current === "camera") {
+            switchCameraView("overview")
+          } else {
+            setSelectedObjectId(null)
+            setSelectedCameraId(null)
+            runtimeRef.current?.transform.detach()
+          }
+        })
+      } else if (modifier && event.altKey && event.code === "Numpad0") {
+        if (!event.repeat) run(alignActiveCameraToView)
+      } else if (modifier && event.key === "Enter") {
+        if (!event.repeat) run(() => { void createCapture() })
+      } else if (modifier && key === "z") {
         event.preventDefault()
         if (event.shiftKey) redo()
         else undo()
-      } else if (modifier && event.key.toLowerCase() === "d") {
-        event.preventDefault()
-        duplicateSelectedObject()
+      } else if (modifier && key === "d") {
+        if (!event.repeat) run(duplicateSelectedObject)
+      } else if (!modifier && !event.altKey && event.shiftKey && key === "a") {
+        if (!event.repeat) run(addCamera)
       } else if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault()
-        deleteSelectedObject()
-      } else if (event.key.toLowerCase() === "w") setTransformMode("translate")
-      else if (event.key.toLowerCase() === "e") setTransformMode("rotate")
-      else if (event.key.toLowerCase() === "r") setTransformMode("scale")
+        if (!event.repeat) run(deleteSelection)
+      } else if (!modifier && !event.altKey && !event.shiftKey && /^Digit[1-9]$/.test(event.code)) {
+        run(() => activateCameraByIndex(Number(event.code.slice(-1)) - 1))
+      } else if (!modifier && !event.altKey && event.code === "BracketLeft") {
+        run(() => cycleCamera(-1))
+      } else if (!modifier && !event.altKey && event.code === "BracketRight") {
+        run(() => cycleCamera(1))
+      } else if (!modifier && !event.altKey && event.code === "Numpad0") {
+        run(toggleCameraView)
+      } else if (!modifier && !event.altKey && event.code === "Numpad1") {
+        run(() => applyOverviewPreset("front"))
+      } else if (!modifier && !event.altKey && event.code === "Numpad3") {
+        run(() => applyOverviewPreset("right"))
+      } else if (!modifier && !event.altKey && event.code === "Numpad7") {
+        run(() => applyOverviewPreset("top"))
+      } else if (!modifier && !event.altKey && (key === "f" || event.code === "NumpadDecimal")) {
+        run(focusSelection)
+      } else if (!modifier && !event.altKey && event.key === "Home") {
+        run(frameAll)
+      } else if (!modifier && !event.altKey && key === "h") {
+        run(() => setShowCameraGuides((value) => !value))
+      } else if (!modifier && !event.altKey && key === "w") {
+        run(() => setTransformMode("translate"))
+      } else if (!modifier && !event.altKey && key === "e") {
+        run(() => setTransformMode("rotate"))
+      } else if (!modifier && !event.altKey && key === "r") {
+        run(() => setTransformMode("scale"))
+      }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [deleteSelectedObject, duplicateSelectedObject, redo, undo])
+  }, [
+    activateCameraByIndex,
+    addCamera,
+    alignActiveCameraToView,
+    applyOverviewPreset,
+    createCapture,
+    cycleCamera,
+    deleteSelection,
+    duplicateSelectedObject,
+    focusSelection,
+    frameAll,
+    redo,
+    showShortcuts,
+    switchCameraView,
+    toggleCameraView,
+    undo,
+  ])
 
   const changeAspectRatio = useCallback((aspect: DirectorAspectRatio) => {
     const scene = cloneDirectorScene(directorRef.current.scene)
@@ -1987,6 +2211,7 @@ export default function DirectorDesk({
             <button type="button" title="显示三分构图线" onClick={() => setShowThirds((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showThirds ? "bg-violet-300/12 text-violet-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name="thirds" className="h-3.5 w-3.5" />三分线</button>
             <button type="button" title="显示机位朝向和取景框" onClick={() => setShowCameraGuides((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showCameraGuides ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name={showCameraGuides ? "eye" : "eye-off"} className="h-3.5 w-3.5" />机位线</button>
           </div>
+          <button type="button" title="查看导演台快捷键 (?)" aria-label="快捷键" onClick={() => setShowShortcuts((value) => !value)} className={cn("flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[9px] font-medium transition", showShortcuts ? "border-violet-300/25 bg-violet-300/10 text-violet-100" : "border-white/[0.075] bg-black/20 text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><span className="text-[12px]">⌨</span><span className="hidden xl:inline">快捷键</span><kbd className="rounded border border-white/[0.09] bg-black/25 px-1 py-0.5 text-[7px] text-zinc-500">?</kbd></button>
           <button
             type="button"
             onClick={() => void createCapture()}
@@ -1998,6 +2223,31 @@ export default function DirectorDesk({
           </button>
         </div>
       </header>
+
+      {showShortcuts ? (
+        <section className="absolute right-4 top-[76px] z-50 w-[610px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border border-violet-200/15 bg-[#0b0f18]/95 shadow-[0_28px_90px_rgba(0,0,0,.58)] backdrop-blur-2xl" aria-label="导演台快捷键列表">
+          <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+            <div><div className="text-[12px] font-semibold text-zinc-100">导演台快捷键</div><div className="mt-0.5 text-[8px] text-zinc-600">融合 3D 场景编辑与多机位切换习惯</div></div>
+            <button type="button" onClick={() => setShowShortcuts(false)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.07] text-[13px] text-zinc-500 transition hover:bg-white/[0.06] hover:text-white" aria-label="关闭快捷键">×</button>
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-white/[0.055]">
+            {DIRECTOR_SHORTCUT_GROUPS.map((group) => (
+              <div key={group.title} className="bg-[#0b0f18] p-3.5">
+                <div className="mb-2 text-[9px] font-semibold tracking-wide text-violet-200/75">{group.title}</div>
+                <div className="space-y-1.5">
+                  {group.items.map(([keys, label]) => (
+                    <div key={keys} className="flex items-center justify-between gap-3 text-[8px]">
+                      <span className="text-zinc-500">{label}</span>
+                      <kbd className="rounded-md border border-white/[0.09] bg-black/30 px-1.5 py-1 font-mono text-[7px] text-zinc-300">{keys}</kbd>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-white/[0.065] px-4 py-2 text-[7px] text-zinc-600">快捷键在输入框、下拉框和可编辑文字区域内自动停用。</div>
+        </section>
+      ) : null}
 
       <div className="relative z-10 grid min-h-0 grid-cols-[220px_minmax(0,1fr)_250px] 2xl:grid-cols-[260px_minmax(0,1fr)_300px]">
         <aside className="flex min-h-0 flex-col border-r border-white/[0.07] bg-[#0a0d14]/94">
