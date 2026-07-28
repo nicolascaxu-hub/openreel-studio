@@ -1324,6 +1324,27 @@ export default function DirectorDesk({
     const preventBrowserGesture = (event: Event) => {
       event.preventDefault()
     }
+    const preventViewportBrowserGesture = (event: Event) => {
+      const target = event.target
+      const pointerEvent = event as PointerEvent
+      const startedInViewport = target === renderer.domElement
+      const rightButtonActive = pointerEvent.button === 2
+        || (typeof pointerEvent.buttons === "number" && (pointerEvent.buttons & 2) === 2)
+        || rightPointerStart !== null
+      if (!startedInViewport || (!rightButtonActive && event.type !== "wheel" && !event.type.startsWith("gesture"))) return
+      event.preventDefault()
+    }
+    const nonPassiveCapture = { capture: true, passive: false } as const
+    window.addEventListener("pointerdown", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("pointermove", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("pointerup", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("contextmenu", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("auxclick", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("dragstart", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("wheel", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("gesturestart", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("gesturechange", preventViewportBrowserGesture, nonPassiveCapture)
+    window.addEventListener("gestureend", preventViewportBrowserGesture, nonPassiveCapture)
     renderer.domElement.addEventListener("pointerdown", onPointerDown, true)
     renderer.domElement.addEventListener("pointermove", onPointerMove, true)
     renderer.domElement.addEventListener("pointerup", onPointerUp, true)
@@ -1374,6 +1395,16 @@ export default function DirectorDesk({
       runtime.disposed = true
       renderer.setAnimationLoop(null)
       resizeObserver.disconnect()
+      window.removeEventListener("pointerdown", preventViewportBrowserGesture, true)
+      window.removeEventListener("pointermove", preventViewportBrowserGesture, true)
+      window.removeEventListener("pointerup", preventViewportBrowserGesture, true)
+      window.removeEventListener("contextmenu", preventViewportBrowserGesture, true)
+      window.removeEventListener("auxclick", preventViewportBrowserGesture, true)
+      window.removeEventListener("dragstart", preventViewportBrowserGesture, true)
+      window.removeEventListener("wheel", preventViewportBrowserGesture, true)
+      window.removeEventListener("gesturestart", preventViewportBrowserGesture, true)
+      window.removeEventListener("gesturechange", preventViewportBrowserGesture, true)
+      window.removeEventListener("gestureend", preventViewportBrowserGesture, true)
       renderer.domElement.removeEventListener("pointerdown", onPointerDown, true)
       renderer.domElement.removeEventListener("pointermove", onPointerMove, true)
       renderer.domElement.removeEventListener("pointerup", onPointerUp, true)
