@@ -498,6 +498,14 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function modelClipCounts(analysis: DirectorModelAsset["analysis"]): { poses: number; animations: number } {
+  if (!analysis) return { poses: 0, animations: 0 }
+  return {
+    poses: analysis.animations.filter((item) => item.kind === "pose").length,
+    animations: analysis.animations.filter((item) => item.kind === "animation").length,
+  }
+}
+
 function resizeDirectorRuntime(runtime: DirectorRuntime): void {
   if (runtime.disposed) return
   const rect = runtime.viewport.getBoundingClientRect()
@@ -691,15 +699,26 @@ export default function DirectorDesk({
         const clip = (rig.animation_index === null ? undefined : gltf.animations[rig.animation_index])
           || gltf.animations.find((item) => item.name === rig.animation_name)
           || gltf.animations[0]
+        const clipDescriptor = analysis?.animations.find((item) => item.index === rig.animation_index)
+          || analysis?.animations.find((item) => item.name === clip.name)
+        const isNativePose = clipDescriptor?.kind === "pose"
         const mixer = new THREE.AnimationMixer(model)
         const action = mixer.clipAction(clip)
         action.enabled = true
-        action.paused = !rig.animation_playing
-        action.timeScale = rig.animation_speed
-        action.clampWhenFinished = !rig.animation_loop
-        action.setLoop(rig.animation_loop ? THREE.LoopRepeat : THREE.LoopOnce, rig.animation_loop ? Infinity : 1)
+        action.timeScale = isNativePose ? 1 : rig.animation_speed
+        action.clampWhenFinished = isNativePose || !rig.animation_loop
+        action.setLoop(
+          isNativePose || !rig.animation_loop ? THREE.LoopOnce : THREE.LoopRepeat,
+          isNativePose || !rig.animation_loop ? 1 : Infinity,
+        )
         action.play()
-        mixer.update(0)
+        if (isNativePose) {
+          mixer.setTime(Math.max(0, clip.duration))
+          action.paused = true
+        } else {
+          action.paused = !rig.animation_playing
+          mixer.update(0)
+        }
         runtime.mixers.set(object.id, mixer)
       }
       model.updateMatrixWorld(true)
@@ -1106,6 +1125,22 @@ export default function DirectorDesk({
       ? normalizeDirectorCustomRig(selectedObject.rig, selectedCustomAsset)
       : null,
     [selectedCustomAsset, selectedObject],
+  )
+  const selectedNativePoseClips = useMemo(
+    () => selectedCustomAsset?.analysis?.animations.filter((item) => item.kind === "pose") || [],
+    [selectedCustomAsset],
+  )
+  const selectedContinuousAnimationClips = useMemo(
+    () => selectedCustomAsset?.analysis?.animations.filter((item) => item.kind === "animation") || [],
+    [selectedCustomAsset],
+  )
+  const selectedNativeClip = useMemo(
+    () => selectedCustomRig
+      ? selectedCustomAsset?.analysis?.animations.find((item) => item.index === selectedCustomRig.animation_index)
+        || selectedCustomAsset?.analysis?.animations.find((item) => item.name === selectedCustomRig.animation_name)
+        || null
+      : null,
+    [selectedCustomAsset, selectedCustomRig],
   )
 
   const addObject = useCallback((assetId: string, defaultName: string) => {
@@ -1677,7 +1712,7 @@ export default function DirectorDesk({
                           </span>
                           <span className="mt-0.5 block text-[8px] text-zinc-600">
                             {asset.analysis
-                              ? `${asset.analysis.bone_count} 骨骼 · ${asset.analysis.animation_count} 动作`
+                              ? `${asset.analysis.bone_count} 骨骼 · ${modelClipCounts(asset.analysis).poses} 动作 · ${modelClipCounts(asset.analysis).animations} 动画`
                               : formatBytes(asset.size)} · 点击放置
                           </span>
                         </span>
@@ -1884,7 +1919,7 @@ export default function DirectorDesk({
                   </div>
 
                   <div className="border-t border-white/[0.065] pt-3">
-                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">动作预设</span><span className="text-[8px] text-zinc-700">{DIRECTOR_MANNEQUIN_POSE_PRESETS.length} 组</span></div>
+                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">姿势预设</span><span className="text-[8px] text-zinc-700">{DIRECTOR_MANNEQUIN_POSE_PRESETS.length} 组定格动作</span></div>
                     <div className="grid grid-cols-3 gap-1.5">
                       {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => (
                         <button key={preset.id} type="button" title={preset.description} onClick={() => applyPosePreset(preset.id)} className={cn("h-8 rounded-lg border text-[8px] font-medium transition", selectedMannequin.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>{preset.label}</button>
@@ -1924,10 +1959,10 @@ export default function DirectorDesk({
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-300/[0.09] text-cyan-100/80"><DirectorIcon name="sparkles" className="h-3.5 w-3.5" /></span>
                     <div className="min-w-0">
-                      <div className="text-[10px] font-medium text-zinc-200">导入骨架与动作</div>
+                      <div className="text-[10px] font-medium text-zinc-200">导入骨架、动作与动画</div>
                       <div className="truncate text-[8px] text-zinc-600">
                         {selectedCustomAsset.analysis
-                          ? `${selectedCustomAsset.analysis.bone_count} 个骨骼 · ${selectedCustomAsset.analysis.animation_count} 个内置动作`
+                          ? `${selectedCustomAsset.analysis.bone_count} 骨骼 · ${selectedNativePoseClips.length} 定格动作 · ${selectedContinuousAnimationClips.length} 连续动画`
                           : "等待模型分析"}
                       </div>
                     </div>
@@ -1939,13 +1974,19 @@ export default function DirectorDesk({
 
                 {selectedCustomAsset.analysis ? (
                   <div className="space-y-4 p-3">
-                    <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1">
-                      {([{"id":"bind","label":"原始姿势"},{"id":"pose","label":"动作预设"},{"id":"animation","label":"内置动画"}] as const).map((option) => {
-                        const disabled = option.id === "pose"
-                          ? !selectedCustomAsset.analysis?.humanoid.recognized
-                          : option.id === "animation" && !selectedCustomAsset.analysis?.animations.length
-                        return <button key={option.id} type="button" disabled={disabled} onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: option.id }))} className={cn("h-7 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", selectedCustomRig.mode === option.id ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>{option.label}</button>
-                      })}
+                    <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1">
+                      <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "bind" }))} className={cn("h-8 rounded-lg text-[8px] font-medium transition", selectedCustomRig.mode === "bind" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>原始姿势</button>
+                      <button type="button" disabled={!selectedCustomAsset.analysis.humanoid.recognized} onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "pose" }))} className={cn("h-8 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", selectedCustomRig.mode === "pose" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>系统姿势</button>
+                      <button type="button" disabled={!selectedNativePoseClips.length} onClick={() => {
+                        const clip = selectedNativeClip?.kind === "pose" ? selectedNativeClip : selectedNativePoseClips[0]
+                        if (!clip) return
+                        updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: clip.index, animation_name: clip.name, animation_playing: false, animation_loop: false }))
+                      }} className={cn("h-8 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", selectedCustomRig.mode === "animation" && selectedNativeClip?.kind === "pose" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>自带定格动作</button>
+                      <button type="button" disabled={!selectedContinuousAnimationClips.length} onClick={() => {
+                        const clip = selectedNativeClip?.kind === "animation" ? selectedNativeClip : selectedContinuousAnimationClips[0]
+                        if (!clip) return
+                        updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: clip.index, animation_name: clip.name, animation_playing: true, animation_loop: true }))
+                      }} className={cn("h-8 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", selectedCustomRig.mode === "animation" && selectedNativeClip?.kind === "animation" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>连续动画</button>
                     </div>
 
                     <div className="grid grid-cols-3 gap-1.5 text-center">
@@ -1954,30 +1995,48 @@ export default function DirectorDesk({
                       <div className="rounded-lg border border-white/[0.055] bg-black/15 px-1 py-2"><span className="block truncate text-[9px] font-semibold uppercase text-zinc-300">{selectedCustomAsset.analysis.humanoid.profile}</span><span className="text-[7px] text-zinc-700">骨架类型</span></div>
                     </div>
 
-                    {selectedCustomAsset.analysis.animations.length > 0 ? (
+                    {selectedNativePoseClips.length > 0 ? (
                       <div className="border-t border-white/[0.065] pt-3">
-                        <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">模型内置动作</span><span className="text-[8px] text-zinc-700">完整读取全部 animation clips</span></div>
-                        <select value={selectedCustomRig.animation_index ?? selectedCustomAsset.analysis.animations[0].index} onChange={(event) => {
-                          const animationIndex = Number(event.target.value)
-                          const animation = selectedCustomAsset.analysis?.animations.find((item) => item.index === animationIndex)
-                          updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: animationIndex, animation_name: animation?.name || null }))
-                        }} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
-                          {selectedCustomAsset.analysis.animations.map((animation) => <option key={`${animation.index}-${animation.name}`} value={animation.index}>#{animation.index + 1} {animation.name}{animation.duration !== null ? ` · ${animation.duration.toFixed(2)}s` : ""}</option>)}
-                        </select>
-                        <div className="mt-2 grid grid-cols-[1fr_1fr_76px] gap-1.5">
-                          <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_playing: !current.animation_playing }))} className="h-8 rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-400 transition hover:text-white">{selectedCustomRig.animation_playing ? "暂停" : "播放"}</button>
-                          <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_loop: !current.animation_loop }))} className={cn("h-8 rounded-lg border text-[8px] transition", selectedCustomRig.animation_loop ? "border-cyan-300/20 bg-cyan-300/8 text-cyan-100" : "border-white/[0.07] bg-black/15 text-zinc-500")}>循环 {selectedCustomRig.animation_loop ? "开" : "关"}</button>
-                          <select aria-label="动画速度" value={selectedCustomRig.animation_speed} onChange={(event) => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_speed: Number(event.target.value) }))} className="h-8 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-1 text-[8px] text-zinc-400 outline-none">
-                            {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
-                          </select>
+                        <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">模型自带定格动作</span><span className="text-[8px] text-zinc-700">GLB 原始短关键帧 · 选中后定格</span></div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {selectedNativePoseClips.map((clip) => (
+                            <button key={`${clip.index}-${clip.name}`} type="button" title={`${clip.keyframe_count} 个关键帧${clip.duration !== null ? ` · ${clip.duration.toFixed(3)} 秒` : ""}`} onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: clip.index, animation_name: clip.name, animation_playing: false, animation_loop: false }))} className={cn("min-h-9 rounded-lg border px-2 py-1 text-left text-[8px] transition", selectedCustomRig.mode === "animation" && selectedNativeClip?.index === clip.index ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>
+                              <span className="block truncate font-medium">{clip.name}</span>
+                              <span className="mt-0.5 block text-[7px] text-zinc-700">{clip.keyframe_count || "短"} 关键帧{clip.duration !== null ? ` · ${clip.duration.toFixed(3)}s` : ""}</span>
+                            </button>
+                          ))}
                         </div>
+                      </div>
+                    ) : null}
+
+                    {selectedContinuousAnimationClips.length > 0 ? (
+                      <div className="border-t border-white/[0.065] pt-3">
+                        <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">模型内置连续动画</span><span className="text-[8px] text-zinc-700">GLB 原始时间序列 · 可播放和循环</span></div>
+                        <select value={selectedNativeClip?.kind === "animation" ? selectedNativeClip.index : ""} onChange={(event) => {
+                          const animationIndex = Number(event.target.value)
+                          const animation = selectedContinuousAnimationClips.find((item) => item.index === animationIndex)
+                          if (!animation) return
+                          updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: animationIndex, animation_name: animation.name, animation_playing: true }))
+                        }} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
+                          <option value="" disabled>选择连续动画</option>
+                          {selectedContinuousAnimationClips.map((animation) => <option key={`${animation.index}-${animation.name}`} value={animation.index}>#{animation.index + 1} {animation.name}{animation.duration !== null ? ` · ${animation.duration.toFixed(2)}s` : ""}</option>)}
+                        </select>
+                        {selectedNativeClip?.kind === "animation" ? (
+                          <div className="mt-2 grid grid-cols-[1fr_1fr_76px] gap-1.5">
+                            <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_playing: !current.animation_playing }))} className="h-8 rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-400 transition hover:text-white">{selectedCustomRig.animation_playing ? "暂停" : "播放"}</button>
+                            <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_loop: !current.animation_loop }))} className={cn("h-8 rounded-lg border text-[8px] transition", selectedCustomRig.animation_loop ? "border-cyan-300/20 bg-cyan-300/8 text-cyan-100" : "border-white/[0.07] bg-black/15 text-zinc-500")}>循环 {selectedCustomRig.animation_loop ? "开" : "关"}</button>
+                            <select aria-label="动画速度" value={selectedCustomRig.animation_speed} onChange={(event) => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_speed: Number(event.target.value) }))} className="h-8 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-1 text-[8px] text-zinc-400 outline-none">
+                              {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
+                            </select>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
 
                     {selectedCustomAsset.analysis.humanoid.recognized ? (
                       <>
                         <div className="border-t border-white/[0.065] pt-3">
-                          <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">重定向动作预设</span><span className="text-[8px] text-zinc-700">驱动已映射关节</span></div>
+                          <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">系统姿势预设</span><span className="text-[8px] text-zinc-700">OpenReel 关节数据 · 非模型原动画</span></div>
                           <div className="grid grid-cols-3 gap-1.5">
                             {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => <button key={preset.id} type="button" title={preset.description} onClick={() => applyCustomPosePreset(preset.id)} className={cn("h-8 rounded-lg border text-[8px] font-medium transition", selectedCustomRig.mode === "pose" && selectedCustomRig.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>{preset.label}</button>)}
                           </div>
@@ -1999,16 +2058,16 @@ export default function DirectorDesk({
                     ) : null}
 
                     <details className="border-t border-white/[0.065] pt-3 text-[8px] text-zinc-500">
-                      <summary className="cursor-pointer select-none font-medium text-zinc-400">完整识别结果 · {selectedCustomAsset.analysis.bone_count} 骨骼 / {selectedCustomAsset.analysis.animation_count} 动作</summary>
+                      <summary className="cursor-pointer select-none font-medium text-zinc-400">完整识别结果 · {selectedCustomAsset.analysis.bone_count} 骨骼 / {selectedNativePoseClips.length} 定格动作 / {selectedContinuousAnimationClips.length} 连续动画</summary>
                       {selectedCustomAsset.analysis.error ? <p className="mt-2 text-red-300/70">{selectedCustomAsset.analysis.error}</p> : null}
                       <div className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-white/[0.055] bg-black/20 p-2 font-mono text-[7px] leading-3 text-zinc-600">
                         {selectedCustomAsset.analysis.bones.length ? selectedCustomAsset.analysis.bones.map((item) => <div key={item.node}><span className="text-zinc-400">#{item.node} {item.name}</span>{item.parent_name ? ` ← ${item.parent_name}` : ""}</div>) : <div>没有 skin joints</div>}
                       </div>
-                      {selectedCustomAsset.analysis.animations.length ? <div className="mt-2 space-y-1">{selectedCustomAsset.analysis.animations.map((item) => <div key={`${item.index}-${item.name}`} className="rounded-lg border border-white/[0.05] bg-black/15 px-2 py-1.5"><span className="text-zinc-400">{item.name}</span> · {item.channel_count} 通道 · {item.target_node_count} 节点 · {item.properties.join("/") || "未知属性"}</div>)}</div> : null}
+                      {selectedCustomAsset.analysis.animations.length ? <div className="mt-2 space-y-1">{selectedCustomAsset.analysis.animations.map((item) => <div key={`${item.index}-${item.name}`} className="rounded-lg border border-white/[0.05] bg-black/15 px-2 py-1.5"><span className={cn("mr-1 rounded px-1 py-0.5 text-[6px] font-semibold", item.kind === "pose" ? "bg-amber-300/10 text-amber-200/80" : "bg-cyan-300/10 text-cyan-200/80")}>{item.kind === "pose" ? "定格动作" : "连续动画"}</span><span className="text-zinc-400">{item.name}</span> · {item.keyframe_count || "?"} 关键帧 · {item.channel_count} 通道 · {item.target_node_count} 节点 · {item.properties.join("/") || "未知属性"}</div>)}</div> : null}
                     </details>
                   </div>
                 ) : (
-                  <div className="p-3 text-[8px] leading-4 text-zinc-600">该模型尚无解析数据，重新载入导演台后会自动补充骨骼与动作识别。</div>
+                  <div className="p-3 text-[8px] leading-4 text-zinc-600">该模型尚无解析数据，重新载入导演台后会自动补充骨骼、定格动作与连续动画识别。</div>
                 )}
               </section>
             ) : null}

@@ -11,6 +11,11 @@ class DirectorGlbError(ValueError):
     """Raised when a director model is not a structurally valid GLB 2.0 file."""
 
 
+DIRECTOR_GLB_ANALYSIS_VERSION = 2
+POSE_CLIP_MAX_DURATION_SECONDS = 0.1
+POSE_CLIP_MAX_KEYFRAMES = 4
+
+
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
@@ -220,6 +225,32 @@ def _animation_duration(document: dict[str, Any], animation: dict[str, Any]) -> 
             duration = max(duration, float(maximum[0]))
             found = True
     return round(duration, 4) if found else None
+
+
+def _animation_keyframe_count(document: dict[str, Any], animation: dict[str, Any]) -> int:
+    accessors = document.get("accessors") if isinstance(document.get("accessors"), list) else []
+    count = 0
+    for sampler in _list(animation.get("samplers")):
+        if not isinstance(sampler, dict) or not isinstance(sampler.get("input"), int):
+            continue
+        index = sampler["input"]
+        accessor = accessors[index] if 0 <= index < len(accessors) and isinstance(accessors[index], dict) else {}
+        value = accessor.get("count")
+        if isinstance(value, int) and value >= 0:
+            count = max(count, value)
+    return count
+
+
+def _animation_kind(duration: float | None, keyframe_count: int) -> str:
+    if keyframe_count == 1:
+        return "pose"
+    if (
+        duration is not None
+        and duration <= POSE_CLIP_MAX_DURATION_SECONDS
+        and 0 < keyframe_count <= POSE_CLIP_MAX_KEYFRAMES
+    ):
+        return "pose"
+    return "animation"
 
 
 def _profile(names: list[str], document: dict[str, Any]) -> str:
@@ -485,10 +516,14 @@ def analyze_glb_document(document: dict[str, Any]) -> dict[str, Any]:
                 targets.add(target["node"])
             if isinstance(target.get("path"), str):
                 properties.add(target["path"])
+        duration = _animation_duration(document, animation)
+        keyframe_count = _animation_keyframe_count(document, animation)
         animation_summaries.append({
             "index": index,
             "name": str(animation.get("name") or f"Animation {index + 1}"),
-            "duration": _animation_duration(document, animation),
+            "duration": duration,
+            "keyframe_count": keyframe_count,
+            "kind": _animation_kind(duration, keyframe_count),
             "channel_count": len(_list(animation.get("channels"))),
             "target_node_count": len(targets),
             "properties": sorted(properties),
@@ -507,6 +542,7 @@ def analyze_glb_document(document: dict[str, Any]) -> dict[str, Any]:
     confidence = round(len(mapped_core) / len(CORE_HUMANOID_JOINTS), 3)
     bone_names = [_node_name(nodes, index) for index in sorted(bone_indices)]
     return {
+        "analysis_version": DIRECTOR_GLB_ANALYSIS_VERSION,
         "format": "glb2",
         "generator": str((document.get("asset") or {}).get("generator") or ""),
         "node_count": len(nodes),

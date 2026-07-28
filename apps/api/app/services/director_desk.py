@@ -17,7 +17,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import settings
 from app.db.models import WorkflowNode
-from app.services.director_glb import DirectorGlbError, analyze_glb_file
+from app.services.director_glb import (
+    DIRECTOR_GLB_ANALYSIS_VERSION,
+    DirectorGlbError,
+    analyze_glb_file,
+)
 from app.services.node_service import NodeService
 from app.services.project_service import ProjectService
 
@@ -379,6 +383,7 @@ def _analyze_glb2(target: Path, size: int | None = None) -> dict[str, Any]:
 
 def _unrecognized_model_analysis(error: str) -> dict[str, Any]:
     return {
+        "analysis_version": DIRECTOR_GLB_ANALYSIS_VERSION,
         "format": "glb2",
         "error": error,
         "node_count": 0,
@@ -430,7 +435,13 @@ class DirectorDeskService:
             raise DirectorDeskError("项目不存在", status_code=404)
         director = normalize_director_state(state.get(DIRECTOR_STATE_KEY))
         for asset in director.get("model_assets", []):
-            if not isinstance(asset, dict) or isinstance(asset.get("analysis"), dict):
+            if not isinstance(asset, dict):
+                continue
+            analysis = asset.get("analysis")
+            if (
+                isinstance(analysis, dict)
+                and analysis.get("analysis_version") == DIRECTOR_GLB_ANALYSIS_VERSION
+            ):
                 continue
             try:
                 target = _model_file(project_id, str(asset.get("file_name") or ""))

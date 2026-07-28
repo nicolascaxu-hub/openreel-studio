@@ -64,6 +64,8 @@ export interface DirectorModelAnimation {
   index: number
   name: string
   duration: number | null
+  keyframe_count: number
+  kind: "pose" | "animation"
   channel_count: number
   target_node_count: number
   properties: string[]
@@ -81,6 +83,7 @@ export interface DirectorModelHumanoid {
 }
 
 export interface DirectorModelAnalysis {
+  analysis_version: number
   format: "glb2"
   generator?: string
   error?: string
@@ -269,16 +272,26 @@ function normalizeModelAnalysis(value: unknown): DirectorModelAnalysis | undefin
     const duration = animation.duration === null || animation.duration === undefined
       ? Number.NaN
       : Number(animation.duration)
+    const normalizedDuration = Number.isFinite(duration) && duration >= 0 ? duration : null
+    const keyframeCount = Math.max(0, Math.floor(finiteNumber(animation.keyframe_count, 0)))
+    const kind = animation.kind === "pose" || animation.kind === "animation"
+      ? animation.kind
+      : normalizedDuration !== null && normalizedDuration <= 0.1
+        ? "pose"
+        : "animation"
     return [{
       index,
       name: String(animation.name || `Animation ${index + 1}`),
-      duration: Number.isFinite(duration) && duration >= 0 ? duration : null,
+      duration: normalizedDuration,
+      keyframe_count: keyframeCount,
+      kind,
       channel_count: Math.max(0, Math.floor(finiteNumber(animation.channel_count, 0))),
       target_node_count: Math.max(0, Math.floor(finiteNumber(animation.target_node_count, 0))),
       properties: (Array.isArray(animation.properties) ? animation.properties : []).map(String),
     }]
   })
   return {
+    analysis_version: Math.max(0, Math.floor(finiteNumber(raw.analysis_version, 0))),
     format: "glb2",
     generator: raw.generator ? String(raw.generator) : undefined,
     error: raw.error ? String(raw.error) : undefined,
@@ -306,16 +319,19 @@ function normalizeModelAnalysis(value: unknown): DirectorModelAnalysis | undefin
 
 export function defaultDirectorCustomRig(asset?: DirectorModelAsset): DirectorCustomRigState {
   const mannequin = defaultDirectorMannequin()
-  const firstAnimation = asset?.analysis?.animations[0]?.name || null
-  const firstAnimationIndex = asset?.analysis?.animations[0]?.index ?? null
+  const firstClip = asset?.analysis?.animations.find((item) => item.kind === "animation")
+    || asset?.analysis?.animations[0]
+  const firstAnimation = firstClip?.name || null
+  const firstAnimationIndex = firstClip?.index ?? null
+  const continuousAnimation = firstClip?.kind === "animation"
   return {
     mode: firstAnimation ? "animation" : asset?.analysis?.humanoid.recognized ? "pose" : "bind",
     pose_preset: mannequin.pose_preset,
     joints: mannequin.joints,
     animation_name: firstAnimation,
     animation_index: firstAnimationIndex,
-    animation_playing: Boolean(firstAnimation),
-    animation_loop: true,
+    animation_playing: continuousAnimation,
+    animation_loop: continuousAnimation,
     animation_speed: 1,
   }
 }

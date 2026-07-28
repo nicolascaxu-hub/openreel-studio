@@ -95,7 +95,7 @@ def _rigged_glb() -> bytes:
         "scenes": [{"nodes": [0]}],
         "nodes": nodes,
         "skins": [{"name": "CharacterSkin", "joints": list(range(len(nodes))), "skeleton": 0}],
-        "accessors": [{"min": [0], "max": [1.25]}],
+        "accessors": [{"min": [0], "max": [1.25], "count": 38}],
         "animations": [{
             "name": "Walk",
             "samplers": [{"input": 0, "output": 0}],
@@ -217,6 +217,31 @@ def test_director_recognizes_numbered_generic_humanoid_joint_chains() -> None:
     assert humanoid["joint_node_map"]["rightWrist"] == 13
     assert humanoid["joint_node_map"]["leftHip"] == 5
     assert humanoid["joint_node_map"]["leftToe"] == 8
+
+
+def test_director_distinguishes_native_pose_clips_from_continuous_animations() -> None:
+    document = {
+        "asset": {"version": "2.0"},
+        "accessors": [
+            {"min": [0], "max": [0.0333], "count": 2},
+            {"min": [0], "max": [0.0667], "count": 3},
+            {"min": [0], "max": [1.0], "count": 31},
+        ],
+        "animations": [
+            {"name": "TPose", "samplers": [{"input": 0}], "channels": []},
+            {"name": "Sad Pose", "samplers": [{"input": 1}], "channels": []},
+            {"name": "Walk", "samplers": [{"input": 2}], "channels": []},
+        ],
+    }
+
+    analysis = analyze_glb_document(document)
+
+    assert analysis["analysis_version"] == 2
+    assert [(item["name"], item["kind"], item["keyframe_count"]) for item in analysis["animations"]] == [
+        ("TPose", "pose", 2),
+        ("Sad Pose", "pose", 3),
+        ("Walk", "animation", 31),
+    ]
 
 
 @pytest.mark.asyncio
@@ -343,6 +368,8 @@ async def test_director_import_inventories_full_rig_and_embedded_animations(
             "index": 0,
             "name": "Walk",
             "duration": 1.25,
+            "keyframe_count": 38,
+            "kind": "animation",
             "channel_count": 2,
             "target_node_count": 2,
             "properties": ["rotation", "translation"],
