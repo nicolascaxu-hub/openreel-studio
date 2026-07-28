@@ -114,7 +114,29 @@ def test_director_routes_are_registered() -> None:
     assert ("GET", "/api/projects/{project_id}/director") in routes
     assert ("POST", "/api/projects/{project_id}/director/models") in routes
     assert ("POST", "/api/projects/{project_id}/director/captures") in routes
+    assert ("POST", "/api/projects/{project_id}/director/captures/batch") in routes
     assert ("POST", "/api/projects/{project_id}/director/captures/{capture_id}/canvas") in routes
+
+
+def test_director_normalizes_legacy_single_camera_into_multi_camera_scene() -> None:
+    legacy_camera = {
+        "position": [2.0, 3.0, 7.0],
+        "target": [0.0, 1.0, 0.0],
+        "fov": 38.0,
+    }
+    normalized = normalize_director_state({
+        "scene": {"aspect_ratio": "16:9", "camera": legacy_camera, "objects": []},
+    })
+    scene = normalized["scene"]
+
+    assert scene["active_camera_id"] == "camera-main"
+    assert scene["cameras"] == [{"id": "camera-main", "name": "机位 1", **legacy_camera}]
+    assert scene["camera"] == legacy_camera
+    assert scene["viewport_camera"] == {
+        "position": [6.0, 6.0, 11.0],
+        "target": [0.0, 1.0, 0.0],
+        "fov": 45.0,
+    }
 
 
 def test_director_normalizes_legacy_joint_angles_into_standard_rig_limits() -> None:
@@ -302,6 +324,60 @@ async def test_director_capture_stays_in_timeline_until_explicit_promotion(
         assert second_state["captures"][0]["promoted_node_id"] == node.id
         project_nodes = list((await session.exec(select(WorkflowNode))).all())
         assert len(project_nodes) == 1
+    await db_session.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_director_saves_all_camera_captures_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    await _setup_db(monkeypatch, tmp_path)
+    async with db_session.session_scope() as session:
+        service = DirectorDeskService(session)
+        scene = _scene()
+        scene["cameras"].append({
+            "id": "camera-side",
+            "name": "侧面机位",
+            "position": [6.0, 2.5, 0.0],
+            "target": [0.0, 1.0, 0.0],
+            "fov": 50.0,
+        })
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        png_data = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+        items = []
+        for camera in scene["cameras"]:
+            snapshot = json.loads(json.dumps(scene))
+            snapshot["active_camera_id"] = camera["id"]
+            snapshot["camera"] = {
+                "position": camera["position"],
+                "target": camera["target"],
+                "fov": camera["fov"],
+            }
+            items.append({
+                "title": camera["name"],
+                "camera_id": camera["id"],
+                "camera_name": camera["name"],
+                "data_url": png_data,
+                "scene_snapshot": snapshot,
+                "actor_legend": [],
+            })
+
+        director, captures = await service.add_captures(
+            "director-project",
+            scene=scene,
+            items=items,
+            expected_revision=0,
+        )
+
+        assert director["revision"] == 1
+        assert director["scene"]["active_camera_id"] == "camera-main"
+        assert [item["camera_id"] for item in captures] == ["camera-main", "camera-side"]
+        assert [item["title"] for item in captures] == ["机位 1", "侧面机位"]
+        assert len(director["captures"]) == 2
+        for capture in captures:
+            target = tmp_path / "storage" / "director-project" / "generated_images" / "director_captures" / capture["file_name"]
+            assert target.read_bytes() == png
     await db_session.engine.dispose()
 
 

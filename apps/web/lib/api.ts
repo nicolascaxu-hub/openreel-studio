@@ -1221,6 +1221,30 @@ export async function createProjectDirectorCapture<T = Record<string, unknown>>(
   return asJson<T>(res)
 }
 
+export async function createProjectDirectorCaptures<T = Record<string, unknown>>(
+  projectId: string,
+  input: {
+    scene: Record<string, unknown>
+    captures: Array<{
+      title?: string
+      camera_id?: string
+      camera_name?: string
+      data_url: string
+      scene_snapshot: Record<string, unknown>
+      actor_legend?: Array<Record<string, unknown>>
+    }>
+    expected_revision?: number
+  },
+): Promise<T> {
+  const base = await getApiBase()
+  const res = await fetch(`${base}/api/projects/${projectId}/director/captures/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return asJson<T>(res)
+}
+
 export async function updateProjectDirectorCapture<T = Record<string, unknown>>(
   projectId: string,
   captureId: string,

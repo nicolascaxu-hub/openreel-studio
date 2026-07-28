@@ -12,7 +12,7 @@ import {
   type DirectorRigJointBones,
 } from "./directorMannequinModel"
 import {
-  createProjectDirectorCapture,
+  createProjectDirectorCaptures,
   deleteProjectDirectorCapture,
   deleteProjectDirectorModel,
   getProjectDirector,
@@ -27,15 +27,19 @@ import {
   DIRECTOR_ASPECT_VALUES,
   DIRECTOR_BUILTINS,
   DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID,
+  MAX_DIRECTOR_CAMERAS,
   cloneDirectorScene,
   createDirectorId,
   defaultDirectorDesk,
+  newDirectorCamera,
   newDirectorObject,
   normalizeDirectorCustomRig,
   normalizeDirectorDesk,
   type DirectorActorLegendItem,
   type DirectorAspectRatio,
   type DirectorCapture,
+  type DirectorCameraPose,
+  type DirectorCameraState,
   type DirectorCustomRigState,
   type DirectorDeskState,
   type DirectorModelAsset,
@@ -78,13 +82,22 @@ interface DirectorRuntime {
   transform: TransformControls
   transformHelper: THREE.Object3D
   root: THREE.Group
+  cameraRoot: THREE.Group
   grid: THREE.GridHelper
   objectRoots: Map<string, THREE.Group>
+  cameraRigs: Map<string, DirectorCameraRig>
   mixers: Map<string, THREE.AnimationMixer>
   objectBuildTokens: Map<string, number>
   resizeObserver: ResizeObserver
   viewport: HTMLDivElement
+  cameraViewMode: "overview" | "camera"
   disposed: boolean
+}
+
+interface DirectorCameraRig {
+  camera: THREE.PerspectiveCamera
+  visual: THREE.Group
+  helper: THREE.CameraHelper
 }
 
 interface DirectorApiResponse {
@@ -92,6 +105,7 @@ interface DirectorApiResponse {
   director?: unknown
   node?: { id?: string }
   created?: boolean
+  captures?: DirectorCapture[]
 }
 
 const TRANSFORM_LABELS: Record<DirectorTransformMode, string> = {
@@ -407,6 +421,119 @@ function applyObjectTransform(root: THREE.Object3D, object: DirectorObjectState)
   root.visible = object.visible
 }
 
+function cameraPose(camera: DirectorCameraState): DirectorCameraPose {
+  return {
+    position: [...camera.position],
+    target: [...camera.target],
+    fov: camera.fov,
+  }
+}
+
+function activeDirectorCamera(scene: DirectorSceneState): DirectorCameraState {
+  return scene.cameras.find((item) => item.id === scene.active_camera_id) || scene.cameras[0]
+}
+
+function syncLegacyActiveCamera(scene: DirectorSceneState): void {
+  scene.camera = cameraPose(activeDirectorCamera(scene))
+}
+
+function createDirectorCameraRig(
+  state: DirectorCameraState,
+  aspect: number,
+  color: number,
+): DirectorCameraRig {
+  const visual = new THREE.Group()
+  visual.name = `${state.name} camera rig`
+  visual.userData.directorCameraId = state.id
+  visual.userData.focusDistance = Math.max(
+    0.25,
+    new THREE.Vector3(...state.position).distanceTo(new THREE.Vector3(...state.target)),
+  )
+  visual.position.set(...state.position)
+  const orientation = new THREE.PerspectiveCamera()
+  orientation.position.set(...state.position)
+  orientation.lookAt(new THREE.Vector3(...state.target))
+  visual.quaternion.copy(orientation.quaternion)
+
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.25 })
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.42), bodyMaterial)
+  body.castShadow = true
+  visual.add(body)
+  const lens = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.16, 0.22, 16),
+    new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.35, metalness: 0.45 }),
+  )
+  lens.rotation.x = Math.PI / 2
+  lens.position.z = -0.31
+  visual.add(lens)
+  const direction = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, 0, -0.46),
+    Math.min(visual.userData.focusDistance, 2.6),
+    color,
+    0.22,
+    0.12,
+  )
+  visual.add(direction)
+
+  const camera = new THREE.PerspectiveCamera(state.fov, aspect, 0.05, 500)
+  camera.name = `${state.name} shot camera`
+  camera.updateProjectionMatrix()
+  visual.add(camera)
+  const helper = new THREE.CameraHelper(camera)
+  helper.name = `${state.name} frustum`
+  helper.userData.directorCameraId = state.id
+  const helperColor = new THREE.Color(color)
+  helper.setColors(helperColor, helperColor, helperColor, helperColor, helperColor)
+  return { camera, visual, helper }
+}
+
+function clearDirectorCameraRigs(runtime: DirectorRuntime): void {
+  for (const rig of runtime.cameraRigs.values()) {
+    runtime.cameraRoot.remove(rig.helper)
+    runtime.cameraRoot.remove(rig.visual)
+    rig.helper.dispose()
+    disposeObject(rig.visual)
+  }
+  runtime.cameraRigs.clear()
+}
+
+function syncDirectorCameraRigs(runtime: DirectorRuntime, scene: DirectorSceneState): void {
+  clearDirectorCameraRigs(runtime)
+  const colors = [0x67e8f9, 0xa78bfa, 0xfbbf24, 0x34d399, 0xfb7185, 0x60a5fa]
+  const aspect = DIRECTOR_ASPECT_VALUES[scene.aspect_ratio]
+  scene.cameras.forEach((camera, index) => {
+    const rig = createDirectorCameraRig(camera, aspect, colors[index % colors.length])
+    runtime.cameraRoot.add(rig.visual)
+    runtime.cameraRoot.add(rig.helper)
+    runtime.cameraRigs.set(camera.id, rig)
+  })
+  runtime.scene.updateMatrixWorld(true)
+  for (const rig of runtime.cameraRigs.values()) rig.helper.update()
+}
+
+function setDirectorCameraRigVisibility(runtime: DirectorRuntime, visible: boolean): void {
+  for (const rig of runtime.cameraRigs.values()) {
+    rig.visual.visible = visible
+    rig.helper.visible = visible
+  }
+}
+
+function applyRuntimeCameraView(
+  runtime: DirectorRuntime,
+  scene: DirectorSceneState,
+  mode: "overview" | "camera",
+): void {
+  runtime.cameraViewMode = mode
+  const pose = mode === "overview" ? scene.viewport_camera : activeDirectorCamera(scene)
+  runtime.camera.position.set(...pose.position)
+  runtime.camera.fov = pose.fov
+  runtime.camera.updateProjectionMatrix()
+  runtime.orbit.target.set(...pose.target)
+  runtime.orbit.update()
+  setDirectorCameraRigVisibility(runtime, mode === "overview")
+}
+
 function anatomicalJointForStage(joint: DirectorMannequinJoint): DirectorMannequinJoint {
   if (joint.startsWith("left")) return `right${joint.slice(4)}` as DirectorMannequinJoint
   if (joint.startsWith("right")) return `left${joint.slice(5)}` as DirectorMannequinJoint
@@ -462,11 +589,32 @@ function removeRuntimeObject(runtime: DirectorRuntime, objectId: string): void {
 
 function snapshotRuntimeScene(runtime: DirectorRuntime, base: DirectorSceneState): DirectorSceneState {
   const next = cloneDirectorScene(base)
-  next.camera = {
-    position: runtime.camera.position.toArray() as [number, number, number],
-    target: runtime.orbit.target.toArray() as [number, number, number],
-    fov: runtime.camera.fov,
+  next.cameras = next.cameras.map((camera) => {
+    const rig = runtime.cameraRigs.get(camera.id)
+    if (!rig) return camera
+    const position = rig.visual.position.toArray() as [number, number, number]
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(rig.visual.quaternion).normalize()
+    const distance = Math.max(0.25, Number(rig.visual.userData.focusDistance) || 1)
+    const target = new THREE.Vector3(...position).addScaledVector(direction, distance)
+    return { ...camera, position, target: target.toArray() as [number, number, number] }
+  })
+  if (runtime.cameraViewMode === "camera") {
+    next.cameras = next.cameras.map((camera) => camera.id === next.active_camera_id
+      ? {
+          ...camera,
+          position: runtime.camera.position.toArray() as [number, number, number],
+          target: runtime.orbit.target.toArray() as [number, number, number],
+          fov: runtime.camera.fov,
+        }
+      : camera)
+  } else {
+    next.viewport_camera = {
+      position: runtime.camera.position.toArray() as [number, number, number],
+      target: runtime.orbit.target.toArray() as [number, number, number],
+      fov: runtime.camera.fov,
+    }
   }
+  syncLegacyActiveCamera(next)
   next.objects = next.objects.map((object) => {
     const root = runtime.objectRoots.get(object.id)
     if (!root) return object
@@ -546,6 +694,7 @@ export default function DirectorDesk({
   const draggedCaptureRef = useRef<string | null>(null)
   const placementModeRef = useRef<"ground" | "free">("ground")
   const transformModeRef = useRef<DirectorTransformMode>("translate")
+  const cameraViewModeRef = useRef<"overview" | "camera">("overview")
   const snapToGridRef = useRef(false)
   const [director, setDirector] = useState<DirectorDeskState>(() => defaultDirectorDesk())
   const [loaded, setLoaded] = useState(false)
@@ -553,6 +702,7 @@ export default function DirectorDesk({
   const [saving, setSaving] = useState(false)
   const [loadingModels, setLoadingModels] = useState(0)
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
+  const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [selectedCaptureId, setSelectedCaptureId] = useState<string | null>(null)
   const [transformMode, setTransformMode] = useState<DirectorTransformMode>("translate")
   const [capturing, setCapturing] = useState(false)
@@ -560,7 +710,8 @@ export default function DirectorDesk({
   const [promotingId, setPromotingId] = useState<string | null>(null)
   const [showGrid, setShowGrid] = useState(true)
   const [showThirds, setShowThirds] = useState(false)
-  const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene">("library")
+  const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
+  const [cameraViewMode, setCameraViewMode] = useState<"overview" | "camera">("overview")
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
   const [snapToGrid, setSnapToGrid] = useState(false)
   const [selectedJoint, setSelectedJoint] = useState<DirectorMannequinJoint>("spine")
@@ -611,6 +762,7 @@ export default function DirectorDesk({
     }
     setLocalDirector({ ...current, scene: cloneDirectorScene(scene) })
     setSelectedObjectId(null)
+    setSelectedCameraId(scene.active_camera_id)
     rebuildRuntimeRef.current()
     void enqueueSceneSave(scene)
   }, [enqueueSceneSave, setLocalDirector])
@@ -770,11 +922,8 @@ export default function DirectorDesk({
     for (const object of state.scene.objects) {
       buildRuntimeObject(runtime, object, modelById.get(object.asset_id))
     }
-    runtime.camera.position.set(...state.scene.camera.position)
-    runtime.camera.fov = state.scene.camera.fov
-    runtime.camera.updateProjectionMatrix()
-    runtime.orbit.target.set(...state.scene.camera.target)
-    runtime.orbit.update()
+    syncDirectorCameraRigs(runtime, state.scene)
+    applyRuntimeCameraView(runtime, state.scene, cameraViewModeRef.current)
     runtime.root.userData.aspectRatio = state.scene.aspect_ratio
     resizeDirectorRuntime(runtime)
   }, [buildRuntimeObject])
@@ -789,6 +938,7 @@ export default function DirectorDesk({
       if (canceled) return
       const next = normalizeDirectorDesk(response.director)
       setLocalDirector(next)
+      setSelectedCameraId(next.scene.active_camera_id)
       setSelectedCaptureId(next.captures[0]?.id || null)
       setLoaded(true)
     }).catch((loadError) => {
@@ -836,6 +986,9 @@ export default function DirectorDesk({
     scene.add(grid)
     const root = new THREE.Group()
     scene.add(root)
+    const cameraRoot = new THREE.Group()
+    cameraRoot.name = "director camera rigs"
+    scene.add(cameraRoot)
 
     const orbit = new OrbitControls(camera, renderer.domElement)
     orbit.enableDamping = true
@@ -871,12 +1024,15 @@ export default function DirectorDesk({
       transform,
       transformHelper,
       root,
+      cameraRoot,
       grid,
       objectRoots: new Map(),
+      cameraRigs: new Map(),
       mixers: new Map(),
       objectBuildTokens: new Map(),
       resizeObserver,
       viewport,
+      cameraViewMode: cameraViewModeRef.current,
       disposed: false,
     }
     runtimeRef.current = runtime
@@ -914,6 +1070,29 @@ export default function DirectorDesk({
       while (selected && selected.parent !== root) selected = selected.parent
       return selected instanceof THREE.Group ? selected : null
     }
+    const cameraAtPointer = (event: PointerEvent): THREE.Group | null => {
+      if (runtime.cameraViewMode !== "overview") return null
+      updatePointer(event)
+      const hits = raycaster.intersectObjects(
+        [...runtime.cameraRigs.values()].map((item) => item.visual),
+        true,
+      )
+      let selected: THREE.Object3D | null = hits[0]?.object || null
+      while (selected && selected.parent !== runtime.cameraRoot) selected = selected.parent
+      return selected instanceof THREE.Group ? selected : null
+    }
+    const selectCamera = (cameraId: string) => {
+      const current = directorRef.current
+      if (!current.scene.cameras.some((item) => item.id === cameraId)) return
+      const sceneState = cloneDirectorScene(current.scene)
+      sceneState.active_camera_id = cameraId
+      syncLegacyActiveCamera(sceneState)
+      setLocalDirector({ ...current, scene: sceneState })
+      setSelectedObjectId(null)
+      setSelectedCameraId(cameraId)
+      applyRuntimeCameraView(runtime, sceneState, cameraViewModeRef.current)
+      void enqueueSceneSave(sceneState)
+    }
     const onPointerDown = (event: PointerEvent) => {
       pointerStart.set(event.clientX, event.clientY)
       if (
@@ -922,11 +1101,13 @@ export default function DirectorDesk({
         || transformModeRef.current !== "translate"
         || transform.axis
       ) return
+      if (cameraAtPointer(event)) return
       const selectedRoot = rootAtPointer(event)
       const objectId = selectedRoot?.userData.directorObjectId
       if (!selectedRoot || typeof objectId !== "string") return
       const object = directorRef.current.scene.objects.find((item) => item.id === objectId)
       if (!object || object.locked) {
+        setSelectedCameraId(null)
         setSelectedObjectId(objectId)
         return
       }
@@ -943,6 +1124,7 @@ export default function DirectorDesk({
         before: snapshotRuntimeScene(runtime, directorRef.current.scene),
         moved: false,
       }
+      setSelectedCameraId(null)
       setSelectedObjectId(objectId)
       orbit.enabled = false
       renderer.domElement.style.cursor = "grabbing"
@@ -981,8 +1163,15 @@ export default function DirectorDesk({
     const onPointerUp = (event: PointerEvent) => {
       if (finishPlaneDrag(event)) return
       if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5 || transform.axis) return
+      const selectedCamera = cameraAtPointer(event)
+      const cameraId = selectedCamera?.userData.directorCameraId
+      if (typeof cameraId === "string") {
+        selectCamera(cameraId)
+        return
+      }
       const selected = rootAtPointer(event)
       const id = selected?.userData.directorObjectId
+      setSelectedCameraId(null)
       setSelectedObjectId(typeof id === "string" ? id : null)
     }
     const onPointerCancel = (event: PointerEvent) => { finishPlaneDrag(event) }
@@ -1021,6 +1210,8 @@ export default function DirectorDesk({
       const delta = Math.min(clock.getDelta(), 0.1)
       for (const mixer of runtime.mixers.values()) mixer.update(delta)
       orbit.update()
+      runtime.scene.updateMatrixWorld(true)
+      for (const rig of runtime.cameraRigs.values()) rig.helper.update()
       renderer.render(scene, camera)
     })
 
@@ -1039,6 +1230,7 @@ export default function DirectorDesk({
       orbit.removeEventListener("end", onOrbitEnd)
       transform.detach()
       stopRuntimeMixers(runtime)
+      clearDirectorCameraRigs(runtime)
       transform.dispose()
       orbit.dispose()
       for (const object of runtime.objectRoots.values()) disposeObject(object)
@@ -1048,7 +1240,7 @@ export default function DirectorDesk({
       renderer.domElement.remove()
       if (runtimeRef.current === runtime) runtimeRef.current = null
     }
-  }, [commitRuntimeScene, loaded])
+  }, [commitRuntimeScene, enqueueSceneSave, loaded, setLocalDirector])
 
   useEffect(() => {
     const runtime = runtimeRef.current
@@ -1068,7 +1260,8 @@ export default function DirectorDesk({
     snapToGridRef.current = snapToGrid
     const runtime = runtimeRef.current
     if (!runtime) return
-    const groundTranslate = placementMode === "ground" && transformMode === "translate"
+    const editingCamera = Boolean(selectedCameraId) && cameraViewMode === "overview"
+    const groundTranslate = !editingCamera && placementMode === "ground" && transformMode === "translate"
     runtime.transform.showX = true
     runtime.transform.showY = !groundTranslate
     runtime.transform.showZ = true
@@ -1077,7 +1270,14 @@ export default function DirectorDesk({
     runtime.transform.showXZ = true
     runtime.transform.translationSnap = placementMode === "ground" && snapToGrid ? 0.25 : null
     runtime.renderer.domElement.style.cursor = groundTranslate ? "grab" : "default"
-  }, [placementMode, snapToGrid, transformMode])
+  }, [cameraViewMode, placementMode, selectedCameraId, snapToGrid, transformMode])
+
+  useEffect(() => {
+    cameraViewModeRef.current = cameraViewMode
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    applyRuntimeCameraView(runtime, directorRef.current.scene, cameraViewMode)
+  }, [cameraViewMode])
 
   useEffect(() => {
     const runtime = runtimeRef.current
@@ -1086,9 +1286,12 @@ export default function DirectorDesk({
       ? director.scene.objects.find((item) => item.id === selectedObjectId)
       : null
     const root = selectedObjectId ? runtime.objectRoots.get(selectedObjectId) : null
-    if (root && object && !object.locked) runtime.transform.attach(root)
+    const cameraRig = selectedCameraId ? runtime.cameraRigs.get(selectedCameraId) : null
+    if (cameraViewMode === "overview" && cameraRig && transformMode !== "scale") {
+      runtime.transform.attach(cameraRig.visual)
+    } else if (root && object && !object.locked) runtime.transform.attach(root)
     else runtime.transform.detach()
-  }, [director.scene.objects, selectedObjectId])
+  }, [cameraViewMode, director.scene.objects, selectedCameraId, selectedObjectId, transformMode])
 
   const undo = useCallback(() => {
     const previous = undoRef.current.pop()
@@ -1107,6 +1310,11 @@ export default function DirectorDesk({
   const selectedObject = useMemo(
     () => director.scene.objects.find((item) => item.id === selectedObjectId) || null,
     [director.scene.objects, selectedObjectId],
+  )
+  const selectedCamera = useMemo(
+    () => director.scene.cameras.find((item) => item.id === selectedCameraId)
+      || activeDirectorCamera(director.scene),
+    [director.scene, selectedCameraId],
   )
   const selectedMannequin = useMemo(
     () => selectedObject?.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
@@ -1149,6 +1357,7 @@ export default function DirectorDesk({
     const object = newDirectorObject(assetId, defaultName, scene.objects, asset)
     scene.objects.push(object)
     replaceScene(scene, true)
+    setSelectedCameraId(null)
     setSelectedObjectId(object.id)
   }, [replaceScene])
 
@@ -1171,6 +1380,7 @@ export default function DirectorDesk({
     }
     scene.objects.push(copy)
     replaceScene(scene, true)
+    setSelectedCameraId(null)
     setSelectedObjectId(copy.id)
   }, [replaceScene, selectedObjectId])
 
@@ -1299,11 +1509,106 @@ export default function DirectorDesk({
     updateSelectedObject({ [field]: next })
   }, [selectedObject, updateSelectedObject])
 
+  const persistCameraScene = useCallback((
+    scene: DirectorSceneState,
+    options: { recordHistory?: boolean; rebuildRigs?: boolean } = {},
+  ) => {
+    const current = directorRef.current
+    syncLegacyActiveCamera(scene)
+    if (options.recordHistory !== false) {
+      undoRef.current = [...undoRef.current.slice(-49), cloneDirectorScene(current.scene)]
+      redoRef.current = []
+    }
+    setLocalDirector({ ...current, scene })
+    const runtime = runtimeRef.current
+    if (runtime) {
+      if (options.rebuildRigs !== false) {
+        runtime.transform.detach()
+        syncDirectorCameraRigs(runtime, scene)
+      }
+      applyRuntimeCameraView(runtime, scene, cameraViewModeRef.current)
+    }
+    void enqueueSceneSave(scene)
+  }, [enqueueSceneSave, setLocalDirector])
+
+  const activateCamera = useCallback((cameraId: string, preview = false) => {
+    const current = directorRef.current
+    if (!current.scene.cameras.some((item) => item.id === cameraId)) return
+    const runtime = runtimeRef.current
+    const scene = runtime ? snapshotRuntimeScene(runtime, current.scene) : cloneDirectorScene(current.scene)
+    scene.active_camera_id = cameraId
+    syncLegacyActiveCamera(scene)
+    setSelectedObjectId(null)
+    setSelectedCameraId(cameraId)
+    if (preview) setCameraViewMode("camera")
+    persistCameraScene(scene, { recordHistory: false, rebuildRigs: false })
+  }, [persistCameraScene])
+
+  const switchCameraView = useCallback((mode: "overview" | "camera") => {
+    const runtime = runtimeRef.current
+    if (runtime) {
+      const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
+      setLocalDirector({ ...directorRef.current, scene })
+      void enqueueSceneSave(scene)
+    }
+    setCameraViewMode(mode)
+  }, [enqueueSceneSave, setLocalDirector])
+
+  const addCamera = useCallback(() => {
+    const current = directorRef.current
+    if (current.scene.cameras.length >= MAX_DIRECTOR_CAMERAS) {
+      setError(`最多可添加 ${MAX_DIRECTOR_CAMERAS} 个机位`)
+      return
+    }
+    const runtime = runtimeRef.current
+    const scene = runtime ? snapshotRuntimeScene(runtime, current.scene) : cloneDirectorScene(current.scene)
+    const source = activeDirectorCamera(scene)
+    const camera = newDirectorCamera(scene.cameras, source)
+    scene.cameras.push(camera)
+    scene.active_camera_id = camera.id
+    setSelectedObjectId(null)
+    setSelectedCameraId(camera.id)
+    setCameraViewMode("overview")
+    persistCameraScene(scene)
+  }, [persistCameraScene])
+
+  const removeSelectedCamera = useCallback(() => {
+    const current = directorRef.current
+    if (current.scene.cameras.length <= 1) return
+    const camera = current.scene.cameras.find((item) => item.id === selectedCameraId)
+      || activeDirectorCamera(current.scene)
+    if (!window.confirm(`删除机位“${camera.name}”？已有截图不会删除。`)) return
+    const runtime = runtimeRef.current
+    const scene = runtime ? snapshotRuntimeScene(runtime, current.scene) : cloneDirectorScene(current.scene)
+    const index = scene.cameras.findIndex((item) => item.id === camera.id)
+    scene.cameras = scene.cameras.filter((item) => item.id !== camera.id)
+    const replacement = scene.cameras[Math.min(Math.max(index, 0), scene.cameras.length - 1)]
+    scene.active_camera_id = replacement.id
+    setSelectedCameraId(replacement.id)
+    setSelectedObjectId(null)
+    setCameraViewMode("overview")
+    persistCameraScene(scene)
+  }, [persistCameraScene, selectedCameraId])
+
+  const updateSelectedCamera = useCallback((patch: Partial<DirectorCameraState>) => {
+    const current = directorRef.current
+    const cameraId = selectedCameraId || current.scene.active_camera_id
+    const runtime = runtimeRef.current
+    const scene = runtime ? snapshotRuntimeScene(runtime, current.scene) : cloneDirectorScene(current.scene)
+    scene.cameras = scene.cameras.map((camera) => camera.id === cameraId ? { ...camera, ...patch } : camera)
+    persistCameraScene(scene)
+  }, [persistCameraScene, selectedCameraId])
+
+  const changeCameraVector = useCallback((field: "position" | "target", index: number, value: number) => {
+    if (!Number.isFinite(value)) return
+    const vector = [...selectedCamera[field]] as [number, number, number]
+    vector[index] = value
+    updateSelectedCamera({ [field]: vector })
+  }, [selectedCamera, updateSelectedCamera])
+
   const applyCameraPreset = useCallback((preset: "front" | "three" | "high" | "top") => {
-    const scene = cloneDirectorScene(directorRef.current.scene)
     const target: [number, number, number] = [0, 1, 0]
-    scene.camera = {
-      ...scene.camera,
+    updateSelectedCamera({
       target,
       position: preset === "front"
         ? [0, 2, 7]
@@ -1312,11 +1617,10 @@ export default function DirectorDesk({
           : preset === "high"
             ? [5, 7, 6]
             : [0.01, 10, 0.01],
-    }
-    replaceScene(scene, true)
-  }, [replaceScene])
+    })
+  }, [updateSelectedCamera])
 
-  const captureImage = useCallback((scene: DirectorSceneState): string => {
+  const captureImage = useCallback((scene: DirectorSceneState, shot: DirectorCameraState): string => {
     const runtime = runtimeRef.current
     if (!runtime) throw new Error("导演台尚未准备完成")
     const aspect = DIRECTOR_ASPECT_VALUES[scene.aspect_ratio]
@@ -1329,14 +1633,18 @@ export default function DirectorDesk({
           : [1280, 720]
     const previousGrid = runtime.grid.visible
     const previousHelper = runtime.transformHelper.visible
+    const previousCameraRoot = runtime.cameraRoot.visible
     const previousRatio = runtime.renderer.getPixelRatio()
     runtime.grid.visible = false
     runtime.transformHelper.visible = false
+    runtime.cameraRoot.visible = false
     runtime.renderer.setPixelRatio(1)
     runtime.renderer.setSize(width, height, false)
-    runtime.camera.aspect = aspect
-    runtime.camera.updateProjectionMatrix()
-    runtime.renderer.render(runtime.scene, runtime.camera)
+    const captureCamera = new THREE.PerspectiveCamera(shot.fov, aspect, 0.05, 500)
+    captureCamera.position.set(...shot.position)
+    captureCamera.lookAt(new THREE.Vector3(...shot.target))
+    captureCamera.updateProjectionMatrix()
+    runtime.renderer.render(runtime.scene, captureCamera)
     const source = runtime.renderer.domElement
     const canvas = document.createElement("canvas")
     canvas.width = width
@@ -1364,6 +1672,7 @@ export default function DirectorDesk({
     const dataUrl = canvas.toDataURL("image/png")
     runtime.grid.visible = previousGrid
     runtime.transformHelper.visible = previousHelper
+    runtime.cameraRoot.visible = previousCameraRoot
     runtime.renderer.setPixelRatio(previousRatio)
     runtime.resizeObserver.unobserve(runtime.viewport)
     runtime.resizeObserver.observe(runtime.viewport)
@@ -1390,14 +1699,27 @@ export default function DirectorDesk({
       const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
       setLocalDirector({ ...directorRef.current, scene })
       await enqueueSceneSave(scene)
-      const response = await createProjectDirectorCapture<DirectorApiResponse>(projectId, {
-        data_url: captureImage(scene),
-        scene_snapshot: scene as unknown as Record<string, unknown>,
-        actor_legend: actorLegend(scene, directorRef.current.model_assets) as unknown as Array<Record<string, unknown>>,
+      const legend = actorLegend(scene, directorRef.current.model_assets) as unknown as Array<Record<string, unknown>>
+      const captures = scene.cameras.map((camera) => {
+        const snapshot = cloneDirectorScene(scene)
+        snapshot.active_camera_id = camera.id
+        syncLegacyActiveCamera(snapshot)
+        return {
+          title: camera.name,
+          camera_id: camera.id,
+          camera_name: camera.name,
+          data_url: captureImage(scene, camera),
+          scene_snapshot: snapshot as unknown as Record<string, unknown>,
+          actor_legend: legend,
+        }
+      })
+      const response = await createProjectDirectorCaptures<DirectorApiResponse>(projectId, {
+        scene: scene as unknown as Record<string, unknown>,
+        captures,
         expected_revision: directorRef.current.revision,
       })
       const next = mergeServerDirector(response.director, true)
-      setSelectedCaptureId(next.captures.at(-1)?.id || null)
+      setSelectedCaptureId(response.captures?.at(-1)?.id || next.captures.at(-1)?.id || null)
     } catch (captureError) {
       setError(captureError instanceof Error ? captureError.message : String(captureError))
     } finally {
@@ -1638,7 +1960,7 @@ export default function DirectorDesk({
             className="group relative ml-1 flex h-10 items-center gap-2 overflow-hidden rounded-xl border border-cyan-100/25 bg-[linear-gradient(135deg,#72e4ff,#9be8ff)] px-4 text-[11px] font-semibold text-[#06121a] shadow-[0_10px_30px_rgba(85,215,255,.2)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(85,215,255,.28)] disabled:translate-y-0 disabled:cursor-wait disabled:opacity-50"
           >
             <DirectorIcon name="camera" className="h-4 w-4" />
-            {capturing ? "正在保存镜头…" : loadingModels > 0 ? "模型加载中" : "保存镜头"}
+            {capturing ? `正在保存 ${director.scene.cameras.length} 个机位…` : loadingModels > 0 ? "模型加载中" : `截图全部机位 · ${director.scene.cameras.length}`}
           </button>
         </div>
       </header>
@@ -1646,9 +1968,10 @@ export default function DirectorDesk({
       <div className="relative z-10 grid min-h-0 grid-cols-[220px_minmax(0,1fr)_250px] 2xl:grid-cols-[260px_minmax(0,1fr)_300px]">
         <aside className="flex min-h-0 flex-col border-r border-white/[0.07] bg-[#0a0d14]/94">
           <div className="border-b border-white/[0.065] px-3 pb-3 pt-3">
-            <div className="grid grid-cols-2 rounded-xl border border-white/[0.075] bg-black/25 p-1">
+            <div className="grid grid-cols-3 rounded-xl border border-white/[0.075] bg-black/25 p-1">
               <button type="button" onClick={() => setLeftPanelTab("library")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "library" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="sparkles" className="h-3.5 w-3.5" />素材</button>
               <button type="button" onClick={() => setLeftPanelTab("scene")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "scene" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="layers" className="h-3.5 w-3.5" />场景 <span className="rounded-full bg-black/30 px-1.5 text-[8px] tabular-nums text-zinc-400">{director.scene.objects.length}</span></button>
+              <button type="button" onClick={() => setLeftPanelTab("cameras")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "cameras" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="camera" className="h-3.5 w-3.5" />机位 <span className="rounded-full bg-black/30 px-1.5 text-[8px] tabular-nums text-zinc-400">{director.scene.cameras.length}</span></button>
             </div>
           </div>
 
@@ -1722,7 +2045,7 @@ export default function DirectorDesk({
                   ))}
                 </div>
               </>
-            ) : (
+            ) : leftPanelTab === "scene" ? (
               <>
                 <div className="mb-3 flex items-center justify-between">
                   <div>
@@ -1738,7 +2061,7 @@ export default function DirectorDesk({
                     <button
                       key={object.id}
                       type="button"
-                      onClick={() => setSelectedObjectId(object.id)}
+                      onClick={() => { setSelectedCameraId(null); setSelectedObjectId(object.id) }}
                       className={cn("group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition", selectedObjectId === object.id ? "border-violet-300/22 bg-violet-300/[0.085] text-violet-50 shadow-[inset_3px_0_rgba(167,139,250,.65)]" : "border-transparent text-zinc-400 hover:border-white/[0.07] hover:bg-white/[0.035] hover:text-zinc-200")}
                     >
                       <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20 text-[9px] font-semibold tabular-nums text-zinc-600"><span className="absolute bottom-1 right-1 h-2 w-2 rounded-full border border-[#11151e]" style={{ backgroundColor: object.color }} />{String(index + 1).padStart(2, "0")}</span>
@@ -1747,6 +2070,35 @@ export default function DirectorDesk({
                     </button>
                   ))}
                 </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-zinc-200">多机位</div>
+                    <div className="mt-0.5 text-[9px] text-zinc-600">总览中显示位置、朝向和取景框</div>
+                  </div>
+                  <button type="button" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="flex h-7 items-center gap-1 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] px-2 text-[8px] font-medium text-cyan-100 transition hover:bg-cyan-300/[0.12] disabled:cursor-not-allowed disabled:opacity-30">＋ 添加</button>
+                </div>
+                <div className="space-y-2">
+                  {director.scene.cameras.map((camera, index) => {
+                    const active = director.scene.active_camera_id === camera.id
+                    const selected = selectedCamera.id === camera.id
+                    return (
+                      <div key={camera.id} className={cn("overflow-hidden rounded-xl border transition", selected ? "border-cyan-300/25 bg-cyan-300/[0.06]" : "border-white/[0.065] bg-white/[0.018]")}>
+                        <button type="button" onClick={() => activateCamera(camera.id)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left">
+                          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[9px] font-semibold tabular-nums", active ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100" : "border-white/[0.07] bg-black/20 text-zinc-500")}>{String(index + 1).padStart(2, "0")}</span>
+                          <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-[10px] font-medium text-zinc-300">{camera.name}</span>{active ? <span className="rounded bg-cyan-300/10 px-1 py-0.5 text-[6px] text-cyan-200/80">当前</span> : null}</span><span className="mt-0.5 block truncate text-[7px] tabular-nums text-zinc-600">P {camera.position.map((value) => value.toFixed(1)).join(" / ")} · {Math.round(camera.fov)}°</span></span>
+                        </button>
+                        <div className="grid grid-cols-2 border-t border-white/[0.05] bg-black/10 p-1">
+                          <button type="button" onClick={() => activateCamera(camera.id)} className="h-6 rounded text-[7px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200">空间选择</button>
+                          <button type="button" onClick={() => activateCamera(camera.id, true)} className="h-6 rounded text-[7px] text-cyan-200/75 transition hover:bg-cyan-300/[0.08] hover:text-cyan-100">进入取景</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 p-2 text-[7px] leading-3.5 text-zinc-600">总览模式下点击相机模型即可选择；使用 W 移动、E 旋转调整方向。截图会为全部 {director.scene.cameras.length} 个机位各生成一张。</div>
               </>
             )}
           </div>
@@ -1808,17 +2160,21 @@ export default function DirectorDesk({
               <span className={cn("h-1.5 w-1.5 rounded-full", saving ? "animate-pulse bg-amber-300" : "bg-emerald-300")} />
               {saving ? "正在同步" : "已同步"}
               <span className="text-zinc-700">·</span>
+              <span>{cameraViewMode === "overview" ? "空间总览" : selectedCamera.name}</span>
+              <span className="text-zinc-700">·</span>
               <span>{director.scene.aspect_ratio}</span>
             </div>
 
             <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/[0.1] bg-[#0a0d14]/76 p-1 shadow-[0_12px_34px_rgba(0,0,0,.28)] backdrop-blur-xl">
-              <span className="hidden px-2 text-[8px] font-medium uppercase tracking-[.15em] text-zinc-600 2xl:inline">Camera</span>
+              <button type="button" onClick={() => switchCameraView("overview")} className={cn("h-8 rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "overview" ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>空间总览</button>
+              <button type="button" onClick={() => switchCameraView("camera")} className={cn("h-8 max-w-[112px] truncate rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "camera" ? "bg-violet-300/15 text-violet-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>取景 · {selectedCamera.name}</button>
+              <span className="mx-1 h-5 w-px bg-white/[0.08]" />
               {([['front', '正面'], ['three', '斜侧'], ['high', '俯拍'], ['top', '顶视']] as const).map(([preset, label]) => (
                 <button key={preset} type="button" onClick={() => applyCameraPreset(preset)} className="h-8 rounded-lg px-3 text-[9px] font-medium text-zinc-400 transition hover:bg-white/[0.08] hover:text-white">{label}</button>
               ))}
             </div>
 
-            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{placementMode === "ground" ? "拖动物体 · 平面摆放" : "拖拽空白 · 旋转视角"}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右键 · 平移镜头</span></div>
+            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{cameraViewMode === "overview" ? "彩色相机 · 机位和方向" : `正在预览 · ${selectedCamera.name}`}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右键 · 平移视角</span></div>
             {error && <div className="absolute bottom-4 right-4 z-30 flex max-w-sm items-start gap-2 rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2.5 text-[10px] leading-4 text-red-100 shadow-[0_18px_44px_rgba(0,0,0,.4)] backdrop-blur-xl"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-300" />{error}</div>}
           </div>
         </main>
@@ -2074,34 +2430,54 @@ export default function DirectorDesk({
             </>
           ) : (
             <section className="flex flex-col items-center rounded-2xl border border-dashed border-white/[0.09] bg-white/[0.012] px-4 py-7 text-center">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.025] text-zinc-600"><DirectorIcon name="move" className="h-4 w-4" /></span>
-              <span className="mt-3 text-[10px] font-medium text-zinc-400">选择一个场景对象</span>
-              <span className="mt-1 max-w-[190px] text-[8px] leading-4 text-zinc-700">在视口中点击模型，或从左侧场景列表中选择</span>
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.025] text-zinc-600"><DirectorIcon name={selectedCameraId ? "camera" : "move"} className="h-4 w-4" /></span>
+              <span className="mt-3 text-[10px] font-medium text-zinc-400">{selectedCameraId ? `已选择 ${selectedCamera.name}` : "选择一个场景对象或机位"}</span>
+              <span className="mt-1 max-w-[190px] text-[8px] leading-4 text-zinc-700">{selectedCameraId ? "可在总览中移动或旋转相机，也可用下方坐标精确调整。" : "在视口中点击模型或相机，或从左侧列表中选择。"}</span>
             </section>
           )}
 
           <section className="mt-3 overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
-            <div className="flex items-center gap-2 border-b border-white/[0.065] px-3 py-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[0.07] text-cyan-200/70"><DirectorIcon name="camera" className="h-3.5 w-3.5" /></span><div><div className="text-[10px] font-medium text-zinc-300">镜头设置</div><div className="text-[8px] text-zinc-700">构图比例与透视</div></div></div>
+            <div className="flex items-center gap-2 border-b border-white/[0.065] px-3 py-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[0.07] text-cyan-200/70"><DirectorIcon name="camera" className="h-3.5 w-3.5" /></span><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><div className="truncate text-[10px] font-medium text-zinc-300">多机位设置</div><span className="rounded bg-white/[0.05] px-1 text-[7px] text-zinc-500">{director.scene.cameras.length}/{MAX_DIRECTOR_CAMERAS}</span></div><div className="truncate text-[8px] text-zinc-700">每个机位独立保存位置、方向和焦段</div></div></div>
             <div className="space-y-4 p-3">
+              <div>
+                <div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">当前机位</span><span className="text-[7px] text-cyan-200/60">截图时全部输出</span></div>
+                <select value={selectedCamera.id} onChange={(event) => activateCamera(event.target.value)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
+                  {director.scene.cameras.map((camera, index) => <option key={camera.id} value={camera.id}>{index + 1}. {camera.name}</option>)}
+                </select>
+                <input value={selectedCamera.name} maxLength={120} onChange={(event) => updateSelectedCamera({ name: event.target.value || selectedCamera.name })} className="mt-1.5 h-8 w-full rounded-lg border border-white/[0.08] bg-black/20 px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35" aria-label="机位名称" />
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                  <button type="button" onClick={() => switchCameraView("overview")} className={cn("h-7 rounded-lg border text-[8px] transition", cameraViewMode === "overview" ? "border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500")}>空间总览</button>
+                  <button type="button" onClick={() => switchCameraView("camera")} className={cn("h-7 rounded-lg border text-[8px] transition", cameraViewMode === "camera" ? "border-violet-300/20 bg-violet-300/[0.08] text-violet-100" : "border-white/[0.06] bg-black/15 text-zinc-500")}>进入取景</button>
+                </div>
+              </div>
               <div>
                 <div className="mb-1.5 text-[9px] font-medium text-zinc-500">画幅比例</div>
                 <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.07] bg-black/20 p-1">
                   {(["16:9", "9:16", "1:1", "4:3"] as DirectorAspectRatio[]).map((item) => <button key={item} type="button" onClick={() => changeAspectRatio(item)} className={cn("h-7 rounded-lg text-[8px] font-medium transition", director.scene.aspect_ratio === item ? "bg-white/[0.1] text-zinc-100 shadow-sm" : "text-zinc-600 hover:text-zinc-300")}>{item}</button>)}
                 </div>
               </div>
+              {(["position", "target"] as const).map((field) => (
+                <div key={field}>
+                  <div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">{field === "position" ? "相机位置" : "观察目标"}</span><span className="text-[7px] text-zinc-700">世界坐标</span></div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {selectedCamera[field].map((value, index) => <label key={`${field}-${index}`} className="rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1"><span className={cn("text-[8px] font-semibold", index === 0 ? "text-rose-300/70" : index === 1 ? "text-emerald-300/70" : "text-sky-300/70")}>{"XYZ"[index]}</span><input type="number" step="0.1" value={Number(value.toFixed(3))} onChange={(event) => changeCameraVector(field, index, Number(event.target.value))} className="mt-0.5 w-full bg-transparent text-[9px] tabular-nums text-zinc-200 outline-none" /></label>)}
+                  </div>
+                </div>
+              ))}
               <label className="block">
-                <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">视场角</span><span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[9px] tabular-nums text-cyan-200/80">{Math.round(director.scene.camera.fov)}°</span></div>
-                <input type="range" min="20" max="90" value={director.scene.camera.fov} onChange={(event) => {
-                  const scene = cloneDirectorScene(directorRef.current.scene)
-                  scene.camera.fov = Number(event.target.value)
-                  replaceScene(scene, true)
-                }} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
+                <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">视场角</span><span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[9px] tabular-nums text-cyan-200/80">{Math.round(selectedCamera.fov)}°</span></div>
+                <input type="range" min="20" max="90" value={selectedCamera.fov} onChange={(event) => updateSelectedCamera({ fov: Number(event.target.value) })} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
                 <div className="mt-1.5 flex justify-between text-[7px] text-zinc-700"><span>长焦 20°</span><span>广角 90°</span></div>
               </label>
+              <div className="grid grid-cols-[1fr_1fr_34px] gap-1.5 border-t border-white/[0.06] pt-3">
+                <button type="button" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="h-8 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] text-[8px] font-medium text-cyan-100 transition hover:bg-cyan-300/[0.12] disabled:opacity-30">添加机位</button>
+                <button type="button" onClick={() => applyCameraPreset("three")} className="h-8 rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-400 transition hover:text-white">设为斜侧</button>
+                <button type="button" title="删除当前机位" onClick={removeSelectedCamera} disabled={director.scene.cameras.length <= 1} className="flex h-8 items-center justify-center rounded-lg border border-red-300/10 bg-red-400/[0.03] text-red-300/60 transition hover:bg-red-400/[0.1] disabled:cursor-not-allowed disabled:opacity-20"><DirectorIcon name="trash" className="h-3 w-3" /></button>
+              </div>
             </div>
           </section>
 
-          <div className="mt-3 rounded-xl border border-violet-300/[0.09] bg-violet-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-violet-200/70">工作提示：</span>{placementMode === "ground" ? "平面模式下可直接拖动白模，位置只在地面 X/Z 轴变化。" : "自由模式可用变换手柄调整物体高度、旋转和缩放。"} 截图仅保存到下方镜头条。</div>
+          <div className="mt-3 rounded-xl border border-violet-300/[0.09] bg-violet-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-violet-200/70">工作提示：</span>空间总览显示全部相机的位置、朝向箭头和取景框；点击“截图全部机位”会按每台相机的观察位置各保存一张到镜头条。</div>
         </aside>
       </div>
 
@@ -2109,14 +2485,14 @@ export default function DirectorDesk({
         <div className="mb-2.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/15 bg-violet-300/[0.07] text-violet-200/80"><DirectorIcon name="image" className="h-3.5 w-3.5" /></span>
-            <div><div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-zinc-200">镜头条</span><span className="rounded-full bg-white/[0.045] px-1.5 py-0.5 text-[8px] tabular-nums text-zinc-500">{director.captures.length}</span></div><div className="mt-0.5 text-[8px] text-zinc-700">静态构图候选 · 拖动即可重新排序</div></div>
+            <div><div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-zinc-200">镜头条</span><span className="rounded-full bg-white/[0.045] px-1.5 py-0.5 text-[8px] tabular-nums text-zinc-500">{director.captures.length}</span></div><div className="mt-0.5 text-[8px] text-zinc-700">每次按全部机位分别截图 · 拖动即可重新排序</div></div>
           </div>
           <div className="flex items-center gap-2 text-[8px] text-zinc-600"><span className="hidden md:inline">镜头不会自动进入创作画布</span><span className="h-1 w-1 rounded-full bg-zinc-700" /><span>手动选择“放入画布”</span></div>
         </div>
         <div className="flex h-[142px] min-w-0 gap-3 overflow-x-auto pb-1">
           {director.captures.length === 0 ? (
             <div className="group flex w-full items-center justify-center rounded-2xl border border-dashed border-white/[0.085] bg-[radial-gradient(circle_at_50%_0%,rgba(139,124,255,.07),transparent_45%)]">
-              <div className="flex items-center gap-3 text-left"><span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.025] text-zinc-600"><DirectorIcon name="camera" className="h-4 w-4" /></span><span><span className="block text-[10px] font-medium text-zinc-400">还没有保存镜头</span><span className="mt-1 block text-[8px] text-zinc-700">调整人物、道具和机位，然后点击右上角“保存镜头”</span></span></div>
+              <div className="flex items-center gap-3 text-left"><span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.025] text-zinc-600"><DirectorIcon name="camera" className="h-4 w-4" /></span><span><span className="block text-[10px] font-medium text-zinc-400">还没有保存镜头</span><span className="mt-1 block text-[8px] text-zinc-700">添加和摆放多个机位，然后点击右上角“截图全部机位”</span></span></div>
             </div>
           ) : director.captures.map((capture, index) => (
             <article
@@ -2133,6 +2509,7 @@ export default function DirectorDesk({
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0d121b]/90 via-transparent to-black/10" />
                 <span className="absolute left-2 top-2 rounded-md border border-white/[0.09] bg-black/45 px-1.5 py-0.5 text-[8px] font-semibold tabular-nums text-white/80 backdrop-blur">{String(index + 1).padStart(2, "0")}</span>
                 <span className="absolute right-2 top-2 rounded-md border border-white/[0.09] bg-black/45 px-1.5 py-0.5 text-[8px] text-white/65 backdrop-blur">{capture.aspect_ratio}</span>
+                {capture.camera_name ? <span className="absolute bottom-2 left-2 rounded-md border border-cyan-200/10 bg-black/45 px-1.5 py-0.5 text-[7px] text-cyan-100/70 backdrop-blur">{capture.camera_name}</span> : null}
                 <div className="absolute bottom-2 left-2 right-2 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
                   <button type="button" title="恢复这个机位" onClick={(event) => { event.stopPropagation(); restoreCapture(capture) }} className="rounded-lg border border-white/[0.1] bg-black/55 px-2 py-1 text-[8px] text-zinc-200 backdrop-blur hover:bg-black/75">恢复机位</button>
                   <button type="button" title="重命名" onClick={(event) => { event.stopPropagation(); void renameCapture(capture) }} className="rounded-lg border border-white/[0.1] bg-black/55 px-2 py-1 text-[8px] text-zinc-200 backdrop-blur hover:bg-black/75">重命名</button>

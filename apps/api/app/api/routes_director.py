@@ -9,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db.session import get_session
-from app.services.director_desk import DirectorDeskError, DirectorDeskService
+from app.services.director_desk import (
+    MAX_DIRECTOR_CAPTURE_BATCH,
+    DirectorDeskError,
+    DirectorDeskService,
+)
 from app.services.node_service import workflow_node_payload
 
 
@@ -30,6 +34,28 @@ class DirectorCaptureRequest(BaseModel):
     data_url: str
     scene_snapshot: dict[str, Any]
     actor_legend: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
+    expected_revision: Optional[int] = Field(default=None, ge=0)
+
+
+class DirectorCaptureBatchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = Field(default=None, max_length=120)
+    camera_id: Optional[str] = Field(default=None, max_length=128)
+    camera_name: Optional[str] = Field(default=None, max_length=120)
+    data_url: str
+    scene_snapshot: dict[str, Any]
+    actor_legend: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
+
+
+class DirectorCaptureBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scene: dict[str, Any]
+    captures: list[DirectorCaptureBatchItem] = Field(
+        min_length=1,
+        max_length=MAX_DIRECTOR_CAPTURE_BATCH,
+    )
     expected_revision: Optional[int] = Field(default=None, ge=0)
 
 
@@ -156,6 +182,24 @@ async def create_project_director_capture(
             expected_revision=req.expected_revision,
         )
         return {"ok": True, "director": director, "capture": capture}
+    except DirectorDeskError as error:
+        _raise(error)
+
+
+@router.post("/{project_id}/director/captures/batch")
+async def create_project_director_captures(
+    project_id: str,
+    req: DirectorCaptureBatchRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    try:
+        director, captures = await DirectorDeskService(db).add_captures(
+            project_id,
+            scene=req.scene,
+            items=[item.model_dump() for item in req.captures],
+            expected_revision=req.expected_revision,
+        )
+        return {"ok": True, "director": director, "captures": captures}
     except DirectorDeskError as error:
         _raise(error)
 

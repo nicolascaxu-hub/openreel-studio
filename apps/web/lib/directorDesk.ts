@@ -10,10 +10,15 @@ import {
 export type DirectorAspectRatio = "16:9" | "9:16" | "1:1" | "4:3"
 export type DirectorTransformMode = "translate" | "rotate" | "scale"
 
-export interface DirectorCameraState {
+export interface DirectorCameraPose {
   position: [number, number, number]
   target: [number, number, number]
   fov: number
+}
+
+export interface DirectorCameraState extends DirectorCameraPose {
+  id: string
+  name: string
 }
 
 export interface DirectorObjectState {
@@ -32,7 +37,10 @@ export interface DirectorObjectState {
 
 export interface DirectorSceneState {
   aspect_ratio: DirectorAspectRatio
-  camera: DirectorCameraState
+  camera: DirectorCameraPose
+  cameras: DirectorCameraState[]
+  active_camera_id: string
+  viewport_camera: DirectorCameraPose
   objects: DirectorObjectState[]
 }
 
@@ -126,6 +134,8 @@ export interface DirectorCapture {
   aspect_ratio: DirectorAspectRatio
   scene_snapshot: DirectorSceneState
   actor_legend: DirectorActorLegendItem[]
+  camera_id?: string | null
+  camera_name?: string | null
   promoted_node_id?: string | null
 }
 
@@ -147,6 +157,7 @@ export const DIRECTOR_ASPECT_VALUES: Record<DirectorAspectRatio, number> = {
 }
 
 export const DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID = "builtin:mannequin"
+export const MAX_DIRECTOR_CAMERAS = 12
 
 export const DIRECTOR_BUILTINS = [
   { id: DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID, label: "标准人物", defaultName: "人物" },
@@ -175,10 +186,24 @@ export function createDirectorId(prefix: string): string {
 }
 
 export function defaultDirectorScene(): DirectorSceneState {
+  const camera: DirectorCameraState = {
+    id: "camera-main",
+    name: "机位 1",
+    position: [4.8, 3, 6.8],
+    target: [0, 1, 0],
+    fov: 45,
+  }
   return {
     aspect_ratio: "16:9",
     camera: {
-      position: [4.8, 3, 6.8],
+      position: [...camera.position],
+      target: [...camera.target],
+      fov: camera.fov,
+    },
+    cameras: [camera],
+    active_camera_id: camera.id,
+    viewport_camera: {
+      position: [8.8, 6, 10.8],
       target: [0, 1, 0],
       fov: 45,
     },
@@ -188,7 +213,7 @@ export function defaultDirectorScene(): DirectorSceneState {
 
 export function defaultDirectorDesk(): DirectorDeskState {
   return {
-    version: 1,
+    version: 2,
     revision: 0,
     scene: defaultDirectorScene(),
     model_assets: [],
@@ -365,6 +390,17 @@ export function normalizeDirectorCustomRig(
   }
 }
 
+function normalizeCameraPose(value: unknown, fallback: DirectorCameraPose): DirectorCameraPose {
+  const raw = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+  return {
+    position: vector3(raw.position, fallback.position),
+    target: vector3(raw.target, fallback.target),
+    fov: Math.min(120, Math.max(10, finiteNumber(raw.fov, fallback.fov))),
+  }
+}
+
 export function normalizeDirectorScene(value: unknown): DirectorSceneState {
   const source = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -372,15 +408,50 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
   const rawCamera = source.camera && typeof source.camera === "object" && !Array.isArray(source.camera)
     ? source.camera as Record<string, unknown>
     : {}
+  const legacyCamera = normalizeCameraPose(rawCamera, {
+    position: [4.8, 3, 6.8],
+    target: [0, 1, 0],
+    fov: 45,
+  })
+  const cameraIds = new Set<string>()
+  const cameras = (Array.isArray(source.cameras) ? source.cameras : []).slice(0, MAX_DIRECTOR_CAMERAS).flatMap((item, index): DirectorCameraState[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return []
+    const raw = item as Record<string, unknown>
+    const id = String(raw.id || "").trim()
+    if (!id || cameraIds.has(id)) return []
+    cameraIds.add(id)
+    return [{
+      id,
+      name: String(raw.name || `机位 ${index + 1}`).trim().slice(0, 120) || `机位 ${index + 1}`,
+      ...normalizeCameraPose(raw, legacyCamera),
+    }]
+  })
+  if (cameras.length === 0) {
+    cameras.push({ id: "camera-main", name: "机位 1", ...legacyCamera })
+  }
+  const requestedActiveCameraId = String(source.active_camera_id || "").trim()
+  const activeCamera = cameras.find((item) => item.id === requestedActiveCameraId) || cameras[0]
+  const viewportFallback: DirectorCameraPose = {
+    position: [
+      activeCamera.position[0] + 4,
+      activeCamera.position[1] + 3,
+      activeCamera.position[2] + 4,
+    ],
+    target: [...activeCamera.target],
+    fov: 45,
+  }
   const aspectCandidate = String(source.aspect_ratio || "16:9") as DirectorAspectRatio
   const rawObjects = Array.isArray(source.objects) ? source.objects : []
   return {
     aspect_ratio: ASPECT_RATIOS.has(aspectCandidate) ? aspectCandidate : "16:9",
     camera: {
-      position: vector3(rawCamera.position, [4.8, 3, 6.8]),
-      target: vector3(rawCamera.target, [0, 1, 0]),
-      fov: Math.min(120, Math.max(10, finiteNumber(rawCamera.fov, 45))),
+      position: [...activeCamera.position],
+      target: [...activeCamera.target],
+      fov: activeCamera.fov,
     },
+    cameras,
+    active_camera_id: activeCamera.id,
+    viewport_camera: normalizeCameraPose(source.viewport_camera, viewportFallback),
     objects: rawObjects.slice(0, 100).flatMap((item, index): DirectorObjectState[] => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return []
       const raw = item as Record<string, unknown>
@@ -415,7 +486,7 @@ export function normalizeDirectorDesk(value: unknown): DirectorDeskState {
   const modelAssets = Array.isArray(source.model_assets) ? source.model_assets : []
   const captures = Array.isArray(source.captures) ? source.captures : []
   return {
-    version: 1,
+    version: 2,
     revision: Math.max(0, Math.floor(finiteNumber(source.revision, 0))),
     scene: normalizeDirectorScene(source.scene),
     model_assets: modelAssets.slice(0, 100).flatMap((item): DirectorModelAsset[] => {
@@ -460,6 +531,8 @@ export function normalizeDirectorDesk(value: unknown): DirectorDeskState {
             object_id: record.object_id ? String(record.object_id) : undefined,
           }]
         }),
+        camera_id: raw.camera_id ? String(raw.camera_id) : null,
+        camera_name: raw.camera_name ? String(raw.camera_name) : null,
         promoted_node_id: raw.promoted_node_id ? String(raw.promoted_node_id) : null,
       }]
     }).sort((a, b) => a.order - b.order),
@@ -468,6 +541,20 @@ export function normalizeDirectorDesk(value: unknown): DirectorDeskState {
 
 export function cloneDirectorScene(scene: DirectorSceneState): DirectorSceneState {
   return normalizeDirectorScene(JSON.parse(JSON.stringify(scene)) as unknown)
+}
+
+export function newDirectorCamera(existing: DirectorCameraState[], source: DirectorCameraState): DirectorCameraState {
+  const usedNames = new Set(existing.map((item) => item.name))
+  let number = existing.length + 1
+  while (usedNames.has(`机位 ${number}`)) number += 1
+  const offset = Math.max(1, existing.length) * 0.45
+  return {
+    id: createDirectorId("camera"),
+    name: `机位 ${number}`,
+    position: [source.position[0] + 2.2 + offset, source.position[1] + 0.8, source.position[2] + 1.8],
+    target: [...source.target],
+    fov: source.fov,
+  }
 }
 
 function nextDirectorObjectPosition(existing: DirectorObjectState[]): [number, number, number] {

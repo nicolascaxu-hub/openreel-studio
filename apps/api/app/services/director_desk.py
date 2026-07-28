@@ -27,11 +27,13 @@ from app.services.project_service import ProjectService
 
 
 DIRECTOR_STATE_KEY = "director_desk"
-DIRECTOR_VERSION = 1
+DIRECTOR_VERSION = 2
 MAX_DIRECTOR_STATE_BYTES = 5 * 1024 * 1024
 MAX_DIRECTOR_OBJECTS = 100
 MAX_DIRECTOR_CAPTURES = 200
 MAX_DIRECTOR_MODELS = 100
+MAX_DIRECTOR_CAMERAS = 12
+MAX_DIRECTOR_CAPTURE_BATCH = 12
 MAX_MODEL_BYTES = 50 * 1024 * 1024
 MAX_CAPTURE_BYTES = 20 * 1024 * 1024
 MANNEQUIN_FINGERS = ("Thumb", "Index", "Middle", "Ring", "Pinky")
@@ -104,10 +106,18 @@ class DirectorDeskError(RuntimeError):
 
 
 def default_director_scene() -> dict[str, Any]:
+    primary_camera = {
+        "position": [4.8, 3.0, 6.8],
+        "target": [0.0, 1.0, 0.0],
+        "fov": 45.0,
+    }
     return {
         "aspect_ratio": "16:9",
-        "camera": {
-            "position": [4.8, 3.0, 6.8],
+        "camera": copy.deepcopy(primary_camera),
+        "cameras": [{"id": "camera-main", "name": "机位 1", **copy.deepcopy(primary_camera)}],
+        "active_camera_id": "camera-main",
+        "viewport_camera": {
+            "position": [8.8, 6.0, 10.8],
             "target": [0.0, 1.0, 0.0],
             "fov": 45.0,
         },
@@ -153,6 +163,50 @@ def _normalize_legacy_mannequin_joints(scene: dict[str, Any]) -> None:
             ]
 
 
+def _normalize_director_cameras(scene: dict[str, Any]) -> None:
+    fallback = default_director_scene()["camera"]
+    legacy = scene.get("camera") if isinstance(scene.get("camera"), dict) else fallback
+    cameras = scene.get("cameras") if isinstance(scene.get("cameras"), list) else []
+    if not cameras:
+        cameras = [{"id": "camera-main", "name": "机位 1", **copy.deepcopy(legacy)}]
+    scene["cameras"] = cameras
+    camera_ids = [
+        str(item.get("id") or "").strip()
+        for item in cameras
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+    active_camera_id = str(scene.get("active_camera_id") or "").strip()
+    if active_camera_id not in camera_ids:
+        active_camera_id = camera_ids[0] if camera_ids else "camera-main"
+    scene["active_camera_id"] = active_camera_id
+    active_camera = next(
+        (item for item in cameras if isinstance(item, dict) and item.get("id") == active_camera_id),
+        None,
+    )
+    if isinstance(active_camera, dict):
+        scene["camera"] = {
+            "position": copy.deepcopy(active_camera.get("position", fallback["position"])),
+            "target": copy.deepcopy(active_camera.get("target", fallback["target"])),
+            "fov": active_camera.get("fov", fallback["fov"]),
+        }
+    if not isinstance(scene.get("viewport_camera"), dict):
+        position = scene["camera"].get("position")
+        if not (
+            isinstance(position, list)
+            and len(position) == 3
+            and all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in position)
+        ):
+            position = fallback["position"]
+        target = scene["camera"].get("target")
+        if not isinstance(target, list) or len(target) != 3:
+            target = fallback["target"]
+        scene["viewport_camera"] = {
+            "position": [float(position[0]) + 4.0, float(position[1]) + 3.0, float(position[2]) + 4.0],
+            "target": copy.deepcopy(target),
+            "fov": 45.0,
+        }
+
+
 def normalize_director_state(raw: Any) -> dict[str, Any]:
     source = raw if isinstance(raw, dict) else {}
     state = default_director_state()
@@ -164,6 +218,7 @@ def normalize_director_state(raw: Any) -> dict[str, Any]:
     if isinstance(source.get("scene"), dict):
         state["scene"] = copy.deepcopy(source["scene"])
         _normalize_legacy_mannequin_joints(state["scene"])
+        _normalize_director_cameras(state["scene"])
     if isinstance(source.get("model_assets"), list):
         state["model_assets"] = source["model_assets"]
     if isinstance(source.get("captures"), list):
@@ -184,6 +239,16 @@ def _finite_vector(value: Any, *, length: int, name: str) -> None:
     for item in value:
         if not isinstance(item, (int, float)) or isinstance(item, bool) or not math.isfinite(float(item)):
             raise DirectorDeskError(f"{name} 包含无效数值")
+
+
+def _validate_camera_pose(value: Any, *, name: str) -> None:
+    if not isinstance(value, dict):
+        raise DirectorDeskError(f"{name} 必须是对象")
+    _finite_vector(value.get("position"), length=3, name=f"{name}.position")
+    _finite_vector(value.get("target"), length=3, name=f"{name}.target")
+    fov = value.get("fov", 45)
+    if not isinstance(fov, (int, float)) or isinstance(fov, bool) or not 10 <= float(fov) <= 120:
+        raise DirectorDeskError(f"{name}.fov 必须在 10 到 120 之间")
 
 
 def _validate_mannequin(value: Any, *, name: str) -> None:
@@ -275,11 +340,26 @@ def validate_director_scene(scene: Any) -> dict[str, Any]:
     camera = scene.get("camera")
     if not isinstance(camera, dict):
         raise DirectorDeskError("导演台缺少相机状态")
-    _finite_vector(camera.get("position"), length=3, name="camera.position")
-    _finite_vector(camera.get("target"), length=3, name="camera.target")
-    fov = camera.get("fov", 45)
-    if not isinstance(fov, (int, float)) or isinstance(fov, bool) or not 10 <= float(fov) <= 120:
-        raise DirectorDeskError("camera.fov 必须在 10 到 120 之间")
+    _validate_camera_pose(camera, name="camera")
+    viewport_camera = scene.get("viewport_camera")
+    if viewport_camera is not None:
+        _validate_camera_pose(viewport_camera, name="viewport_camera")
+    cameras = scene.get("cameras")
+    if cameras is not None:
+        if not isinstance(cameras, list) or not 1 <= len(cameras) <= MAX_DIRECTOR_CAMERAS:
+            raise DirectorDeskError(f"导演台机位数量必须在 1 到 {MAX_DIRECTOR_CAMERAS} 之间")
+        camera_ids: set[str] = set()
+        for index, item in enumerate(cameras):
+            _validate_camera_pose(item, name=f"cameras[{index}]")
+            camera_id = str(item.get("id") or "").strip()
+            camera_name = str(item.get("name") or "").strip()
+            if not camera_id or camera_id in camera_ids or len(camera_id) > 128:
+                raise DirectorDeskError("导演台机位 ID 无效")
+            if not camera_name or len(camera_name) > 120:
+                raise DirectorDeskError(f"cameras[{index}].name 无效")
+            camera_ids.add(camera_id)
+        if str(scene.get("active_camera_id") or "") not in camera_ids:
+            raise DirectorDeskError("active_camera_id 必须指向现有机位")
     objects = scene.get("objects")
     if not isinstance(objects, list) or len(objects) > MAX_DIRECTOR_OBJECTS:
         raise DirectorDeskError("导演台物体数量超出限制")
@@ -608,6 +688,66 @@ class DirectorDeskService:
             return saved, capture
         except Exception:
             target.unlink(missing_ok=True)
+            raise
+
+    async def add_captures(
+        self,
+        project_id: str,
+        *,
+        scene: dict[str, Any],
+        items: list[dict[str, Any]],
+        expected_revision: int | None = None,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        validate_director_scene(scene)
+        if not 1 <= len(items) <= MAX_DIRECTOR_CAPTURE_BATCH:
+            raise DirectorDeskError(f"每次必须保存 1 到 {MAX_DIRECTOR_CAPTURE_BATCH} 个机位截图")
+        for item in items:
+            if not isinstance(item, dict):
+                raise DirectorDeskError("机位截图条目必须是对象")
+            validate_director_scene(item.get("scene_snapshot"))
+        director = await self.get(project_id)
+        captures = [item for item in director.get("captures", []) if isinstance(item, dict)]
+        if len(captures) + len(items) > MAX_DIRECTOR_CAPTURES:
+            raise DirectorDeskError("导演台截图数量将超出上限")
+
+        targets: list[Path] = []
+        created: list[dict[str, Any]] = []
+        try:
+            for offset, item in enumerate(items):
+                raw, ext = _decode_capture_data_url(str(item.get("data_url") or ""))
+                capture_id = uuid.uuid4().hex
+                file_name = f"director-capture-{capture_id}{ext}"
+                target = _capture_file(project_id, file_name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(raw)
+                targets.append(target)
+                clean_legend = [
+                    entry for entry in item.get("actor_legend", []) if isinstance(entry, dict)
+                ][:40]
+                camera_name = str(item.get("camera_name") or "").strip()[:120]
+                created.append({
+                    "id": capture_id,
+                    "order": len(captures) + offset,
+                    "title": str(item.get("title") or "").strip()[:120]
+                    or camera_name
+                    or f"镜头 {len(captures) + offset + 1}",
+                    "file_name": file_name,
+                    "image_url": f"/api/media/{project_id}/director_captures/{file_name}",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "aspect_ratio": item["scene_snapshot"].get("aspect_ratio", "16:9"),
+                    "scene_snapshot": item["scene_snapshot"],
+                    "actor_legend": clean_legend,
+                    "camera_id": str(item.get("camera_id") or "").strip()[:128] or None,
+                    "camera_name": camera_name or None,
+                    "promoted_node_id": None,
+                })
+            director["scene"] = scene
+            director["captures"] = [*captures, *created]
+            saved = await self._write(project_id, director, expected_revision=expected_revision)
+            return saved, created
+        except Exception:
+            for target in targets:
+                target.unlink(missing_ok=True)
             raise
 
     async def update_capture(
