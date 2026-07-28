@@ -454,6 +454,22 @@ export function cloneDirectorScene(scene: DirectorSceneState): DirectorSceneStat
   return normalizeDirectorScene(JSON.parse(JSON.stringify(scene)) as unknown)
 }
 
+function nextDirectorObjectPosition(existing: DirectorObjectState[]): [number, number, number] {
+  const columnOrder = [0, -1, 1, -2, 2]
+  const xSpacing = 2.2
+  const zSpacing = 1.8
+  const minimumSpacing = 1.35
+  for (let row = 0; row < 20; row += 1) {
+    for (const column of columnOrder) {
+      const x = column * xSpacing
+      const z = -row * zSpacing
+      const occupied = existing.some((item) => Math.hypot(item.position[0] - x, item.position[2] - z) < minimumSpacing)
+      if (!occupied) return [x, 0, z]
+    }
+  }
+  return [0, 0, -20 * zSpacing]
+}
+
 export function newDirectorObject(
   assetId: string,
   defaultName: string,
@@ -469,7 +485,7 @@ export function newDirectorObject(
     color: assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
       ? DIRECTOR_CHARACTER_COLORS[mannequinCount % DIRECTOR_CHARACTER_COLORS.length]
       : "#a1a1aa",
-    position: [Math.min(3, existing.length * 0.45), 0, 0],
+    position: nextDirectorObjectPosition(existing),
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
     visible: true,
