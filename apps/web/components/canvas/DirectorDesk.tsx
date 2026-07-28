@@ -102,6 +102,13 @@ interface DirectorCameraRig {
   helper: THREE.CameraHelper
 }
 
+interface DirectorViewportContextMenu {
+  x: number
+  y: number
+  target: "object" | "camera" | "empty"
+  targetId?: string
+}
+
 interface DirectorApiResponse {
   ok?: boolean
   director?: unknown
@@ -174,6 +181,14 @@ const DIRECTOR_SHORTCUT_GROUPS = [
       ["?", "打开 / 关闭快捷键"],
     ],
   },
+] as const
+
+const DIRECTOR_MOUSE_CONTROLS = [
+  ["左键单击", "选择人物或物体；点击相机直接进入对应视角"],
+  ["左键拖动", "拖动物体；拖动空白区域环绕观察"],
+  ["滚轮", "以指针位置为中心缩放"],
+  ["右键拖动", "平移观察视角"],
+  ["右键短按", "打开对象、相机或场景上下文菜单"],
 ] as const
 
 type DirectorIconName =
@@ -776,6 +791,7 @@ export default function DirectorDesk({
   const [showThirds, setShowThirds] = useState(false)
   const [showCameraGuides, setShowCameraGuides] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [viewportContextMenu, setViewportContextMenu] = useState<DirectorViewportContextMenu | null>(null)
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
   const [cameraViewMode, setCameraViewMode] = useState<"overview" | "camera">("overview")
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
@@ -1112,6 +1128,9 @@ export default function DirectorDesk({
     const pointer = new THREE.Vector2()
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
     const planePoint = new THREE.Vector3()
+    let rightPointerStart: THREE.Vector2 | null = null
+    let rightPointerMoved = false
+    let contextMenuTimer: number | null = null
     let planeDrag: {
       pointerId: number
       root: THREE.Group
@@ -1122,7 +1141,7 @@ export default function DirectorDesk({
       before: DirectorSceneState
       moved: boolean
     } | null = null
-    const updatePointer = (event: PointerEvent) => {
+    const updatePointer = (event: PointerEvent | MouseEvent) => {
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1130,14 +1149,14 @@ export default function DirectorDesk({
       )
       raycaster.setFromCamera(pointer, camera)
     }
-    const rootAtPointer = (event: PointerEvent): THREE.Group | null => {
+    const rootAtPointer = (event: PointerEvent | MouseEvent): THREE.Group | null => {
       updatePointer(event)
       const hits = raycaster.intersectObjects([...runtime.objectRoots.values()], true)
       let selected: THREE.Object3D | null = hits[0]?.object || null
       while (selected && selected.parent !== root) selected = selected.parent
       return selected instanceof THREE.Group ? selected : null
     }
-    const cameraAtPointer = (event: PointerEvent): THREE.Group | null => {
+    const cameraAtPointer = (event: PointerEvent | MouseEvent): THREE.Group | null => {
       if (runtime.cameraViewMode !== "overview") return null
       updatePointer(event)
       const hits = raycaster.intersectObjects(
@@ -1164,6 +1183,14 @@ export default function DirectorDesk({
     }
     const onPointerDown = (event: PointerEvent) => {
       pointerStart.set(event.clientX, event.clientY)
+      setViewportContextMenu(null)
+      if (event.button === 2) {
+        if (contextMenuTimer !== null) window.clearTimeout(contextMenuTimer)
+        contextMenuTimer = null
+        rightPointerStart = new THREE.Vector2(event.clientX, event.clientY)
+        rightPointerMoved = false
+        return
+      }
       if (
         event.button !== 0
         || placementModeRef.current !== "ground"
@@ -1202,6 +1229,11 @@ export default function DirectorDesk({
       event.stopImmediatePropagation()
     }
     const onPointerMove = (event: PointerEvent) => {
+      if (rightPointerStart) {
+        rightPointerMoved = rightPointerMoved
+          || Math.hypot(event.clientX - rightPointerStart.x, event.clientY - rightPointerStart.y) > 5
+        return
+      }
       if (!planeDrag || planeDrag.pointerId !== event.pointerId) return
       updatePointer(event)
       groundPlane.constant = -planeDrag.y
@@ -1230,6 +1262,7 @@ export default function DirectorDesk({
       return true
     }
     const onPointerUp = (event: PointerEvent) => {
+      if (event.button === 2) return
       if (finishPlaneDrag(event)) return
       if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5 || transform.axis) return
       const selectedCamera = cameraAtPointer(event)
@@ -1243,11 +1276,50 @@ export default function DirectorDesk({
       setSelectedCameraId(null)
       setSelectedObjectId(typeof id === "string" ? id : null)
     }
-    const onPointerCancel = (event: PointerEvent) => { finishPlaneDrag(event) }
+    const onPointerCancel = (event: PointerEvent) => {
+      rightPointerStart = null
+      rightPointerMoved = true
+      finishPlaneDrag(event)
+    }
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault()
+      const menuX = Math.max(8, Math.min(event.clientX, window.innerWidth - 232))
+      const menuY = Math.max(76, Math.min(event.clientY, window.innerHeight - 330))
+      const cameraRoot = cameraAtPointer(event)
+      const cameraId = cameraRoot?.userData.directorCameraId
+      const objectRoot = typeof cameraId === "string" ? null : rootAtPointer(event)
+      const objectId = objectRoot?.userData.directorObjectId
+      if (contextMenuTimer !== null) window.clearTimeout(contextMenuTimer)
+      contextMenuTimer = window.setTimeout(() => {
+        contextMenuTimer = null
+        rightPointerStart = null
+        if (rightPointerMoved) {
+          rightPointerMoved = false
+          return
+        }
+        rightPointerMoved = false
+        if (typeof cameraId === "string") {
+          setSelectedObjectId(null)
+          setSelectedCameraId(cameraId)
+          setViewportContextMenu({ x: menuX, y: menuY, target: "camera", targetId: cameraId })
+          return
+        }
+        if (typeof objectId === "string") {
+          setSelectedCameraId(null)
+          setSelectedObjectId(objectId)
+          setViewportContextMenu({ x: menuX, y: menuY, target: "object", targetId: objectId })
+          return
+        }
+        setSelectedCameraId(null)
+        setSelectedObjectId(null)
+        setViewportContextMenu({ x: menuX, y: menuY, target: "empty" })
+      }, 140)
+    }
     renderer.domElement.addEventListener("pointerdown", onPointerDown, true)
     renderer.domElement.addEventListener("pointermove", onPointerMove, true)
     renderer.domElement.addEventListener("pointerup", onPointerUp, true)
     renderer.domElement.addEventListener("pointercancel", onPointerCancel, true)
+    renderer.domElement.addEventListener("contextmenu", onContextMenu, true)
 
     const onTransformStart = () => {
       interactionBeforeRef.current = snapshotRuntimeScene(runtime, directorRef.current.scene)
@@ -1286,12 +1358,14 @@ export default function DirectorDesk({
 
     return () => {
       runtime.disposed = true
+      if (contextMenuTimer !== null) window.clearTimeout(contextMenuTimer)
       renderer.setAnimationLoop(null)
       resizeObserver.disconnect()
       renderer.domElement.removeEventListener("pointerdown", onPointerDown, true)
       renderer.domElement.removeEventListener("pointermove", onPointerMove, true)
       renderer.domElement.removeEventListener("pointerup", onPointerUp, true)
       renderer.domElement.removeEventListener("pointercancel", onPointerCancel, true)
+      renderer.domElement.removeEventListener("contextmenu", onContextMenu, true)
       transform.removeEventListener("mouseDown", onTransformStart)
       transform.removeEventListener("mouseUp", onTransformEnd)
       transform.removeEventListener("dragging-changed", onDraggingChanged)
@@ -1391,6 +1465,18 @@ export default function DirectorDesk({
     () => director.scene.cameras.find((item) => item.id === selectedCameraId)
       || activeDirectorCamera(director.scene),
     [director.scene, selectedCameraId],
+  )
+  const contextObject = useMemo(
+    () => viewportContextMenu?.target === "object"
+      ? director.scene.objects.find((item) => item.id === viewportContextMenu.targetId) || null
+      : null,
+    [director.scene.objects, viewportContextMenu],
+  )
+  const contextCamera = useMemo(
+    () => viewportContextMenu?.target === "camera"
+      ? director.scene.cameras.find((item) => item.id === viewportContextMenu.targetId) || null
+      : null,
+    [director.scene.cameras, viewportContextMenu],
   )
   const selectedMannequin = useMemo(
     () => selectedObject?.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
@@ -2070,7 +2156,9 @@ export default function DirectorDesk({
         run(() => setShowShortcuts((value) => !value))
       } else if (event.key === "Escape") {
         run(() => {
-          if (showShortcuts) {
+          if (viewportContextMenu) {
+            setViewportContextMenu(null)
+          } else if (showShortcuts) {
             setShowShortcuts(false)
           } else if (cameraViewModeRef.current === "camera") {
             switchCameraView("overview")
@@ -2140,6 +2228,7 @@ export default function DirectorDesk({
     switchCameraView,
     toggleCameraView,
     undo,
+    viewportContextMenu,
   ])
 
   const changeAspectRatio = useCallback((aspect: DirectorAspectRatio) => {
@@ -2147,6 +2236,11 @@ export default function DirectorDesk({
     scene.aspect_ratio = aspect
     replaceScene(scene, true)
   }, [replaceScene])
+
+  const runViewportContextAction = useCallback((action: () => void) => {
+    setViewportContextMenu(null)
+    action()
+  }, [])
 
   const renderVectorInputs = (
     field: "position" | "rotation" | "scale",
@@ -2245,8 +2339,70 @@ export default function DirectorDesk({
               </div>
             ))}
           </div>
+          <div className="border-t border-white/[0.065] bg-[#0b0f18] px-4 py-3">
+            <div className="mb-2 text-[9px] font-semibold tracking-wide text-cyan-200/75">鼠标操作</div>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-1.5">
+              {DIRECTOR_MOUSE_CONTROLS.map(([gesture, label]) => (
+                <div key={gesture} className="flex items-center justify-between gap-3 text-[8px] last:col-span-2">
+                  <span className="text-zinc-500">{label}</span>
+                  <kbd className="shrink-0 rounded-md border border-white/[0.09] bg-black/30 px-1.5 py-1 font-mono text-[7px] text-zinc-300">{gesture}</kbd>
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="border-t border-white/[0.065] px-4 py-2 text-[7px] text-zinc-600">快捷键在输入框、下拉框和可编辑文字区域内自动停用。</div>
         </section>
+      ) : null}
+
+      {viewportContextMenu ? (
+        <div className="fixed inset-0 z-[70]" onPointerDown={() => setViewportContextMenu(null)}>
+          <div
+            role="menu"
+            aria-label="导演台右键菜单"
+            className="absolute w-56 overflow-hidden rounded-xl border border-white/[0.12] bg-[#0b0f18]/97 p-1.5 shadow-[0_24px_70px_rgba(0,0,0,.62)] backdrop-blur-2xl"
+            style={{ left: viewportContextMenu.x, top: viewportContextMenu.y }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="mb-1 border-b border-white/[0.065] px-2 py-2">
+              <div className="truncate text-[9px] font-semibold text-zinc-200">
+                {contextObject?.name || contextCamera?.name || "场景操作"}
+              </div>
+              <div className="mt-0.5 text-[7px] text-zinc-600">
+                {contextObject ? "场景对象" : contextCamera ? "空间相机" : "空白区域"}
+              </div>
+            </div>
+
+            {contextObject ? (
+              <>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(focusSelection)} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>聚焦选择</span><kbd className="text-[7px] text-zinc-600">F</kbd></button>
+                <div className="my-1 grid grid-cols-3 gap-1 border-y border-white/[0.055] py-1">
+                  {([['translate', '移动', 'W'], ['rotate', '旋转', 'E'], ['scale', '缩放', 'R']] as const).map(([mode, label, key]) => <button key={mode} type="button" role="menuitem" onClick={() => runViewportContextAction(() => setTransformMode(mode))} className={cn("h-7 rounded-md text-[8px] transition hover:bg-white/[0.07]", transformMode === mode ? "bg-violet-300/10 text-violet-100" : "text-zinc-500")}><span>{label}</span><kbd className="ml-1 text-[6px] opacity-60">{key}</kbd></button>)}
+                </div>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(duplicateSelectedObject)} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>复制对象</span><kbd className="text-[7px] text-zinc-600">Ctrl/⌘ D</kbd></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => updateSelectedObject({ visible: !contextObject.visible }))} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>{contextObject.visible ? "隐藏对象" : "显示对象"}</span><DirectorIcon name={contextObject.visible ? "eye-off" : "eye"} className="h-3 w-3 text-zinc-600" /></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => updateSelectedObject({ locked: !contextObject.locked }))} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>{contextObject.locked ? "解锁对象" : "锁定对象"}</span><DirectorIcon name={contextObject.locked ? "unlock" : "lock"} className="h-3 w-3 text-zinc-600" /></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(deleteSelectedObject)} className="mt-1 flex h-8 w-full items-center justify-between rounded-lg border-t border-red-300/10 px-2 text-left text-[9px] text-red-300/70 transition hover:bg-red-400/10 hover:text-red-200"><span>删除对象</span><kbd className="text-[7px] text-red-300/35">Delete</kbd></button>
+              </>
+            ) : contextCamera ? (
+              <>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => activateCamera(contextCamera.id, true))} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-cyan-100 transition hover:bg-cyan-300/[0.08]"><span>进入这个机位</span><DirectorIcon name="camera" className="h-3 w-3 text-cyan-300/60" /></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => activateCamera(contextCamera.id))} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>空间编辑</span><kbd className="text-[7px] text-zinc-600">W / E</kbd></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(focusSelection)} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>聚焦相机</span><kbd className="text-[7px] text-zinc-600">F</kbd></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => setShowCameraGuides((value) => !value))} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>{showCameraGuides ? "隐藏机位线" : "显示机位线"}</span><kbd className="text-[7px] text-zinc-600">H</kbd></button>
+                <button type="button" role="menuitem" disabled={director.scene.cameras.length <= 1} onClick={() => runViewportContextAction(() => removeCamera(contextCamera.id))} className="mt-1 flex h-8 w-full items-center justify-between rounded-lg border-t border-red-300/10 px-2 text-left text-[9px] text-red-300/70 transition hover:bg-red-400/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-25"><span>删除机位</span><kbd className="text-[7px] text-red-300/35">Delete</kbd></button>
+              </>
+            ) : (
+              <>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(addCamera)} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-cyan-100 transition hover:bg-cyan-300/[0.08]"><span>在当前视角放置机位</span><kbd className="text-[7px] text-cyan-300/45">Shift A</kbd></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(toggleCameraView)} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>{cameraViewMode === "camera" ? "返回空间总览" : "进入当前机位"}</span><kbd className="text-[7px] text-zinc-600">小键盘 0</kbd></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(frameAll)} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>显示全部</span><kbd className="text-[7px] text-zinc-600">Home</kbd></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => setShowGrid((value) => !value))} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>{showGrid ? "隐藏网格" : "显示网格"}</span><DirectorIcon name="grid" className="h-3 w-3 text-zinc-600" /></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => setShowCameraGuides((value) => !value))} className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>{showCameraGuides ? "隐藏机位线" : "显示机位线"}</span><kbd className="text-[7px] text-zinc-600">H</kbd></button>
+                <button type="button" role="menuitem" onClick={() => runViewportContextAction(() => { void createCapture() })} className="mt-1 flex h-8 w-full items-center justify-between rounded-lg border-t border-white/[0.06] px-2 text-left text-[9px] text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"><span>截图全部机位</span><kbd className="text-[7px] text-zinc-600">Ctrl/⌘ Enter</kbd></button>
+              </>
+            )}
+          </div>
+        </div>
       ) : null}
 
       <div className="relative z-10 grid min-h-0 grid-cols-[220px_minmax(0,1fr)_250px] 2xl:grid-cols-[260px_minmax(0,1fr)_300px]">
@@ -2460,7 +2616,7 @@ export default function DirectorDesk({
               ))}
             </div>
 
-            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{cameraViewMode === "overview" ? showCameraGuides ? "机位辅助线 · 已显示" : "干净总览 · 点击相机进入取景" : `正在预览 · ${selectedCamera.name}`}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右键 · 平移视角</span></div>
+            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{cameraViewMode === "overview" ? showCameraGuides ? "机位辅助线 · 已显示" : "干净总览 · 点击相机进入取景" : `正在预览 · ${selectedCamera.name}`}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右拖平移 · 右键菜单</span></div>
             {error && <div className="absolute bottom-4 right-4 z-30 flex max-w-sm items-start gap-2 rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2.5 text-[10px] leading-4 text-red-100 shadow-[0_18px_44px_rgba(0,0,0,.4)] backdrop-blur-xl"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-300" />{error}</div>}
           </div>
         </main>
