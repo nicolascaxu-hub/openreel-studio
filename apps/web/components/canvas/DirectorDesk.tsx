@@ -91,12 +91,14 @@ interface DirectorRuntime {
   resizeObserver: ResizeObserver
   viewport: HTMLDivElement
   cameraViewMode: "overview" | "camera"
+  cameraGuidesVisible: boolean
   disposed: boolean
 }
 
 interface DirectorCameraRig {
   camera: THREE.PerspectiveCamera
   visual: THREE.Group
+  direction: THREE.ArrowHelper
   helper: THREE.CameraHelper
 }
 
@@ -485,7 +487,7 @@ function createDirectorCameraRig(
   helper.userData.directorCameraId = state.id
   const helperColor = new THREE.Color(color)
   helper.setColors(helperColor, helperColor, helperColor, helperColor, helperColor)
-  return { camera, visual, helper }
+  return { camera, visual, direction, helper }
 }
 
 function clearDirectorCameraRigs(runtime: DirectorRuntime): void {
@@ -506,6 +508,8 @@ function syncDirectorCameraRigs(runtime: DirectorRuntime, scene: DirectorSceneSt
     const rig = createDirectorCameraRig(camera, aspect, colors[index % colors.length])
     runtime.cameraRoot.add(rig.visual)
     runtime.cameraRoot.add(rig.helper)
+    rig.direction.visible = runtime.cameraGuidesVisible
+    rig.helper.visible = runtime.cameraGuidesVisible
     runtime.cameraRigs.set(camera.id, rig)
   })
   runtime.scene.updateMatrixWorld(true)
@@ -515,7 +519,8 @@ function syncDirectorCameraRigs(runtime: DirectorRuntime, scene: DirectorSceneSt
 function setDirectorCameraRigVisibility(runtime: DirectorRuntime, visible: boolean): void {
   for (const rig of runtime.cameraRigs.values()) {
     rig.visual.visible = visible
-    rig.helper.visible = visible
+    rig.direction.visible = visible && runtime.cameraGuidesVisible
+    rig.helper.visible = visible && runtime.cameraGuidesVisible
   }
 }
 
@@ -710,6 +715,7 @@ export default function DirectorDesk({
   const [promotingId, setPromotingId] = useState<string | null>(null)
   const [showGrid, setShowGrid] = useState(true)
   const [showThirds, setShowThirds] = useState(false)
+  const [showCameraGuides, setShowCameraGuides] = useState(false)
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
   const [cameraViewMode, setCameraViewMode] = useState<"overview" | "camera">("overview")
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
@@ -938,7 +944,7 @@ export default function DirectorDesk({
       if (canceled) return
       const next = normalizeDirectorDesk(response.director)
       setLocalDirector(next)
-      setSelectedCameraId(next.scene.active_camera_id)
+      setSelectedCameraId(null)
       setSelectedCaptureId(next.captures[0]?.id || null)
       setLoaded(true)
     }).catch((loadError) => {
@@ -1033,6 +1039,7 @@ export default function DirectorDesk({
       resizeObserver,
       viewport,
       cameraViewMode: cameraViewModeRef.current,
+      cameraGuidesVisible: false,
       disposed: false,
     }
     runtimeRef.current = runtime
@@ -1074,7 +1081,7 @@ export default function DirectorDesk({
       if (runtime.cameraViewMode !== "overview") return null
       updatePointer(event)
       const hits = raycaster.intersectObjects(
-        [...runtime.cameraRigs.values()].map((item) => item.visual),
+        [...runtime.cameraRigs.values()].flatMap((item) => item.visual.children.filter((child) => child instanceof THREE.Mesh)),
         true,
       )
       let selected: THREE.Object3D | null = hits[0]?.object || null
@@ -1084,13 +1091,15 @@ export default function DirectorDesk({
     const selectCamera = (cameraId: string) => {
       const current = directorRef.current
       if (!current.scene.cameras.some((item) => item.id === cameraId)) return
-      const sceneState = cloneDirectorScene(current.scene)
+      const sceneState = snapshotRuntimeScene(runtime, current.scene)
       sceneState.active_camera_id = cameraId
       syncLegacyActiveCamera(sceneState)
       setLocalDirector({ ...current, scene: sceneState })
       setSelectedObjectId(null)
       setSelectedCameraId(cameraId)
-      applyRuntimeCameraView(runtime, sceneState, cameraViewModeRef.current)
+      cameraViewModeRef.current = "camera"
+      setCameraViewMode("camera")
+      applyRuntimeCameraView(runtime, sceneState, "camera")
       void enqueueSceneSave(sceneState)
     }
     const onPointerDown = (event: PointerEvent) => {
@@ -1247,6 +1256,13 @@ export default function DirectorDesk({
     if (!runtime) return
     runtime.grid.visible = showGrid
   }, [showGrid])
+
+  useEffect(() => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    runtime.cameraGuidesVisible = showCameraGuides
+    setDirectorCameraRigVisibility(runtime, runtime.cameraViewMode === "overview")
+  }, [showCameraGuides])
 
   useEffect(() => {
     transformModeRef.current = transformMode
@@ -1540,7 +1556,9 @@ export default function DirectorDesk({
     syncLegacyActiveCamera(scene)
     setSelectedObjectId(null)
     setSelectedCameraId(cameraId)
-    if (preview) setCameraViewMode("camera")
+    const nextMode = preview ? "camera" : "overview"
+    cameraViewModeRef.current = nextMode
+    setCameraViewMode(nextMode)
     persistCameraScene(scene, { recordHistory: false, rebuildRigs: false })
   }, [persistCameraScene])
 
@@ -1551,6 +1569,9 @@ export default function DirectorDesk({
       setLocalDirector({ ...directorRef.current, scene })
       void enqueueSceneSave(scene)
     }
+    cameraViewModeRef.current = mode
+    if (mode === "overview") setSelectedCameraId(null)
+    else setSelectedCameraId(directorRef.current.scene.active_camera_id)
     setCameraViewMode(mode)
   }, [enqueueSceneSave, setLocalDirector])
 
@@ -1562,21 +1583,28 @@ export default function DirectorDesk({
     }
     const runtime = runtimeRef.current
     const scene = runtime ? snapshotRuntimeScene(runtime, current.scene) : cloneDirectorScene(current.scene)
-    const source = activeDirectorCamera(scene)
+    const source: DirectorCameraPose = runtime
+      ? {
+          position: runtime.camera.position.toArray() as [number, number, number],
+          target: runtime.orbit.target.toArray() as [number, number, number],
+          fov: runtime.camera.fov,
+        }
+      : scene.viewport_camera
     const camera = newDirectorCamera(scene.cameras, source)
     scene.cameras.push(camera)
     scene.active_camera_id = camera.id
     setSelectedObjectId(null)
     setSelectedCameraId(camera.id)
-    setCameraViewMode("overview")
+    cameraViewModeRef.current = "camera"
+    setCameraViewMode("camera")
     persistCameraScene(scene)
   }, [persistCameraScene])
 
-  const removeSelectedCamera = useCallback(() => {
+  const removeCamera = useCallback((cameraId: string) => {
     const current = directorRef.current
     if (current.scene.cameras.length <= 1) return
-    const camera = current.scene.cameras.find((item) => item.id === selectedCameraId)
-      || activeDirectorCamera(current.scene)
+    const camera = current.scene.cameras.find((item) => item.id === cameraId)
+    if (!camera) return
     if (!window.confirm(`删除机位“${camera.name}”？已有截图不会删除。`)) return
     const runtime = runtimeRef.current
     const scene = runtime ? snapshotRuntimeScene(runtime, current.scene) : cloneDirectorScene(current.scene)
@@ -1584,11 +1612,16 @@ export default function DirectorDesk({
     scene.cameras = scene.cameras.filter((item) => item.id !== camera.id)
     const replacement = scene.cameras[Math.min(Math.max(index, 0), scene.cameras.length - 1)]
     scene.active_camera_id = replacement.id
-    setSelectedCameraId(replacement.id)
+    setSelectedCameraId(null)
     setSelectedObjectId(null)
+    cameraViewModeRef.current = "overview"
     setCameraViewMode("overview")
     persistCameraScene(scene)
-  }, [persistCameraScene, selectedCameraId])
+  }, [persistCameraScene])
+
+  const removeSelectedCamera = useCallback(() => {
+    removeCamera(selectedCamera.id)
+  }, [removeCamera, selectedCamera.id])
 
   const updateSelectedCamera = useCallback((patch: Partial<DirectorCameraState>) => {
     const current = directorRef.current
@@ -1952,6 +1985,7 @@ export default function DirectorDesk({
           <div className="hidden items-center rounded-xl border border-white/[0.075] bg-black/20 p-1 md:flex">
             <button type="button" title="显示网格" onClick={() => setShowGrid((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showGrid ? "bg-violet-300/12 text-violet-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name="grid" className="h-3.5 w-3.5" />网格</button>
             <button type="button" title="显示三分构图线" onClick={() => setShowThirds((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showThirds ? "bg-violet-300/12 text-violet-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name="thirds" className="h-3.5 w-3.5" />三分线</button>
+            <button type="button" title="显示机位朝向和取景框" onClick={() => setShowCameraGuides((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showCameraGuides ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name={showCameraGuides ? "eye" : "eye-off"} className="h-3.5 w-3.5" />机位线</button>
           </div>
           <button
             type="button"
@@ -2076,9 +2110,9 @@ export default function DirectorDesk({
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <div className="text-[11px] font-semibold text-zinc-200">多机位</div>
-                    <div className="mt-0.5 text-[9px] text-zinc-600">总览中显示位置、朝向和取景框</div>
+                    <div className="mt-0.5 text-[9px] text-zinc-600">点击机位直接进入对应视角</div>
                   </div>
-                  <button type="button" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="flex h-7 items-center gap-1 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] px-2 text-[8px] font-medium text-cyan-100 transition hover:bg-cyan-300/[0.12] disabled:cursor-not-allowed disabled:opacity-30">＋ 添加</button>
+                  <button type="button" title="把当前观察位置保存为新机位" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="flex h-7 items-center gap-1 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] px-2 text-[8px] font-medium text-cyan-100 transition hover:bg-cyan-300/[0.12] disabled:cursor-not-allowed disabled:opacity-30">＋ 当前位置</button>
                 </div>
                 <div className="space-y-2">
                   {director.scene.cameras.map((camera, index) => {
@@ -2086,19 +2120,20 @@ export default function DirectorDesk({
                     const selected = selectedCamera.id === camera.id
                     return (
                       <div key={camera.id} className={cn("overflow-hidden rounded-xl border transition", selected ? "border-cyan-300/25 bg-cyan-300/[0.06]" : "border-white/[0.065] bg-white/[0.018]")}>
-                        <button type="button" onClick={() => activateCamera(camera.id)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left">
+                        <button type="button" onClick={() => activateCamera(camera.id, true)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left">
                           <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[9px] font-semibold tabular-nums", active ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100" : "border-white/[0.07] bg-black/20 text-zinc-500")}>{String(index + 1).padStart(2, "0")}</span>
                           <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-[10px] font-medium text-zinc-300">{camera.name}</span>{active ? <span className="rounded bg-cyan-300/10 px-1 py-0.5 text-[6px] text-cyan-200/80">当前</span> : null}</span><span className="mt-0.5 block truncate text-[7px] tabular-nums text-zinc-600">P {camera.position.map((value) => value.toFixed(1)).join(" / ")} · {Math.round(camera.fov)}°</span></span>
                         </button>
-                        <div className="grid grid-cols-2 border-t border-white/[0.05] bg-black/10 p-1">
-                          <button type="button" onClick={() => activateCamera(camera.id)} className="h-6 rounded text-[7px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200">空间选择</button>
-                          <button type="button" onClick={() => activateCamera(camera.id, true)} className="h-6 rounded text-[7px] text-cyan-200/75 transition hover:bg-cyan-300/[0.08] hover:text-cyan-100">进入取景</button>
+                        <div className="grid grid-cols-[1fr_1fr_28px] border-t border-white/[0.05] bg-black/10 p-1">
+                          <button type="button" onClick={() => activateCamera(camera.id)} className="h-6 rounded text-[7px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200">空间编辑</button>
+                          <button type="button" onClick={() => activateCamera(camera.id, true)} className="h-6 rounded text-[7px] text-cyan-200/75 transition hover:bg-cyan-300/[0.08] hover:text-cyan-100">查看视角</button>
+                          <button type="button" title={`删除${camera.name}`} onClick={() => removeCamera(camera.id)} disabled={director.scene.cameras.length <= 1} className="flex h-6 items-center justify-center rounded text-red-300/45 transition hover:bg-red-400/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-20"><DirectorIcon name="trash" className="h-2.5 w-2.5" /></button>
                         </div>
                       </div>
                     )
                   })}
                 </div>
-                <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 p-2 text-[7px] leading-3.5 text-zinc-600">总览模式下点击相机模型即可选择；使用 W 移动、E 旋转调整方向。截图会为全部 {director.scene.cameras.length} 个机位各生成一张。</div>
+                <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 p-2 text-[7px] leading-3.5 text-zinc-600">相机辅助线默认隐藏；点击空间中的相机或列表卡片会直接进入该机位。自由观察到任意位置后，点“当前位置”即可放置新机位。</div>
               </>
             )}
           </div>
@@ -2168,13 +2203,14 @@ export default function DirectorDesk({
             <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/[0.1] bg-[#0a0d14]/76 p-1 shadow-[0_12px_34px_rgba(0,0,0,.28)] backdrop-blur-xl">
               <button type="button" onClick={() => switchCameraView("overview")} className={cn("h-8 rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "overview" ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>空间总览</button>
               <button type="button" onClick={() => switchCameraView("camera")} className={cn("h-8 max-w-[112px] truncate rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "camera" ? "bg-violet-300/15 text-violet-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>取景 · {selectedCamera.name}</button>
+              <button type="button" title="把当前观察位置、方向和视场角保存为新机位" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[9px] font-medium text-cyan-200/80 transition hover:bg-cyan-300/[0.09] hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-25"><DirectorIcon name="camera" className="h-3 w-3" />在此放置机位</button>
               <span className="mx-1 h-5 w-px bg-white/[0.08]" />
               {([['front', '正面'], ['three', '斜侧'], ['high', '俯拍'], ['top', '顶视']] as const).map(([preset, label]) => (
                 <button key={preset} type="button" onClick={() => applyCameraPreset(preset)} className="h-8 rounded-lg px-3 text-[9px] font-medium text-zinc-400 transition hover:bg-white/[0.08] hover:text-white">{label}</button>
               ))}
             </div>
 
-            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{cameraViewMode === "overview" ? "彩色相机 · 机位和方向" : `正在预览 · ${selectedCamera.name}`}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右键 · 平移视角</span></div>
+            <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden items-center gap-2 text-[8px] text-zinc-600 2xl:flex"><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">{cameraViewMode === "overview" ? showCameraGuides ? "机位辅助线 · 已显示" : "干净总览 · 点击相机进入取景" : `正在预览 · ${selectedCamera.name}`}</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">滚轮 · 指针缩放</span><span className="rounded border border-white/[0.07] bg-black/30 px-1.5 py-1">右键 · 平移视角</span></div>
             {error && <div className="absolute bottom-4 right-4 z-30 flex max-w-sm items-start gap-2 rounded-xl border border-red-300/20 bg-red-950/85 px-3 py-2.5 text-[10px] leading-4 text-red-100 shadow-[0_18px_44px_rgba(0,0,0,.4)] backdrop-blur-xl"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-300" />{error}</div>}
           </div>
         </main>
@@ -2441,7 +2477,7 @@ export default function DirectorDesk({
             <div className="space-y-4 p-3">
               <div>
                 <div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">当前机位</span><span className="text-[7px] text-cyan-200/60">截图时全部输出</span></div>
-                <select value={selectedCamera.id} onChange={(event) => activateCamera(event.target.value)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
+                <select value={selectedCamera.id} onChange={(event) => activateCamera(event.target.value, true)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
                   {director.scene.cameras.map((camera, index) => <option key={camera.id} value={camera.id}>{index + 1}. {camera.name}</option>)}
                 </select>
                 <input value={selectedCamera.name} maxLength={120} onChange={(event) => updateSelectedCamera({ name: event.target.value || selectedCamera.name })} className="mt-1.5 h-8 w-full rounded-lg border border-white/[0.08] bg-black/20 px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35" aria-label="机位名称" />
@@ -2470,14 +2506,14 @@ export default function DirectorDesk({
                 <div className="mt-1.5 flex justify-between text-[7px] text-zinc-700"><span>长焦 20°</span><span>广角 90°</span></div>
               </label>
               <div className="grid grid-cols-[1fr_1fr_34px] gap-1.5 border-t border-white/[0.06] pt-3">
-                <button type="button" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="h-8 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] text-[8px] font-medium text-cyan-100 transition hover:bg-cyan-300/[0.12] disabled:opacity-30">添加机位</button>
+                <button type="button" title="把当前观察位置保存为新机位" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="h-8 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] text-[8px] font-medium text-cyan-100 transition hover:bg-cyan-300/[0.12] disabled:opacity-30">当前视角新增</button>
                 <button type="button" onClick={() => applyCameraPreset("three")} className="h-8 rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-400 transition hover:text-white">设为斜侧</button>
                 <button type="button" title="删除当前机位" onClick={removeSelectedCamera} disabled={director.scene.cameras.length <= 1} className="flex h-8 items-center justify-center rounded-lg border border-red-300/10 bg-red-400/[0.03] text-red-300/60 transition hover:bg-red-400/[0.1] disabled:cursor-not-allowed disabled:opacity-20"><DirectorIcon name="trash" className="h-3 w-3" /></button>
               </div>
             </div>
           </section>
 
-          <div className="mt-3 rounded-xl border border-violet-300/[0.09] bg-violet-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-violet-200/70">工作提示：</span>空间总览显示全部相机的位置、朝向箭头和取景框；点击“截图全部机位”会按每台相机的观察位置各保存一张到镜头条。</div>
+          <div className="mt-3 rounded-xl border border-violet-300/[0.09] bg-violet-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-violet-200/70">工作提示：</span>总览默认只显示相机机身；需要校准方向时再打开“机位线”。点击相机直接取景，截图仍会按全部机位分别保存。</div>
         </aside>
       </div>
 

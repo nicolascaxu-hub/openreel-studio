@@ -543,15 +543,14 @@ export function cloneDirectorScene(scene: DirectorSceneState): DirectorSceneStat
   return normalizeDirectorScene(JSON.parse(JSON.stringify(scene)) as unknown)
 }
 
-export function newDirectorCamera(existing: DirectorCameraState[], source: DirectorCameraState): DirectorCameraState {
+export function newDirectorCamera(existing: DirectorCameraState[], source: DirectorCameraPose): DirectorCameraState {
   const usedNames = new Set(existing.map((item) => item.name))
   let number = existing.length + 1
   while (usedNames.has(`机位 ${number}`)) number += 1
-  const offset = Math.max(1, existing.length) * 0.45
   return {
     id: createDirectorId("camera"),
     name: `机位 ${number}`,
-    position: [source.position[0] + 2.2 + offset, source.position[1] + 0.8, source.position[2] + 1.8],
+    position: [...source.position],
     target: [...source.target],
     fov: source.fov,
   }
