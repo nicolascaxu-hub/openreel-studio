@@ -49,6 +49,10 @@ import {
   type DirectorTransformMode,
 } from "@/lib/directorDesk"
 import {
+  DIRECTOR_BUNDLED_MODEL_ASSETS,
+  DIRECTOR_BUNDLED_MODEL_BY_ID,
+} from "@/lib/directorBundledModels"
+import {
   applyDirectorMannequinBodyPreset,
   applyDirectorMannequinPosePreset,
   DIRECTOR_MANNEQUIN_BODY_PRESETS,
@@ -343,6 +347,22 @@ function modelThumbnailCacheKey(asset: DirectorModelAsset): string {
   return `${asset.id}:${asset.size}:${asset.created_at || ""}`
 }
 
+function directorModelUrl(asset: DirectorModelAsset): string {
+  return asset.id.startsWith("bundled:") ? asset.url : resolveMediaUrl(asset.url)
+}
+
+function directorModelAssetById(
+  assetId: string,
+  uploadedAssets: DirectorModelAsset[],
+): DirectorModelAsset | undefined {
+  return DIRECTOR_BUNDLED_MODEL_BY_ID.get(assetId)
+    || uploadedAssets.find((asset) => asset.id === assetId)
+}
+
+function allDirectorModelAssets(uploadedAssets: DirectorModelAsset[]): DirectorModelAsset[] {
+  return [...DIRECTOR_BUNDLED_MODEL_ASSETS, ...uploadedAssets]
+}
+
 function thumbnailRenderer(): THREE.WebGLRenderer {
   if (directorModelThumbnailRenderer) return directorModelThumbnailRenderer
   const canvas = document.createElement("canvas")
@@ -359,7 +379,7 @@ function thumbnailRenderer(): THREE.WebGLRenderer {
 
 async function renderDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
   const renderer = thumbnailRenderer()
-  const gltf = await new GLTFLoader().loadAsync(resolveMediaUrl(asset.url))
+  const gltf = await new GLTFLoader().loadAsync(directorModelUrl(asset))
   const model = gltf.scene
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 1000)
@@ -917,7 +937,7 @@ export default function DirectorDesk({
       return
     }
     setLoadingModels((value) => value + 1)
-    void loader.loadAsync(resolveMediaUrl(asset.url)).then((gltf) => {
+    void loader.loadAsync(directorModelUrl(asset)).then((gltf) => {
       if (!isCurrent()) {
         disposeObject(gltf.scene)
         return
@@ -992,7 +1012,7 @@ export default function DirectorDesk({
     const object = state.scene.objects.find((item) => item.id === objectId)
     removeRuntimeObject(runtime, objectId)
     if (!object) return
-    const asset = state.model_assets.find((item) => item.id === object.asset_id)
+    const asset = directorModelAssetById(object.asset_id, state.model_assets)
     buildRuntimeObject(runtime, object, asset)
   }, [buildRuntimeObject])
 
@@ -1003,7 +1023,7 @@ export default function DirectorDesk({
     stopRuntimeMixers(runtime)
     for (const objectId of [...runtime.objectRoots.keys()]) removeRuntimeObject(runtime, objectId)
     const state = directorRef.current
-    const modelById = new Map(state.model_assets.map((asset) => [asset.id, asset]))
+    const modelById = new Map(allDirectorModelAssets(state.model_assets).map((asset) => [asset.id, asset]))
     for (const object of state.scene.objects) {
       buildRuntimeObject(runtime, object, modelById.get(object.asset_id))
     }
@@ -1568,7 +1588,7 @@ export default function DirectorDesk({
   )
   const selectedCustomAsset = useMemo(
     () => selectedObject && !selectedObject.asset_id.startsWith("builtin:")
-      ? director.model_assets.find((asset) => asset.id === selectedObject.asset_id) || null
+      ? directorModelAssetById(selectedObject.asset_id, director.model_assets) || null
       : null,
     [director.model_assets, selectedObject],
   )
@@ -1597,7 +1617,7 @@ export default function DirectorDesk({
 
   const addObject = useCallback((assetId: string, defaultName: string) => {
     const scene = cloneDirectorScene(directorRef.current.scene)
-    const asset = directorRef.current.model_assets.find((item) => item.id === assetId)
+    const asset = directorModelAssetById(assetId, directorRef.current.model_assets)
     const object = newDirectorObject(assetId, defaultName, scene.objects, asset)
     scene.objects.push(object)
     replaceScene(scene, true)
@@ -2016,7 +2036,7 @@ export default function DirectorDesk({
     const ctx = canvas.getContext("2d")
     if (!ctx) throw new Error("无法创建截图画布")
     ctx.drawImage(source, 0, 0, width, height)
-    const legend = actorLegend(scene, directorRef.current.model_assets)
+    const legend = actorLegend(scene, allDirectorModelAssets(directorRef.current.model_assets))
     if (legend.length > 0) {
       const lineHeight = Math.max(28, Math.round(height * 0.035))
       const panelWidth = Math.min(width * 0.42, 430)
@@ -2063,7 +2083,7 @@ export default function DirectorDesk({
       const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
       setLocalDirector({ ...directorRef.current, scene })
       await enqueueSceneSave(scene)
-      const legend = actorLegend(scene, directorRef.current.model_assets) as unknown as Array<Record<string, unknown>>
+      const legend = actorLegend(scene, allDirectorModelAssets(directorRef.current.model_assets)) as unknown as Array<Record<string, unknown>>
       const captures = scene.cameras.map((camera) => {
         const snapshot = cloneDirectorScene(scene)
         snapshot.active_camera_id = camera.id
@@ -2525,6 +2545,36 @@ export default function DirectorDesk({
 
                 <div className="mb-2 mt-5 flex items-center justify-between">
                   <div>
+                    <div className="text-[11px] font-semibold text-zinc-200">项目模型</div>
+                    <div className="mt-0.5 text-[9px] text-zinc-600">随源码提供 · 可直接加载</div>
+                  </div>
+                  <span className="rounded-full border border-cyan-300/[0.12] bg-cyan-300/[0.04] px-2 py-0.5 text-[8px] text-cyan-100/60">{DIRECTOR_BUNDLED_MODEL_ASSETS.length} 项</span>
+                </div>
+                <div className="space-y-1.5">
+                  {DIRECTOR_BUNDLED_MODEL_ASSETS.map((asset) => (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      data-bundled-model={asset.id}
+                      onClick={() => addObject(asset.id, asset.name)}
+                      className="group flex w-full items-center gap-2.5 rounded-xl border border-cyan-300/[0.08] bg-cyan-300/[0.018] p-2 text-left transition hover:border-cyan-300/20 hover:bg-cyan-300/[0.055]"
+                    >
+                      <DirectorModelThumbnail asset={asset} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5 text-[10px] text-zinc-300 group-hover:text-white">
+                          <span className="truncate">{asset.name}</span>
+                          {asset.analysis?.humanoid.recognized ? <span className="shrink-0 rounded bg-cyan-300/10 px-1 py-0.5 text-[7px] text-cyan-200/80">人形</span> : null}
+                        </span>
+                        <span className="mt-0.5 block line-clamp-2 text-[8px] leading-3 text-zinc-600">{asset.summary}</span>
+                        <span className="mt-1 block text-[7px] text-zinc-700">{asset.analysis?.bone_count || 0} 骨骼 · {modelClipCounts(asset.analysis).animations} 动画 · {formatBytes(asset.size)}</span>
+                      </span>
+                      <span className="text-zinc-700 opacity-0 transition group-hover:text-cyan-200 group-hover:opacity-100">＋</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mb-2 mt-5 flex items-center justify-between">
+                  <div>
                     <div className="text-[11px] font-semibold text-zinc-200">我的模型</div>
                     <div className="mt-0.5 text-[9px] text-zinc-600">支持单文件 GLB · 最大 50 MB</div>
                   </div>
@@ -2589,7 +2639,7 @@ export default function DirectorDesk({
                       className={cn("group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition", selectedObjectId === object.id ? "border-violet-300/22 bg-violet-300/[0.085] text-violet-50 shadow-[inset_3px_0_rgba(167,139,250,.65)]" : "border-transparent text-zinc-400 hover:border-white/[0.07] hover:bg-white/[0.035] hover:text-zinc-200")}
                     >
                       <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20 text-[9px] font-semibold tabular-nums text-zinc-600"><span className="absolute bottom-1 right-1 h-2 w-2 rounded-full border border-[#11151e]" style={{ backgroundColor: object.color }} />{String(index + 1).padStart(2, "0")}</span>
-                      <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-medium">{object.name}</span><span className="mt-0.5 block truncate text-[8px] text-zinc-600">{object.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID ? "标准骨骼人物" : object.asset_id.startsWith("builtin:") ? "内置模型" : "自定义模型"}</span></span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-medium">{object.name}</span><span className="mt-0.5 block truncate text-[8px] text-zinc-600">{object.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID ? "标准骨骼人物" : object.asset_id.startsWith("builtin:") ? "内置模型" : object.asset_id.startsWith("bundled:") ? "项目模型" : "自定义模型"}</span></span>
                       <span className="flex items-center gap-1 text-zinc-700">{object.locked ? <DirectorIcon name="lock" className="h-3 w-3" /> : null}{!object.visible ? <DirectorIcon name="eye-off" className="h-3 w-3" /> : null}</span>
                     </button>
                   ))}
@@ -2871,7 +2921,7 @@ export default function DirectorDesk({
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-300/[0.09] text-cyan-100/80"><DirectorIcon name="sparkles" className="h-3.5 w-3.5" /></span>
                     <div className="min-w-0">
-                      <div className="text-[10px] font-medium text-zinc-200">导入骨架、动作与动画</div>
+                      <div className="text-[10px] font-medium text-zinc-200">模型骨架、动作与动画</div>
                       <div className="truncate text-[8px] text-zinc-600">
                         {selectedCustomAsset.analysis
                           ? `${selectedCustomAsset.analysis.bone_count} 骨骼 · ${selectedNativePoseClips.length} 定格动作 · ${selectedContinuousAnimationClips.length} 连续动画`
