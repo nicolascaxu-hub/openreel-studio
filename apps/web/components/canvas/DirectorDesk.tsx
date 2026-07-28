@@ -793,6 +793,9 @@ export default function DirectorDesk({
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [viewportContextMenu, setViewportContextMenu] = useState<DirectorViewportContextMenu | null>(null)
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
+  const [inspectorTab, setInspectorTab] = useState<"object" | "camera" | "scene">("camera")
+  const [objectInspectorTab, setObjectInspectorTab] = useState<"transform" | "rig">("transform")
+  const [rigInspectorTab, setRigInspectorTab] = useState<"setup" | "motion" | "joints" | "analysis">("motion")
   const [cameraViewMode, setCameraViewMode] = useState<"overview" | "camera">("overview")
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
   const [snapToGrid, setSnapToGrid] = useState(false)
@@ -1091,6 +1094,10 @@ export default function DirectorDesk({
     transform.showYZ = false
     transform.showXZ = true
     renderer.domElement.style.cursor = "grab"
+    renderer.domElement.style.touchAction = "none"
+    renderer.domElement.style.overscrollBehavior = "none"
+    renderer.domElement.style.userSelect = "none"
+    renderer.domElement.style.setProperty("-webkit-user-drag", "none")
     const transformHelper = transform.getHelper()
     scene.add(transformHelper)
 
@@ -1130,7 +1137,6 @@ export default function DirectorDesk({
     const planePoint = new THREE.Vector3()
     let rightPointerStart: THREE.Vector2 | null = null
     let rightPointerMoved = false
-    let contextMenuTimer: number | null = null
     let planeDrag: {
       pointerId: number
       root: THREE.Group
@@ -1176,6 +1182,7 @@ export default function DirectorDesk({
       setLocalDirector({ ...current, scene: sceneState })
       setSelectedObjectId(null)
       setSelectedCameraId(cameraId)
+      setInspectorTab("camera")
       cameraViewModeRef.current = "camera"
       setCameraViewMode("camera")
       applyRuntimeCameraView(runtime, sceneState, "camera")
@@ -1185,10 +1192,9 @@ export default function DirectorDesk({
       pointerStart.set(event.clientX, event.clientY)
       setViewportContextMenu(null)
       if (event.button === 2) {
-        if (contextMenuTimer !== null) window.clearTimeout(contextMenuTimer)
-        contextMenuTimer = null
         rightPointerStart = new THREE.Vector2(event.clientX, event.clientY)
         rightPointerMoved = false
+        event.preventDefault()
         return
       }
       if (
@@ -1232,6 +1238,7 @@ export default function DirectorDesk({
       if (rightPointerStart) {
         rightPointerMoved = rightPointerMoved
           || Math.hypot(event.clientX - rightPointerStart.x, event.clientY - rightPointerStart.y) > 5
+        event.preventDefault()
         return
       }
       if (!planeDrag || planeDrag.pointerId !== event.pointerId) return
@@ -1261,8 +1268,40 @@ export default function DirectorDesk({
       event.stopImmediatePropagation()
       return true
     }
+    const openContextMenu = (event: PointerEvent) => {
+      const menuX = Math.max(8, Math.min(event.clientX, window.innerWidth - 232))
+      const menuY = Math.max(76, Math.min(event.clientY, window.innerHeight - 330))
+      const cameraRoot = cameraAtPointer(event)
+      const cameraId = cameraRoot?.userData.directorCameraId
+      const objectRoot = typeof cameraId === "string" ? null : rootAtPointer(event)
+      const objectId = objectRoot?.userData.directorObjectId
+      if (typeof cameraId === "string") {
+        setSelectedObjectId(null)
+        setSelectedCameraId(cameraId)
+        setInspectorTab("camera")
+        setViewportContextMenu({ x: menuX, y: menuY, target: "camera", targetId: cameraId })
+        return
+      }
+      if (typeof objectId === "string") {
+        setSelectedCameraId(null)
+        setSelectedObjectId(objectId)
+        setInspectorTab("object")
+        setViewportContextMenu({ x: menuX, y: menuY, target: "object", targetId: objectId })
+        return
+      }
+      setSelectedCameraId(null)
+      setSelectedObjectId(null)
+      setViewportContextMenu({ x: menuX, y: menuY, target: "empty" })
+    }
     const onPointerUp = (event: PointerEvent) => {
-      if (event.button === 2) return
+      if (event.button === 2) {
+        const openMenu = Boolean(rightPointerStart) && !rightPointerMoved
+        rightPointerStart = null
+        rightPointerMoved = false
+        event.preventDefault()
+        if (openMenu) openContextMenu(event)
+        return
+      }
       if (finishPlaneDrag(event)) return
       if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5 || transform.axis) return
       const selectedCamera = cameraAtPointer(event)
@@ -1275,51 +1314,26 @@ export default function DirectorDesk({
       const id = selected?.userData.directorObjectId
       setSelectedCameraId(null)
       setSelectedObjectId(typeof id === "string" ? id : null)
+      if (typeof id === "string") setInspectorTab("object")
     }
     const onPointerCancel = (event: PointerEvent) => {
       rightPointerStart = null
       rightPointerMoved = true
       finishPlaneDrag(event)
     }
-    const onContextMenu = (event: MouseEvent) => {
+    const preventBrowserGesture = (event: Event) => {
       event.preventDefault()
-      const menuX = Math.max(8, Math.min(event.clientX, window.innerWidth - 232))
-      const menuY = Math.max(76, Math.min(event.clientY, window.innerHeight - 330))
-      const cameraRoot = cameraAtPointer(event)
-      const cameraId = cameraRoot?.userData.directorCameraId
-      const objectRoot = typeof cameraId === "string" ? null : rootAtPointer(event)
-      const objectId = objectRoot?.userData.directorObjectId
-      if (contextMenuTimer !== null) window.clearTimeout(contextMenuTimer)
-      contextMenuTimer = window.setTimeout(() => {
-        contextMenuTimer = null
-        rightPointerStart = null
-        if (rightPointerMoved) {
-          rightPointerMoved = false
-          return
-        }
-        rightPointerMoved = false
-        if (typeof cameraId === "string") {
-          setSelectedObjectId(null)
-          setSelectedCameraId(cameraId)
-          setViewportContextMenu({ x: menuX, y: menuY, target: "camera", targetId: cameraId })
-          return
-        }
-        if (typeof objectId === "string") {
-          setSelectedCameraId(null)
-          setSelectedObjectId(objectId)
-          setViewportContextMenu({ x: menuX, y: menuY, target: "object", targetId: objectId })
-          return
-        }
-        setSelectedCameraId(null)
-        setSelectedObjectId(null)
-        setViewportContextMenu({ x: menuX, y: menuY, target: "empty" })
-      }, 140)
     }
     renderer.domElement.addEventListener("pointerdown", onPointerDown, true)
     renderer.domElement.addEventListener("pointermove", onPointerMove, true)
     renderer.domElement.addEventListener("pointerup", onPointerUp, true)
     renderer.domElement.addEventListener("pointercancel", onPointerCancel, true)
-    renderer.domElement.addEventListener("contextmenu", onContextMenu, true)
+    renderer.domElement.addEventListener("contextmenu", preventBrowserGesture, true)
+    renderer.domElement.addEventListener("auxclick", preventBrowserGesture, true)
+    renderer.domElement.addEventListener("dragstart", preventBrowserGesture, true)
+    renderer.domElement.addEventListener("gesturestart", preventBrowserGesture, true)
+    renderer.domElement.addEventListener("gesturechange", preventBrowserGesture, true)
+    renderer.domElement.addEventListener("gestureend", preventBrowserGesture, true)
 
     const onTransformStart = () => {
       interactionBeforeRef.current = snapshotRuntimeScene(runtime, directorRef.current.scene)
@@ -1358,14 +1372,18 @@ export default function DirectorDesk({
 
     return () => {
       runtime.disposed = true
-      if (contextMenuTimer !== null) window.clearTimeout(contextMenuTimer)
       renderer.setAnimationLoop(null)
       resizeObserver.disconnect()
       renderer.domElement.removeEventListener("pointerdown", onPointerDown, true)
       renderer.domElement.removeEventListener("pointermove", onPointerMove, true)
       renderer.domElement.removeEventListener("pointerup", onPointerUp, true)
       renderer.domElement.removeEventListener("pointercancel", onPointerCancel, true)
-      renderer.domElement.removeEventListener("contextmenu", onContextMenu, true)
+      renderer.domElement.removeEventListener("contextmenu", preventBrowserGesture, true)
+      renderer.domElement.removeEventListener("auxclick", preventBrowserGesture, true)
+      renderer.domElement.removeEventListener("dragstart", preventBrowserGesture, true)
+      renderer.domElement.removeEventListener("gesturestart", preventBrowserGesture, true)
+      renderer.domElement.removeEventListener("gesturechange", preventBrowserGesture, true)
+      renderer.domElement.removeEventListener("gestureend", preventBrowserGesture, true)
       transform.removeEventListener("mouseDown", onTransformStart)
       transform.removeEventListener("mouseUp", onTransformEnd)
       transform.removeEventListener("dragging-changed", onDraggingChanged)
@@ -1461,6 +1479,14 @@ export default function DirectorDesk({
     () => director.scene.objects.find((item) => item.id === selectedObjectId) || null,
     [director.scene.objects, selectedObjectId],
   )
+  useEffect(() => {
+    if (selectedObjectId) {
+      setInspectorTab("object")
+      setObjectInspectorTab("transform")
+    } else if (selectedCameraId) {
+      setInspectorTab("camera")
+    }
+  }, [selectedCameraId, selectedObjectId])
   const selectedCamera = useMemo(
     () => director.scene.cameras.find((item) => item.id === selectedCameraId)
       || activeDirectorCamera(director.scene),
@@ -1702,6 +1728,7 @@ export default function DirectorDesk({
     syncLegacyActiveCamera(scene)
     setSelectedObjectId(null)
     setSelectedCameraId(cameraId)
+    setInspectorTab("camera")
     const nextMode = preview ? "camera" : "overview"
     cameraViewModeRef.current = nextMode
     setCameraViewMode(nextMode)
@@ -1741,6 +1768,7 @@ export default function DirectorDesk({
     scene.active_camera_id = camera.id
     setSelectedObjectId(null)
     setSelectedCameraId(camera.id)
+    setInspectorTab("camera")
     cameraViewModeRef.current = "camera"
     setCameraViewMode("camera")
     persistCameraScene(scene)
@@ -2266,7 +2294,7 @@ export default function DirectorDesk({
   )
 
   return createPortal((
-    <div className="openreel-director-desk fixed inset-0 z-[100] isolate grid min-w-[960px] grid-rows-[68px_minmax(0,1fr)_208px] overflow-hidden bg-[#070910] text-zinc-100">
+    <div className="openreel-director-desk fixed inset-0 z-[100] isolate grid min-w-[960px] grid-rows-[68px_minmax(0,1fr)_208px] overflow-hidden overscroll-none bg-[#070910] text-zinc-100">
       <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_18%_-10%,rgba(139,124,255,.11),transparent_30%),radial-gradient(circle_at_82%_0%,rgba(85,215,255,.06),transparent_28%)]" />
       <header className="relative z-30 flex items-center justify-between gap-4 border-b border-white/[0.075] bg-[#0b0e16]/95 px-4 shadow-[0_14px_45px_rgba(0,0,0,.24)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-3">
@@ -2405,7 +2433,7 @@ export default function DirectorDesk({
         </div>
       ) : null}
 
-      <div className="relative z-10 grid min-h-0 grid-cols-[220px_minmax(0,1fr)_250px] 2xl:grid-cols-[260px_minmax(0,1fr)_300px]">
+      <div className="relative z-10 grid min-h-0 grid-cols-[220px_minmax(0,1fr)_300px] 2xl:grid-cols-[260px_minmax(0,1fr)_340px]">
         <aside className="flex min-h-0 flex-col border-r border-white/[0.07] bg-[#0a0d14]/94">
           <div className="border-b border-white/[0.065] px-3 pb-3 pt-3">
             <div className="grid grid-cols-3 rounded-xl border border-white/[0.075] bg-black/25 p-1">
@@ -2501,7 +2529,7 @@ export default function DirectorDesk({
                     <button
                       key={object.id}
                       type="button"
-                      onClick={() => { setSelectedCameraId(null); setSelectedObjectId(object.id) }}
+                      onClick={() => { setSelectedCameraId(null); setSelectedObjectId(object.id); setInspectorTab("object") }}
                       className={cn("group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition", selectedObjectId === object.id ? "border-violet-300/22 bg-violet-300/[0.085] text-violet-50 shadow-[inset_3px_0_rgba(167,139,250,.65)]" : "border-transparent text-zinc-400 hover:border-white/[0.07] hover:bg-white/[0.035] hover:text-zinc-200")}
                     >
                       <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20 text-[9px] font-semibold tabular-nums text-zinc-600"><span className="absolute bottom-1 right-1 h-2 w-2 rounded-full border border-[#11151e]" style={{ backgroundColor: object.color }} />{String(index + 1).padStart(2, "0")}</span>
@@ -2546,7 +2574,7 @@ export default function DirectorDesk({
         </aside>
 
         <main className="relative min-h-0 overflow-hidden bg-[#05070c] p-3 2xl:p-4">
-          <div ref={viewportRef} className="relative h-full overflow-hidden rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
+          <div ref={viewportRef} className="relative h-full touch-none select-none overflow-hidden overscroll-none rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
             <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(circle_at_50%_38%,transparent_35%,rgba(0,0,0,.24)_100%)]" />
             {!loaded && <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#070a10]/90 text-[10px] text-zinc-500 backdrop-blur-sm"><span className="mb-3 h-7 w-7 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />正在准备 3D 场景…</div>}
             {showThirds && (
@@ -2621,17 +2649,34 @@ export default function DirectorDesk({
           </div>
         </main>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-white/[0.07] bg-[#0a0d14]/94 p-3 2xl:p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-semibold text-zinc-200">检查器</div>
-              <div className="mt-0.5 text-[9px] text-zinc-600">编辑对象与镜头参数</div>
+        <aside className="flex min-h-0 flex-col overflow-hidden border-l border-white/[0.07] bg-[#0a0d14]/94">
+          <div className="shrink-0 border-b border-white/[0.065] bg-[#0b0e16]/96 px-3 pb-3 pt-3 2xl:px-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-zinc-200">属性检查器</div>
+                <div className="mt-0.5 truncate text-[8px] text-zinc-600">
+                  {inspectorTab === "object" ? selectedObject?.name || "尚未选择对象" : inspectorTab === "camera" ? selectedCamera.name : "场景与视口设置"}
+                </div>
+              </div>
+              <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2 py-0.5 text-[8px] tabular-nums text-zinc-600">r{director.revision}</span>
             </div>
-            <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2 py-0.5 text-[8px] tabular-nums text-zinc-600">r{director.revision}</span>
+            <div className="grid grid-cols-3 rounded-xl border border-white/[0.075] bg-black/25 p-1" role="tablist" aria-label="检查器分类">
+              <button type="button" role="tab" aria-selected={inspectorTab === "object"} disabled={!selectedObject} onClick={() => setInspectorTab("object")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-30", inspectorTab === "object" ? "bg-violet-300/[0.13] text-violet-100 shadow-sm" : "text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="move" className="h-3 w-3" />对象</button>
+              <button type="button" role="tab" aria-selected={inspectorTab === "camera"} onClick={() => setInspectorTab("camera")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[9px] font-medium transition", inspectorTab === "camera" ? "bg-cyan-300/[0.12] text-cyan-100 shadow-sm" : "text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="camera" className="h-3 w-3" />机位</button>
+              <button type="button" role="tab" aria-selected={inspectorTab === "scene"} onClick={() => setInspectorTab("scene")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[9px] font-medium transition", inspectorTab === "scene" ? "bg-white/[0.09] text-zinc-100 shadow-sm" : "text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="grid" className="h-3 w-3" />场景</button>
+            </div>
           </div>
 
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 2xl:p-4">
+          {inspectorTab === "object" ? (
+            <>
           {selectedObject ? (
             <>
+            <div className="mb-3 grid grid-cols-2 rounded-xl border border-white/[0.07] bg-black/20 p-1">
+              <button type="button" onClick={() => setObjectInspectorTab("transform")} className={cn("h-8 rounded-lg text-[9px] font-medium transition", objectInspectorTab === "transform" ? "bg-white/[0.09] text-white" : "text-zinc-500 hover:text-zinc-200")}>基础与变换</button>
+              <button type="button" disabled={!selectedMannequin && !selectedCustomAsset} onClick={() => { setObjectInspectorTab("rig"); setRigInspectorTab(selectedMannequin ? "setup" : "motion") }} className={cn("h-8 rounded-lg text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", objectInspectorTab === "rig" ? "bg-violet-300/[0.13] text-violet-100" : "text-zinc-500 hover:text-zinc-200")}>角色与动作</button>
+            </div>
+            {objectInspectorTab === "transform" ? (
             <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018] shadow-[inset_0_1px_rgba(255,255,255,.025)]">
               <div className="flex items-center gap-2.5 border-b border-white/[0.065] p-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-black/20 text-violet-200/60"><BuiltinGlyph assetId={selectedObject.asset_id} /></span>
@@ -2650,7 +2695,8 @@ export default function DirectorDesk({
                 <button type="button" title="删除" onClick={deleteSelectedObject} className="flex h-8 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-red-400/10 hover:text-red-300"><DirectorIcon name="trash" className="h-3.5 w-3.5" /></button>
               </div>
             </section>
-            {selectedMannequin ? (
+            ) : null}
+            {objectInspectorTab === "rig" && selectedMannequin ? (
               <section className="mt-3 overflow-hidden rounded-2xl border border-violet-300/[0.12] bg-[linear-gradient(145deg,rgba(139,124,255,.055),rgba(255,255,255,.012))]">
                 <div className="flex items-center justify-between border-b border-white/[0.065] px-3 py-2.5">
                   <div className="flex items-center gap-2">
@@ -2660,7 +2706,13 @@ export default function DirectorDesk({
                   <span className="rounded-full border border-white/[0.07] bg-black/20 px-2 py-0.5 text-[8px] text-zinc-500">{Math.round(selectedMannequin.proportions.height * 100)} cm</span>
                 </div>
 
+                <div className="grid grid-cols-3 border-b border-white/[0.065] bg-black/10 p-1.5">
+                  {([['setup', '外形比例'], ['motion', '动作姿势'], ['joints', '关节微调']] as const).map(([tab, label]) => <button key={tab} type="button" onClick={() => setRigInspectorTab(tab)} className={cn("h-8 rounded-lg text-[8px] font-medium transition", rigInspectorTab === tab ? "bg-violet-300/[0.13] text-violet-100" : "text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300")}>{label}</button>)}
+                </div>
+
                 <div className="space-y-4 p-3">
+                  {rigInspectorTab === "setup" ? (
+                    <>
                   <div>
                     <div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">人体类型</span><span className="text-[8px] text-zinc-700">解剖轮廓</span></div>
                     <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1">
@@ -2715,8 +2767,11 @@ export default function DirectorDesk({
                       )
                     })}
                   </div>
+                    </>
+                  ) : null}
 
-                  <div className="border-t border-white/[0.065] pt-3">
+                  {rigInspectorTab === "motion" ? (
+                  <div>
                     <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">姿势预设</span><span className="text-[8px] text-zinc-700">{DIRECTOR_MANNEQUIN_POSE_PRESETS.length} 组定格动作</span></div>
                     <div className="grid grid-cols-3 gap-1.5">
                       {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => (
@@ -2724,8 +2779,10 @@ export default function DirectorDesk({
                       ))}
                     </div>
                   </div>
+                  ) : null}
 
-                  <div className="border-t border-white/[0.065] pt-3">
+                  {rigInspectorTab === "joints" ? (
+                  <div>
                     <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">关节微调</span><button type="button" onClick={resetMannequinJoint} className="text-[8px] text-zinc-600 transition hover:text-zinc-200">归零当前关节</button></div>
                     <select value={selectedJoint} onChange={(event) => setSelectedJoint(event.target.value as DirectorMannequinJoint)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-violet-300/35">
                       {(["躯干", "左臂", "左手", "右臂", "右手", "左腿", "右腿"] as const).map((group) => (
@@ -2748,10 +2805,11 @@ export default function DirectorDesk({
                     </div>
                     <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 使用原版骨骼的分部位安全活动范围；手指含根节、中节、末节，足部含踝和前脚掌。</div>
                   </div>
+                  ) : null}
                 </div>
               </section>
             ) : null}
-            {selectedCustomAsset && selectedCustomRig ? (
+            {objectInspectorTab === "rig" && selectedCustomAsset && selectedCustomRig ? (
               <section className="mt-3 overflow-hidden rounded-2xl border border-cyan-300/[0.12] bg-[linear-gradient(145deg,rgba(34,211,238,.045),rgba(255,255,255,.012))]">
                 <div className="flex items-center justify-between border-b border-white/[0.065] px-3 py-2.5">
                   <div className="flex min-w-0 items-center gap-2">
@@ -2770,8 +2828,15 @@ export default function DirectorDesk({
                   </span>
                 </div>
 
+                <div className="grid grid-cols-3 border-b border-white/[0.065] bg-black/10 p-1.5">
+                  <button type="button" onClick={() => setRigInspectorTab("motion")} className={cn("h-8 rounded-lg text-[8px] font-medium transition", rigInspectorTab === "motion" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300")}>动作播放</button>
+                  <button type="button" disabled={!selectedCustomAsset.analysis?.humanoid.recognized} onClick={() => setRigInspectorTab("joints")} className={cn("h-8 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", rigInspectorTab === "joints" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300")}>关节微调</button>
+                  <button type="button" onClick={() => setRigInspectorTab("analysis")} className={cn("h-8 rounded-lg text-[8px] font-medium transition", rigInspectorTab === "analysis" ? "bg-white/[0.09] text-zinc-200" : "text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300")}>模型解析</button>
+                </div>
+
                 {selectedCustomAsset.analysis ? (
                   <div className="space-y-4 p-3">
+                    {rigInspectorTab === "motion" ? (
                     <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1">
                       <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "bind" }))} className={cn("h-8 rounded-lg text-[8px] font-medium transition", selectedCustomRig.mode === "bind" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>原始姿势</button>
                       <button type="button" disabled={!selectedCustomAsset.analysis.humanoid.recognized} onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "pose" }))} className={cn("h-8 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", selectedCustomRig.mode === "pose" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>系统姿势</button>
@@ -2786,15 +2851,18 @@ export default function DirectorDesk({
                         updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: clip.index, animation_name: clip.name, animation_playing: true, animation_loop: true }))
                       }} className={cn("h-8 rounded-lg text-[8px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", selectedCustomRig.mode === "animation" && selectedNativeClip?.kind === "animation" ? "bg-cyan-300/[0.13] text-cyan-100" : "text-zinc-600 hover:text-zinc-300")}>连续动画</button>
                     </div>
+                    ) : null}
 
+                    {rigInspectorTab === "analysis" ? (
                     <div className="grid grid-cols-3 gap-1.5 text-center">
                       <div className="rounded-lg border border-white/[0.055] bg-black/15 px-1 py-2"><span className="block text-[11px] font-semibold tabular-nums text-zinc-300">{selectedCustomAsset.analysis.skin_count}</span><span className="text-[7px] text-zinc-700">蒙皮</span></div>
                       <div className="rounded-lg border border-white/[0.055] bg-black/15 px-1 py-2"><span className="block text-[11px] font-semibold tabular-nums text-zinc-300">{selectedCustomAsset.analysis.humanoid.mapped_joint_count}/{selectedCustomAsset.analysis.humanoid.joint_count}</span><span className="text-[7px] text-zinc-700">人体映射</span></div>
                       <div className="rounded-lg border border-white/[0.055] bg-black/15 px-1 py-2"><span className="block truncate text-[9px] font-semibold uppercase text-zinc-300">{selectedCustomAsset.analysis.humanoid.profile}</span><span className="text-[7px] text-zinc-700">骨架类型</span></div>
                     </div>
+                    ) : null}
 
-                    {selectedNativePoseClips.length > 0 ? (
-                      <div className="border-t border-white/[0.065] pt-3">
+                    {rigInspectorTab === "motion" && selectedNativePoseClips.length > 0 ? (
+                      <div>
                         <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">模型自带定格动作</span><span className="text-[8px] text-zinc-700">GLB 原始短关键帧 · 选中后定格</span></div>
                         <div className="grid grid-cols-2 gap-1.5">
                           {selectedNativePoseClips.map((clip) => (
@@ -2807,8 +2875,8 @@ export default function DirectorDesk({
                       </div>
                     ) : null}
 
-                    {selectedContinuousAnimationClips.length > 0 ? (
-                      <div className="border-t border-white/[0.065] pt-3">
+                    {rigInspectorTab === "motion" && selectedContinuousAnimationClips.length > 0 ? (
+                      <div>
                         <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">模型内置连续动画</span><span className="text-[8px] text-zinc-700">GLB 原始时间序列 · 可播放和循环</span></div>
                         <select value={selectedNativeClip?.kind === "animation" ? selectedNativeClip.index : ""} onChange={(event) => {
                           const animationIndex = Number(event.target.value)
@@ -2831,16 +2899,17 @@ export default function DirectorDesk({
                       </div>
                     ) : null}
 
-                    {selectedCustomAsset.analysis.humanoid.recognized ? (
-                      <>
-                        <div className="border-t border-white/[0.065] pt-3">
+                    {rigInspectorTab === "motion" && selectedCustomAsset.analysis.humanoid.recognized ? (
+                        <div>
                           <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">系统姿势预设</span><span className="text-[8px] text-zinc-700">OpenReel 关节数据 · 非模型原动画</span></div>
                           <div className="grid grid-cols-3 gap-1.5">
                             {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => <button key={preset.id} type="button" title={preset.description} onClick={() => applyCustomPosePreset(preset.id)} className={cn("h-8 rounded-lg border text-[8px] font-medium transition", selectedCustomRig.mode === "pose" && selectedCustomRig.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>{preset.label}</button>)}
                           </div>
                         </div>
+                    ) : null}
 
-                        <div className="border-t border-white/[0.065] pt-3">
+                    {rigInspectorTab === "joints" && selectedCustomAsset.analysis.humanoid.recognized ? (
+                        <div>
                           <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">映射关节微调</span><button type="button" onClick={resetCustomRigJoint} className="text-[8px] text-zinc-600 transition hover:text-zinc-200">归零当前关节</button></div>
                           <select value={selectedJoint} onChange={(event) => setSelectedJoint(event.target.value as DirectorMannequinJoint)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
                             {(["躯干", "左臂", "左手", "右臂", "右手", "左腿", "右腿"] as const).map((group) => <optgroup key={group} label={group}>{DIRECTOR_MANNEQUIN_JOINT_INFO.filter((joint) => joint.group === group).map((joint) => <option key={joint.id} value={joint.id}>{joint.label}{selectedCustomAsset.analysis?.humanoid.joint_map[anatomicalJointForStage(joint.id)] ? "" : "（未映射）"}</option>)}</optgroup>)}
@@ -2852,10 +2921,10 @@ export default function DirectorDesk({
                             })}
                           </div>
                         </div>
-                      </>
                     ) : null}
 
-                    <details className="border-t border-white/[0.065] pt-3 text-[8px] text-zinc-500">
+                    {rigInspectorTab === "analysis" ? (
+                    <details open className="text-[8px] text-zinc-500">
                       <summary className="cursor-pointer select-none font-medium text-zinc-400">完整识别结果 · {selectedCustomAsset.analysis.bone_count} 骨骼 / {selectedNativePoseClips.length} 定格动作 / {selectedContinuousAnimationClips.length} 连续动画</summary>
                       {selectedCustomAsset.analysis.error ? <p className="mt-2 text-red-300/70">{selectedCustomAsset.analysis.error}</p> : null}
                       <div className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-white/[0.055] bg-black/20 p-2 font-mono text-[7px] leading-3 text-zinc-600">
@@ -2863,6 +2932,7 @@ export default function DirectorDesk({
                       </div>
                       {selectedCustomAsset.analysis.animations.length ? <div className="mt-2 space-y-1">{selectedCustomAsset.analysis.animations.map((item) => <div key={`${item.index}-${item.name}`} className="rounded-lg border border-white/[0.05] bg-black/15 px-2 py-1.5"><span className={cn("mr-1 rounded px-1 py-0.5 text-[6px] font-semibold", item.kind === "pose" ? "bg-amber-300/10 text-amber-200/80" : "bg-cyan-300/10 text-cyan-200/80")}>{item.kind === "pose" ? "定格动作" : "连续动画"}</span><span className="text-zinc-400">{item.name}</span> · {item.keyframe_count || "?"} 关键帧 · {item.channel_count} 通道 · {item.target_node_count} 节点 · {item.properties.join("/") || "未知属性"}</div>)}</div> : null}
                     </details>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="p-3 text-[8px] leading-4 text-zinc-600">该模型尚无解析数据，重新载入导演台后会自动补充骨骼、定格动作与连续动画识别。</div>
@@ -2877,8 +2947,12 @@ export default function DirectorDesk({
               <span className="mt-1 max-w-[190px] text-[8px] leading-4 text-zinc-700">{selectedCameraId ? "可在总览中移动或旋转相机，也可用下方坐标精确调整。" : "在视口中点击模型或相机，或从左侧列表中选择。"}</span>
             </section>
           )}
+            </>
+          ) : null}
 
-          <section className="mt-3 overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
+          {inspectorTab === "camera" ? (
+            <>
+          <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
             <div className="flex items-center gap-2 border-b border-white/[0.065] px-3 py-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[0.07] text-cyan-200/70"><DirectorIcon name="camera" className="h-3.5 w-3.5" /></span><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><div className="truncate text-[10px] font-medium text-zinc-300">多机位设置</div><span className="rounded bg-white/[0.05] px-1 text-[7px] text-zinc-500">{director.scene.cameras.length}/{MAX_DIRECTOR_CAMERAS}</span></div><div className="truncate text-[8px] text-zinc-700">每个机位独立保存位置、方向和焦段</div></div></div>
             <div className="space-y-4 p-3">
               <div>
@@ -2892,21 +2966,20 @@ export default function DirectorDesk({
                   <button type="button" onClick={() => switchCameraView("camera")} className={cn("h-7 rounded-lg border text-[8px] transition", cameraViewMode === "camera" ? "border-violet-300/20 bg-violet-300/[0.08] text-violet-100" : "border-white/[0.06] bg-black/15 text-zinc-500")}>进入取景</button>
                 </div>
               </div>
-              <div>
-                <div className="mb-1.5 text-[9px] font-medium text-zinc-500">画幅比例</div>
-                <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.07] bg-black/20 p-1">
-                  {(["16:9", "9:16", "1:1", "4:3"] as DirectorAspectRatio[]).map((item) => <button key={item} type="button" onClick={() => changeAspectRatio(item)} className={cn("h-7 rounded-lg text-[8px] font-medium transition", director.scene.aspect_ratio === item ? "bg-white/[0.1] text-zinc-100 shadow-sm" : "text-zinc-600 hover:text-zinc-300")}>{item}</button>)}
-                </div>
-              </div>
-              {(["position", "target"] as const).map((field) => (
+              <details open className="group rounded-xl border border-white/[0.065] bg-black/15 p-2.5">
+                <summary className="flex cursor-pointer list-none items-center justify-between text-[9px] font-medium text-zinc-400"><span>空间位置与朝向</span><span className="text-[7px] text-zinc-700 group-open:hidden">展开</span><span className="hidden text-[7px] text-zinc-700 group-open:inline">收起</span></summary>
+                <div className="mt-3 space-y-3">
+                {(["position", "target"] as const).map((field) => (
                 <div key={field}>
                   <div className="mb-1.5 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">{field === "position" ? "相机位置" : "观察目标"}</span><span className="text-[7px] text-zinc-700">世界坐标</span></div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {selectedCamera[field].map((value, index) => <label key={`${field}-${index}`} className="rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1"><span className={cn("text-[8px] font-semibold", index === 0 ? "text-rose-300/70" : index === 1 ? "text-emerald-300/70" : "text-sky-300/70")}>{"XYZ"[index]}</span><input type="number" step="0.1" value={Number(value.toFixed(3))} onChange={(event) => changeCameraVector(field, index, Number(event.target.value))} className="mt-0.5 w-full bg-transparent text-[9px] tabular-nums text-zinc-200 outline-none" /></label>)}
                   </div>
                 </div>
-              ))}
-              <label className="block">
+                ))}
+                </div>
+              </details>
+              <label className="block rounded-xl border border-white/[0.065] bg-black/15 p-2.5">
                 <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">视场角</span><span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[9px] tabular-nums text-cyan-200/80">{Math.round(selectedCamera.fov)}°</span></div>
                 <input type="range" min="20" max="90" value={selectedCamera.fov} onChange={(event) => updateSelectedCamera({ fov: Number(event.target.value) })} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
                 <div className="mt-1.5 flex justify-between text-[7px] text-zinc-700"><span>长焦 20°</span><span>广角 90°</span></div>
@@ -2920,6 +2993,43 @@ export default function DirectorDesk({
           </section>
 
           <div className="mt-3 rounded-xl border border-violet-300/[0.09] bg-violet-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-violet-200/70">工作提示：</span>总览默认只显示相机机身；需要校准方向时再打开“机位线”。点击相机直接取景，截图仍会按全部机位分别保存。</div>
+            </>
+          ) : null}
+
+          {inspectorTab === "scene" ? (
+            <div className="space-y-3">
+              <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
+                <div className="flex items-center gap-2 border-b border-white/[0.065] px-3 py-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055] text-zinc-300"><DirectorIcon name="layers" className="h-3.5 w-3.5" /></span><div><div className="text-[10px] font-medium text-zinc-300">场景概览</div><div className="text-[8px] text-zinc-700">内容数量与输出状态</div></div></div>
+                <div className="grid grid-cols-3 gap-1.5 p-3 text-center">
+                  {([[director.scene.objects.length, "对象"], [director.scene.cameras.length, "机位"], [director.captures.length, "镜头"]] as const).map(([value, label]) => <div key={label} className="rounded-xl border border-white/[0.06] bg-black/20 px-1 py-2.5"><span className="block text-[14px] font-semibold tabular-nums text-zinc-200">{value}</span><span className="mt-0.5 block text-[7px] text-zinc-600">{label}</span></div>)}
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
+                <div className="border-b border-white/[0.065] px-3 py-2.5"><div className="text-[10px] font-medium text-zinc-300">构图与显示</div><div className="mt-0.5 text-[8px] text-zinc-700">只影响导演台视口，不改变模型</div></div>
+                <div className="space-y-3 p-3">
+                  <div><div className="mb-1.5 text-[9px] font-medium text-zinc-500">画幅比例</div><div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.07] bg-black/20 p-1">{(["16:9", "9:16", "1:1", "4:3"] as DirectorAspectRatio[]).map((item) => <button key={item} type="button" onClick={() => changeAspectRatio(item)} className={cn("h-7 rounded-lg text-[8px] font-medium transition", director.scene.aspect_ratio === item ? "bg-white/[0.1] text-zinc-100 shadow-sm" : "text-zinc-600 hover:text-zinc-300")}>{item}</button>)}</div></div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button type="button" onClick={() => setShowGrid((value) => !value)} className={cn("h-9 rounded-xl border text-[8px] transition", showGrid ? "border-violet-300/20 bg-violet-300/[0.09] text-violet-100" : "border-white/[0.065] bg-black/15 text-zinc-500")}>网格 · {showGrid ? "开" : "关"}</button>
+                    <button type="button" onClick={() => setShowThirds((value) => !value)} className={cn("h-9 rounded-xl border text-[8px] transition", showThirds ? "border-violet-300/20 bg-violet-300/[0.09] text-violet-100" : "border-white/[0.065] bg-black/15 text-zinc-500")}>三分线 · {showThirds ? "开" : "关"}</button>
+                    <button type="button" onClick={() => setShowCameraGuides((value) => !value)} className={cn("h-9 rounded-xl border text-[8px] transition", showCameraGuides ? "border-cyan-300/20 bg-cyan-300/[0.09] text-cyan-100" : "border-white/[0.065] bg-black/15 text-zinc-500")}>机位线 · {showCameraGuides ? "开" : "关"}</button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
+                <div className="border-b border-white/[0.065] px-3 py-2.5"><div className="text-[10px] font-medium text-zinc-300">摆放与导航</div><div className="mt-0.5 text-[8px] text-zinc-700">控制拖动物体和总览方式</div></div>
+                <div className="space-y-2 p-3">
+                  <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.065] bg-black/20 p-1"><button type="button" onClick={() => { setPlacementMode("ground"); setTransformMode("translate") }} className={cn("h-8 rounded-lg text-[8px] transition", placementMode === "ground" ? "bg-violet-300/[0.13] text-violet-100" : "text-zinc-500")}>平面摆放</button><button type="button" onClick={() => setPlacementMode("free")} className={cn("h-8 rounded-lg text-[8px] transition", placementMode === "free" ? "bg-violet-300/[0.13] text-violet-100" : "text-zinc-500")}>自由变换</button></div>
+                  <button type="button" disabled={placementMode !== "ground"} onClick={() => setSnapToGrid((value) => !value)} className={cn("h-8 w-full rounded-xl border text-[8px] transition disabled:opacity-30", snapToGrid ? "border-cyan-300/20 bg-cyan-300/[0.07] text-cyan-100" : "border-white/[0.065] bg-black/15 text-zinc-500")}>0.25 单位网格吸附 · {snapToGrid ? "开启" : "关闭"}</button>
+                  <div className="grid grid-cols-2 gap-1.5 pt-1"><button type="button" onClick={frameAll} className="h-8 rounded-xl border border-white/[0.07] bg-black/15 text-[8px] text-zinc-400 transition hover:text-white">显示全部</button><button type="button" onClick={() => switchCameraView("overview")} className="h-8 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.05] text-[8px] text-cyan-100/80 transition hover:bg-cyan-300/[0.1]">返回空间总览</button></div>
+                </div>
+              </section>
+
+              <div className="rounded-xl border border-cyan-300/[0.09] bg-cyan-300/[0.035] px-3 py-2.5 text-[8px] leading-4 text-zinc-600"><span className="font-medium text-cyan-200/70">鼠标导航：</span>右键短按打开菜单；按住右键拖动只平移导演台视角，浏览器导航手势已在视口内禁用。</div>
+            </div>
+          ) : null}
+          </div>
         </aside>
       </div>
 
