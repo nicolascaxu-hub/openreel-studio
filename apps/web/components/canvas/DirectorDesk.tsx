@@ -1616,22 +1616,25 @@ export default function DirectorDesk({
     }
   }, [commitRuntimeScene, enqueueSceneSave, loaded, setLocalDirector])
 
+  const panoramaImageUrl = director.scene.panorama?.image_url || ""
+  const panoramaVisible = director.scene.panorama?.visible === true
+  const panoramaRotationY = director.scene.panorama?.rotation_y
+
   useEffect(() => {
     const runtime = runtimeRef.current
-    const panorama = director.scene.panorama
     if (!runtime || runtime.disposed) return
     runtime.panoramaLoadToken += 1
     const token = runtime.panoramaLoadToken
     disposeRuntimePanorama(runtime)
     setPanoramaError(null)
-    if (!panorama?.visible || !panorama.image_url) {
+    if (!panoramaVisible || !panoramaImageUrl) {
       setPanoramaStatus("idle")
       return
     }
     setPanoramaStatus("loading")
     const loader = new THREE.TextureLoader()
     loader.load(
-      resolveMediaUrl(panorama.image_url),
+      resolveMediaUrl(panoramaImageUrl),
       (texture) => {
         if (runtime.disposed || runtime.panoramaLoadToken !== token || runtimeRef.current !== runtime) {
           texture.dispose()
@@ -1646,7 +1649,7 @@ export default function DirectorDesk({
         })
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(360, 96, 48), material)
         mesh.name = "director panorama environment"
-        mesh.rotation.y = THREE.MathUtils.degToRad(panorama.rotation_y)
+        mesh.rotation.y = THREE.MathUtils.degToRad(directorRef.current.scene.panorama?.rotation_y || 0)
         mesh.renderOrder = -100
         mesh.raycast = () => undefined
         runtime.panoramaTexture = texture
@@ -1666,14 +1669,13 @@ export default function DirectorDesk({
       runtime.panoramaLoadToken += 1
       disposeRuntimePanorama(runtime)
     }
-  }, [director.scene.panorama?.image_url, director.scene.panorama?.visible, loaded])
+  }, [loaded, panoramaImageUrl, panoramaVisible])
 
   useEffect(() => {
-    const panorama = director.scene.panorama
     const mesh = runtimeRef.current?.panoramaMesh
-    if (!panorama || !mesh) return
-    mesh.rotation.y = THREE.MathUtils.degToRad(panorama.rotation_y)
-  }, [director.scene.panorama?.rotation_y])
+    if (panoramaRotationY === undefined || !mesh) return
+    mesh.rotation.y = THREE.MathUtils.degToRad(panoramaRotationY)
+  }, [panoramaRotationY])
 
   useEffect(() => {
     const runtime = runtimeRef.current
