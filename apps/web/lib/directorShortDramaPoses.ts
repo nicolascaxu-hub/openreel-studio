@@ -21,7 +21,7 @@ export interface DirectorShortDramaPoseDefinition {
   keywords: readonly string[]
   base: string
   hands?: Partial<Record<"left" | "right", DirectorShortDramaHandShape>>
-  ground_contact?: "feet" | "knees" | "pelvis"
+  ground_contact?: "feet" | "left_knee" | "right_knee" | "pelvis"
   joints: Partial<Record<DirectorMannequinJoint, [number, number, number]>>
 }
 
@@ -720,7 +720,7 @@ export const DIRECTOR_SHORT_DRAMA_POSE_DEFINITIONS = [
     keywords: ["下跪", "求婚", "单膝", "跪地"],
     base: "lunge",
     hands: { left: "clasp", right: "clasp" },
-    ground_contact: "knees",
+    ground_contact: "right_knee",
     joints: {
       pelvis: [-2, 0, 0], spine: [2, 0, 0], chest: [-2, 0, 0],
       leftShoulder: [-24, -5, -14], rightShoulder: [-24, 5, 14],

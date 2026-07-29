@@ -82,7 +82,7 @@ def test_ground_actions_and_pose_picker_are_explicit() -> None:
     pose_source = _pose_source()
     ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
 
-    assert 'ground_contact: "knees"' in pose_source
+    assert 'ground_contact: "right_knee"' in pose_source
     assert pose_source.count('ground_contact: "pelvis"') == 2
     assert 'aria-label="搜索人物动作"' in ui_source
     assert 'aria-label="动作分类"' in ui_source
@@ -129,10 +129,32 @@ def test_pose_solver_constrains_palm_roll_and_grounded_lunges() -> None:
     assert "rightDrink" in refinement_source
     assert "rightWhisper" in refinement_source
     assert "deepCrouchedLegs" in refinement_source
-    assert "same vertical reach" in refinement_source
+    assert "folding toward the toes" in refinement_source
     assert "captureWristFrame" in model_source
     assert "constrainedDirectionAlignment" in model_source
     assert "unconstrained 180° roll" in model_source
+
+
+def test_one_leg_actions_use_anatomical_role_modules_and_one_knee_anchor() -> None:
+    refinement_source = REFINEMENT_SOURCE.read_text(encoding="utf-8")
+    pose_source = _pose_source()
+    model_source = MANNEQUIN_MODEL_SOURCE.read_text(encoding="utf-8")
+
+    for module in (
+        "plantedLeg", "runLegs", "kneelingLegs", "kickLegs",
+        "sneakStepLegs", "recoveryStepLegs",
+    ):
+        assert module in refinement_source
+    assert 'ground_contact: "right_knee"' in pose_source
+    assert 'preset?.ground_contact === "right_knee"' in model_source
+    assert "[jointBones.rightKnee]" in model_source
+    assert "[JOINT_BONES.rightKnee]" in model_source
+    assert "assertDirectorLegRole" in refinement_source
+    for role in (
+        "lead-step", "trailing-step", "running-swing", "running-drive",
+        "raised-knee", "kneeling-front", "kneeling-rear", "forward-kick",
+    ):
+        assert f'"{role}"' in refinement_source
 
 
 def test_joint_editor_exposes_every_deforming_joint_and_precise_axes() -> None:

@@ -614,7 +614,7 @@ export interface DirectorMannequinPoseDefinition {
   category: DirectorMannequinPoseCategory
   description: string
   keywords: string[]
-  ground_contact: "feet" | "knees" | "pelvis"
+  ground_contact: "feet" | "left_knee" | "right_knee" | "pelvis"
   joints: Record<DirectorMannequinJoint, [number, number, number]>
 }
 

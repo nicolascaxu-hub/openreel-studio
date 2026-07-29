@@ -4,6 +4,16 @@ export type DirectorPoseRotation = [number, number, number]
 export type DirectorPoseDirection = readonly [number, number, number]
 export type DirectorPoseJointValues = Partial<Record<string, DirectorPoseRotation>>
 export type DirectorHandPoseName = "relaxed" | "straight" | "open" | "soft-fist" | "fist" | "point" | "waist" | "clasp"
+export type DirectorLegRole =
+  | "planted"
+  | "lead-step"
+  | "trailing-step"
+  | "running-swing"
+  | "running-drive"
+  | "raised-knee"
+  | "kneeling-front"
+  | "kneeling-rear"
+  | "forward-kick"
 
 function directorFingerPose(
   side: "left" | "right",
@@ -177,6 +187,47 @@ export function directorLegChain(
   }
 }
 
+function assertDirectorLegRole(
+  role: DirectorLegRole,
+  thighDirection: DirectorPoseDirection,
+  calfDirection: DirectorPoseDirection,
+): void {
+  const thigh = new THREE.Vector3(...thighDirection).normalize()
+  const calf = new THREE.Vector3(...calfDirection).normalize()
+  const kneeAngle = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(thigh.dot(calf), -1, 1)))
+  const valid = role === "planted"
+    ? thigh.y < -.9 && calf.y < -.9
+    : role === "lead-step"
+      ? thigh.z > .25 && calf.z < 0
+      : role === "trailing-step"
+        ? thigh.z < -.25 && calf.z > 0
+        : role === "running-swing"
+          ? thigh.z > .5 && calf.z < -.5 && kneeAngle > 50
+          : role === "running-drive"
+            ? thigh.z < -.4 && calf.z < -.2 && thigh.y < -.5 && calf.y < -.5
+            : role === "raised-knee"
+              ? thigh.z > .8 && calf.y < -.6 && calf.z < 0
+              : role === "kneeling-front"
+                ? thigh.z > .8 && Math.abs(thigh.y) < .25 && calf.y < -.75 && calf.z < 0
+                : role === "kneeling-rear"
+                  ? thigh.y < -.75 && thigh.z < 0 && calf.y > 0 && calf.z < -.75
+                  : thigh.z > .8 && calf.z > .75 && kneeAngle >= 10
+  if (!valid) {
+    throw new Error(`导演腿型 ${role} 的髋膝踝方向不符合人体折叠规则`)
+  }
+}
+
+function directorLegRole(
+  side: "left" | "right",
+  role: DirectorLegRole,
+  thigh: DirectorPoseDirection,
+  calf: DirectorPoseDirection,
+  foot: DirectorPoseRotation = [0, 0, 0],
+): DirectorPoseJointValues {
+  assertDirectorLegRole(role, thigh, calf)
+  return directorLegChain(side, thigh, calf, foot)
+}
+
 export function directorSymmetricLegs(
   leftThigh: DirectorPoseDirection,
   leftCalf: DirectorPoseDirection,
@@ -188,9 +239,27 @@ export function directorSymmetricLegs(
   }
 }
 
+function legDirection(
+  side: "left" | "right",
+  down: number,
+  forward: number,
+  lateral = .025,
+): DirectorPoseDirection {
+  return [side === "left" ? -lateral : lateral, down, forward]
+}
+
+function plantedLeg(side: "left" | "right"): DirectorPoseJointValues {
+  return directorLegRole(
+    side,
+    "planted",
+    legDirection(side, -1, .018, .02),
+    legDirection(side, -1, 0, .012),
+  )
+}
+
 const relaxedArms = () => directorSymmetricArms([-.10, -.99, .06], [-.03, -1, .02])
 const attentionArms = () => directorSymmetricArms([-.025, -1, .015], [-.015, -1, .01])
-const standingLegs = () => directorSymmetricLegs([-.035, -1, .015], [-.015, -1, .01])
+const standingLegs = () => ({ ...plantedLeg("left"), ...plantedLeg("right") })
 const handsFront = () => directorSymmetricArms(
   [-.30, -.62, .72], [.58, .08, .81], [.05, -.20, .98], [1, 0, 0],
 )
@@ -231,18 +300,46 @@ const seatedLegs = () => directorSymmetricLegs([-.06, -.08, 1], [-.03, -.98, -.2
 const crouchedLegs = () => directorSymmetricLegs([-.09, -.38, .92], [-.04, -.83, -.56])
 const deepCrouchedLegs = () => directorSymmetricLegs([-.12, -.42, .90], [-.05, -.43, -.90])
 const lungeLegs = () => ({
-  // Both chains have the same vertical reach, so the forward and rear soles
-  // meet the stage instead of leaving the lead foot floating in mid-air.
-  ...directorLegChain("left", [-.05, -.65, .76], [-.02, -.98, -.20]),
-  ...directorLegChain("right", [.05, -.65, -.76], [.02, -.98, .20]),
+  // Lead knee travels forward while its ankle stays behind the knee; the rear
+  // knee travels backward while its ankle returns toward the body. This keeps
+  // both knees folding toward the toes instead of reversing either hinge.
+  ...directorLegRole("left", "lead-step", legDirection("left", -.78, .63, .05), legDirection("left", -.98, -.20, .02)),
+  ...directorLegRole("right", "trailing-step", legDirection("right", -.72, -.69, .05), legDirection("right", -.96, .28, .02)),
 })
 const highStepLegs = () => ({
-  ...directorLegChain("left", [-.04, .16, .99], [-.02, -1, .02], [0, 0, 0]),
-  ...directorLegChain("right", [.02, -1, .02], [.01, -1, 0]),
+  // A lifted thigh leads the motion; the shin hangs behind the knee rather
+  // than continuing forward and making the lower leg look reversed.
+  ...directorLegRole("left", "raised-knee", legDirection("left", .05, 1, .04), legDirection("left", -.96, -.28, .02)),
+  ...plantedLeg("right"),
 })
 const walkLegs = () => ({
-  ...directorLegChain("left", [-.04, -.70, .71], [-.02, -.96, .29], [-4, 0, 0]),
-  ...directorLegChain("right", [.04, -.84, -.54], [.02, -1, -.04], [3, 0, 0]),
+  ...directorLegRole("left", "lead-step", legDirection("left", -.72, .69, .04), legDirection("left", -.99, -.12, .02)),
+  ...directorLegRole("right", "trailing-step", legDirection("right", -.88, -.47, .04), legDirection("right", -.99, .10, .02)),
+})
+const runLegs = () => ({
+  ...directorLegRole("left", "running-swing", legDirection("left", -.45, .89, .04), legDirection("left", -.22, -.98, .02)),
+  ...directorLegRole("right", "running-drive", legDirection("right", -.72, -.69, .04), legDirection("right", -.88, -.48, .02)),
+})
+const kneelingLegs = () => ({
+  // Proposal-style kneel: the lead thigh is almost horizontal and the shin
+  // drops to a planted foot; the rear shin folds backward from the grounded
+  // right knee, with the ankle lifted behind it instead of under the torso.
+  ...directorLegRole("left", "kneeling-front", legDirection("left", -.10, 1, .04), legDirection("left", -.96, -.28, .02)),
+  ...directorLegRole("right", "kneeling-rear", legDirection("right", -.98, -.20, .04), legDirection("right", .18, -.98, .02), [22, 0, 0]),
+})
+const kickLegs = () => ({
+  // Keep a visible, forward-folding knee instead of locking the complete leg
+  // into a hyperextended line; the support chain remains vertical and flat.
+  ...directorLegRole("left", "forward-kick", legDirection("left", -.08, 1, .04), legDirection("left", -.30, .95, .02)),
+  ...plantedLeg("right"),
+})
+const sneakStepLegs = () => ({
+  ...directorLegRole("left", "lead-step", legDirection("left", -.48, .87, .06), legDirection("left", -.91, -.42, .03)),
+  ...directorLegRole("right", "trailing-step", legDirection("right", -.62, -.78, .06), legDirection("right", -.95, .31, .03)),
+})
+const recoveryStepLegs = () => ({
+  ...directorLegRole("left", "lead-step", legDirection("left", -.78, .62, .10), legDirection("left", -.99, -.08, .05)),
+  ...directorLegRole("right", "trailing-step", legDirection("right", -.86, -.50, .06), legDirection("right", -.98, .18, .04)),
 })
 
 const rightFace = () => directorArmChain("right", [.64, -.30, .71], [-.90, .38, .20], [-.99, .08, .03], [0, 0, -1])
@@ -316,6 +413,11 @@ export const DIRECTOR_POSE_MODULES = Object.freeze({
     lunge: lungeLegs,
     highStep: highStepLegs,
     walk: walkLegs,
+    run: runLegs,
+    kneeling: kneelingLegs,
+    kick: kickLegs,
+    sneakStep: sneakStepLegs,
+    recoveryStep: recoveryStepLegs,
   }),
   hands: Object.freeze({
     relaxed: (side: "left" | "right") => directorHandPose(side, "relaxed"),
@@ -380,8 +482,7 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
   "run": {
     ...directorArmChain("left", [-.18, -.42, .89], [.05, .34, .94]),
     ...directorArmChain("right", [.18, -.48, -.86], [-.04, .28, -.96]),
-    ...directorLegChain("left", [-.04, -.50, .86], [-.03, -.18, -.98], [-12, 0, 0]),
-    ...directorLegChain("right", [.04, -.62, -.78], [.02, -.42, -.91], [8, 0, 0]),
+    ...runLegs(),
   },
   "sit": { ...handsFront(), ...seatedLegs() },
   "crouch": {
@@ -478,8 +579,7 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
   "bend": { ...relaxedArms(), ...directorSymmetricLegs([-.04, -.94, .34], [-.02, -.99, -.12]) },
   "kneel": {
     ...handsFront(),
-    ...directorLegChain("left", [-.05, -.48, .88], [-.02, -.99, .12]),
-    ...directorLegChain("right", [.05, -.86, -.50], [.02, -.22, .98], [-8, 0, 0]),
+    ...kneelingLegs(),
   },
   "sit-cross-legged": {
     ...directorSymmetricArms([-.36, -.64, .68], [-.52, -.62, .58], [-.12, -.20, .97], [0, -1, 0]),
@@ -494,12 +594,12 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
   "sneak": {
     ...directorArmChain("left", [-.34, -.48, .81], [.28, .24, .93], [.05, .32, .95], [0, -1, 0]),
     ...directorArmChain("right", [.38, -.52, .76], [-.26, .18, .95], [-.04, .27, .96], [0, -1, 0]),
-    ...crouchedLegs(),
+    ...sneakStepLegs(),
   },
   "tiptoe": { ...directorSymmetricArms([-.48, -.80, .35], [-.55, -.78, .30], [-.08, -.18, .98], [0, -1, 0]), ...directorSymmetricLegs([-.04, -.98, .18], [-.02, -1, .04], [26, 0, 0]) },
   "stumble": {
     ...directorSymmetricArms([-.78, -.14, .61], [-.88, -.04, .47], [-.08, .08, .99], [0, -1, 0]),
-    ...walkLegs(),
+    ...recoveryStepLegs(),
   },
   "fall-back": {
     ...directorSymmetricArms([-.66, -.62, -.42], [-.72, -.58, -.38], [-.08, -.20, .98], [0, -1, 0]),
@@ -512,11 +612,16 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
   },
   "kick": {
     ...guardArms(),
-    ...directorLegChain("left", [-.04, .02, 1], [-.02, -.08, 1], [-5, 0, 0]),
-    ...directorLegChain("right", [.02, -1, .01], [.01, -1, 0]),
+    ...kickLegs(),
   },
   "block": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.guard(), DIRECTOR_POSE_MODULES.legs.lunge()),
-  "push": { ...directorSymmetricArms([-.26, -.22, .94], [-.06, -.08, 1], [0, 1, .04], [0, 0, 1]), ...lungeLegs() },
+  "push": {
+    // Keep the pelvis level so both soles remain planted; the forward drive is
+    // carried by the existing spine/chest lean instead of tilting the hips.
+    pelvis: [0, 0, 0],
+    ...directorSymmetricArms([-.26, -.22, .94], [-.06, -.08, 1], [0, 1, .04], [0, 0, 1]),
+    ...lungeLegs(),
+  },
   "dodge": { ...guardArms(), ...crouchedLegs() },
   "slap": {
     ...directorArmChain("left", [-.74, -.05, .67], [-.46, .08, .88], [0, 1, .04], [0, 0, 1]),

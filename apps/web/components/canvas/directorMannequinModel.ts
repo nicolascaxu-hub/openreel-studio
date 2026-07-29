@@ -538,8 +538,10 @@ export function directorRigGroundAnchor(
 ): DirectorRigGroundAnchor | null {
   const state = normalizeDirectorMannequin(rawState)
   const preset = DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === state.pose_preset)
-  const joints = preset?.ground_contact === "knees"
-    ? [jointBones.leftKnee, jointBones.rightKnee]
+  const joints = preset?.ground_contact === "left_knee"
+    ? [jointBones.leftKnee]
+    : preset?.ground_contact === "right_knee"
+      ? [jointBones.rightKnee]
     : preset?.ground_contact === "pelvis"
       ? [jointBones.pelvis]
       : []
@@ -551,7 +553,7 @@ export function directorRigGroundAnchor(
   if (!positions.length) return null
   return {
     y: Math.min(...positions),
-    clearance_ratio: preset?.ground_contact === "knees" ? 0.044 : 0.11,
+    clearance_ratio: preset?.ground_contact.endsWith("_knee") ? 0.044 : 0.11,
   }
 }
 
@@ -589,8 +591,12 @@ function groundMannequin(
   state: DirectorMannequinState,
 ): void {
   const preset = DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === state.pose_preset)
-  if (preset?.ground_contact === "knees") {
-    groundFromJoint(group, model, ["calf_l", "calf_r"], 0.075)
+  if (preset?.ground_contact === "left_knee") {
+    groundFromJoint(group, model, [JOINT_BONES.leftKnee], 0.075)
+    return
+  }
+  if (preset?.ground_contact === "right_knee") {
+    groundFromJoint(group, model, [JOINT_BONES.rightKnee], 0.075)
     return
   }
   if (preset?.ground_contact === "pelvis") {
