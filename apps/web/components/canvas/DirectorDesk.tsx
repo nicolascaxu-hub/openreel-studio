@@ -9,6 +9,7 @@ import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js"
 import {
   applyDirectorRigPose,
   createDirectorMannequin,
+  directorRigGroundAnchor,
   type DirectorRigJointBones,
 } from "./directorMannequinModel"
 import {
@@ -60,6 +61,7 @@ import {
   DIRECTOR_MANNEQUIN_JOINT_INFO,
   DIRECTOR_MANNEQUIN_JOINT_LIMITS,
   DIRECTOR_MANNEQUIN_JOINTS,
+  DIRECTOR_MANNEQUIN_POSE_CATEGORIES,
   DIRECTOR_MANNEQUIN_POSE_PRESETS,
   DIRECTOR_MANNEQUIN_SIZE_PRESETS,
   normalizeDirectorMannequin,
@@ -872,6 +874,8 @@ export default function DirectorDesk({
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
   const [modelCategory, setModelCategory] = useState("家居家具")
   const [modelQuery, setModelQuery] = useState("")
+  const [poseCategory, setPoseCategory] = useState("基础站姿")
+  const [poseQuery, setPoseQuery] = useState("")
   const [inspectorTab, setInspectorTab] = useState<"object" | "camera" | "scene">("camera")
   const [objectInspectorTab, setObjectInspectorTab] = useState<"transform" | "rig">("transform")
   const [rigInspectorTab, setRigInspectorTab] = useState<"setup" | "motion" | "joints" | "analysis">("motion")
@@ -889,6 +893,16 @@ export default function DirectorDesk({
         .some((value) => value.toLocaleLowerCase().includes(query))
     })
   }, [modelCategory, modelQuery])
+
+  const filteredPosePresets = useMemo(() => {
+    const query = poseQuery.trim().toLocaleLowerCase()
+    return DIRECTOR_MANNEQUIN_POSE_PRESETS.filter((preset) => {
+      if (poseCategory !== "全部" && preset.category !== poseCategory) return false
+      if (!query) return true
+      return [preset.label, preset.category, preset.description, ...preset.keywords]
+        .some((value) => value.toLocaleLowerCase().includes(query))
+    })
+  }, [poseCategory, poseQuery])
 
   const setLocalDirector = useCallback((next: DirectorDeskState) => {
     directorRef.current = next
@@ -1024,8 +1038,11 @@ export default function DirectorDesk({
       model.updateMatrixWorld(true)
       const restBox = new THREE.Box3().setFromObject(model)
       const restSize = restBox.getSize(new THREE.Vector3())
+      let poseGroundAnchor: ReturnType<typeof directorRigGroundAnchor> = null
       if (rig.mode === "pose" && analysis?.humanoid.recognized) {
-        applyDirectorRigPose(model, rig, resolveCustomRigBones(gltf, analysis.humanoid))
+        const rigBones = resolveCustomRigBones(gltf, analysis.humanoid)
+        applyDirectorRigPose(model, rig, rigBones)
+        poseGroundAnchor = directorRigGroundAnchor(model, rig, rigBones)
       } else if (rig.mode === "animation" && gltf.animations.length > 0) {
         const clip = (rig.animation_index === null ? undefined : gltf.animations[rig.animation_index])
           || gltf.animations.find((item) => item.name === rig.animation_name)
@@ -1065,7 +1082,10 @@ export default function DirectorDesk({
       content.name = `${asset.name} normalization frame`
       content.add(model)
       content.scale.setScalar(normalizedScale)
-      content.position.set(-center.x * normalizedScale, -box.min.y * normalizedScale, -center.z * normalizedScale)
+      const groundY = poseGroundAnchor
+        ? displaySize * poseGroundAnchor.clearance_ratio - poseGroundAnchor.y * normalizedScale
+        : -box.min.y * normalizedScale
+      content.position.set(-center.x * normalizedScale, groundY, -center.z * normalizedScale)
       content.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true
@@ -2786,7 +2806,7 @@ export default function DirectorDesk({
         </aside>
 
         <main className="relative min-h-0 overflow-hidden bg-[#05070c] p-3 2xl:p-4">
-          <div ref={viewportRef} className="relative h-full touch-none select-none overflow-hidden overscroll-none rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
+          <div ref={viewportRef} data-director-viewport className="relative h-full touch-none select-none overflow-hidden overscroll-none rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
             <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(circle_at_50%_38%,transparent_35%,rgba(0,0,0,.24)_100%)]" />
             {!loaded && <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#070a10]/90 text-[10px] text-zinc-500 backdrop-blur-sm"><span className="mb-3 h-7 w-7 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />正在准备 3D 场景…</div>}
             {showThirds && (
@@ -2985,11 +3005,20 @@ export default function DirectorDesk({
                   {rigInspectorTab === "motion" ? (
                   <div>
                     <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">姿势预设</span><span className="text-[8px] text-zinc-700">{DIRECTOR_MANNEQUIN_POSE_PRESETS.length} 组定格动作</span></div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => (
-                        <button key={preset.id} type="button" title={preset.description} onClick={() => applyPosePreset(preset.id)} className={cn("h-8 rounded-lg border text-[8px] font-medium transition", selectedMannequin.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>{preset.label}</button>
+                    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_88px] gap-1.5">
+                      <input aria-label="搜索人物动作" value={poseQuery} onChange={(event) => setPoseQuery(event.target.value)} placeholder="搜索动作…" className="h-8 min-w-0 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[8px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-300/35" />
+                      <select aria-label="动作分类" value={poseCategory} onChange={(event) => setPoseCategory(event.target.value)} className="h-8 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-1 text-[8px] text-zinc-400 outline-none focus:border-cyan-300/35">
+                        <option value="全部">全部分类</option>
+                        {DIRECTOR_MANNEQUIN_POSE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                      </select>
+                    </div>
+                    <div className="mb-1.5 text-right text-[7px] text-zinc-700">{filteredPosePresets.length} 个结果 · 单帧定格动作</div>
+                    <div className="grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+                      {filteredPosePresets.map((preset) => (
+                        <button data-director-pose={preset.id} key={preset.id} type="button" title={preset.description} onClick={() => applyPosePreset(preset.id)} className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedMannequin.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}><span className="block text-[8px] font-medium">{preset.label}</span><span className="mt-0.5 block truncate text-[6px] opacity-55">{preset.category}</span></button>
                       ))}
                     </div>
+                    {!filteredPosePresets.length ? <div className="rounded-lg border border-dashed border-white/[0.07] py-5 text-center text-[8px] text-zinc-700">没有匹配动作</div> : null}
                   </div>
                   ) : null}
 
@@ -3114,9 +3143,15 @@ export default function DirectorDesk({
                     {rigInspectorTab === "motion" && selectedCustomAsset.analysis.humanoid.recognized ? (
                         <div>
                           <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">系统姿势预设</span><span className="text-[8px] text-zinc-700">OpenReel 关节数据 · 非模型原动画</span></div>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {DIRECTOR_MANNEQUIN_POSE_PRESETS.map((preset) => <button key={preset.id} type="button" title={preset.description} onClick={() => applyCustomPosePreset(preset.id)} className={cn("h-8 rounded-lg border text-[8px] font-medium transition", selectedCustomRig.mode === "pose" && selectedCustomRig.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}>{preset.label}</button>)}
+                          <div className="mb-2 grid grid-cols-[minmax(0,1fr)_88px] gap-1.5">
+                            <input aria-label="搜索人物动作" value={poseQuery} onChange={(event) => setPoseQuery(event.target.value)} placeholder="搜索动作…" className="h-8 min-w-0 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[8px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-300/35" />
+                            <select aria-label="动作分类" value={poseCategory} onChange={(event) => setPoseCategory(event.target.value)} className="h-8 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-1 text-[8px] text-zinc-400 outline-none focus:border-cyan-300/35"><option value="全部">全部分类</option>{DIRECTOR_MANNEQUIN_POSE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select>
                           </div>
+                          <div className="mb-1.5 text-right text-[7px] text-zinc-700">{filteredPosePresets.length} 个结果 · 单帧定格动作</div>
+                          <div className="grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+                            {filteredPosePresets.map((preset) => <button data-director-pose={preset.id} key={preset.id} type="button" title={preset.description} onClick={() => applyCustomPosePreset(preset.id)} className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedCustomRig.mode === "pose" && selectedCustomRig.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}><span className="block text-[8px] font-medium">{preset.label}</span><span className="mt-0.5 block truncate text-[6px] opacity-55">{preset.category}</span></button>)}
+                          </div>
+                          {!filteredPosePresets.length ? <div className="rounded-lg border border-dashed border-white/[0.07] py-5 text-center text-[8px] text-zinc-700">没有匹配动作</div> : null}
                         </div>
                     ) : null}
 

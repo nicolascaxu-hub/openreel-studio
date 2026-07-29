@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js"
 import {
   DIRECTOR_MANNEQUIN_JOINTS,
+  DIRECTOR_MANNEQUIN_POSE_PRESETS,
   normalizeDirectorMannequin,
   type DirectorMannequinJoint,
   type DirectorMannequinState,
@@ -455,6 +456,35 @@ export function applyDirectorRigPose(
   applyPose(model, state, jointBones)
 }
 
+export interface DirectorRigGroundAnchor {
+  y: number
+  clearance_ratio: number
+}
+
+export function directorRigGroundAnchor(
+  model: THREE.Object3D,
+  rawState: Pick<DirectorMannequinState, "pose_preset" | "joints"> | undefined,
+  jointBones: DirectorRigJointBones,
+): DirectorRigGroundAnchor | null {
+  const state = normalizeDirectorMannequin(rawState)
+  const preset = DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === state.pose_preset)
+  const joints = preset?.ground_contact === "knees"
+    ? [jointBones.leftKnee, jointBones.rightKnee]
+    : preset?.ground_contact === "pelvis"
+      ? [jointBones.pelvis]
+      : []
+  if (!joints.length) return null
+  model.updateMatrixWorld(true)
+  const positions = joints
+    .map((joint) => bone(model, joint)?.getWorldPosition(new THREE.Vector3()).y)
+    .filter((value): value is number => Number.isFinite(value))
+  if (!positions.length) return null
+  return {
+    y: Math.min(...positions),
+    clearance_ratio: preset?.ground_contact === "knees" ? 0.044 : 0.11,
+  }
+}
+
 function groundFromFootSoles(group: THREE.Group): void {
   group.updateMatrixWorld(true)
   let soleFloor = Number.POSITIVE_INFINITY
@@ -466,6 +496,38 @@ function groundFromFootSoles(group: THREE.Group): void {
   if (Number.isFinite(soleFloor)) {
     group.position.y = -soleFloor - GROUND_CONTACT_DEPTH
   }
+}
+
+function groundFromJoint(
+  group: THREE.Group,
+  model: THREE.Object3D,
+  names: string[],
+  clearance: number,
+): void {
+  group.updateMatrixWorld(true)
+  const positions = names
+    .map((name) => bone(model, name)?.getWorldPosition(new THREE.Vector3()).y)
+    .filter((value): value is number => Number.isFinite(value))
+  if (positions.length) {
+    group.position.y += clearance - Math.min(...positions)
+  }
+}
+
+function groundMannequin(
+  group: THREE.Group,
+  model: THREE.Object3D,
+  state: DirectorMannequinState,
+): void {
+  const preset = DIRECTOR_MANNEQUIN_POSE_PRESETS.find((item) => item.id === state.pose_preset)
+  if (preset?.ground_contact === "knees") {
+    groundFromJoint(group, model, ["calf_l", "calf_r"], 0.075)
+    return
+  }
+  if (preset?.ground_contact === "pelvis") {
+    groundFromJoint(group, model, ["pelvis"], 0.19)
+    return
+  }
+  groundFromFootSoles(group)
 }
 
 function modelScale(
@@ -504,6 +566,6 @@ export async function createDirectorMannequin(
   applyPose(model, state, JOINT_BONES)
   group.scale.copy(scale)
   group.updateMatrixWorld(true)
-  groundFromFootSoles(group)
+  groundMannequin(group, model, state)
   return group
 }

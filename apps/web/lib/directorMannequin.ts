@@ -1,3 +1,10 @@
+import {
+  DIRECTOR_SHORT_DRAMA_POSE_DEFINITIONS,
+  type DirectorShortDramaHandShape,
+  type DirectorShortDramaPoseDefinition,
+  type DirectorShortDramaPoseId,
+} from "@/lib/directorShortDramaPoses"
+
 export const DIRECTOR_MANNEQUIN_JOINTS = [
   "pelvis",
   "spine",
@@ -56,7 +63,7 @@ export const DIRECTOR_MANNEQUIN_JOINTS = [
 export type DirectorMannequinJoint = typeof DIRECTOR_MANNEQUIN_JOINTS[number]
 export type DirectorMannequinAnatomy = "masculine" | "feminine"
 export type DirectorMannequinBodyPreset = "compact" | "standard" | "slender" | "athletic" | "broad" | "custom"
-export type DirectorMannequinPosePreset =
+type DirectorMannequinCorePosePreset =
   | "relaxed"
   | "attention"
   | "a-pose"
@@ -76,7 +83,23 @@ export type DirectorMannequinPosePreset =
   | "celebrate"
   | "lunge"
   | "high-step"
+
+export type DirectorMannequinPosePreset =
+  | DirectorMannequinCorePosePreset
+  | DirectorShortDramaPoseId
   | "custom"
+
+export const DIRECTOR_MANNEQUIN_POSE_CATEGORIES = [
+  "骨骼基准",
+  "基础站姿",
+  "沟通交流",
+  "情绪表演",
+  "日常生活",
+  "行走运动",
+  "冲突动作",
+] as const
+
+export type DirectorMannequinPoseCategory = typeof DIRECTOR_MANNEQUIN_POSE_CATEGORIES[number]
 
 export interface DirectorMannequinProportions {
   height: number
@@ -378,8 +401,8 @@ function pose(
   }
 }
 
-export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
-  id: Exclude<DirectorMannequinPosePreset, "custom">
+const DIRECTOR_MANNEQUIN_CORE_POSE_PRESETS: Array<{
+  id: DirectorMannequinCorePosePreset
   label: string
   description: string
   joints: Record<DirectorMannequinJoint, [number, number, number]>
@@ -608,7 +631,7 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       pelvis: [0, 1, 0], spine: [0, -1, 0], spineMiddle: [0, -1, 0], chest: [0, -2, 0], neck: [0, 2, 0], head: [0, 3, 0],
       leftClavicle: [0, 0, -1], rightClavicle: [2, -2, 7],
       leftShoulder: [0, 0, -4], leftElbow: [-6, 0, 0], leftWrist: [1, 0, 1],
-      rightShoulder: [-5, -8, 103], rightElbow: [-15, 0, 112], rightWrist: [0, 10, -45],
+      rightShoulder: [-50, -4, 44], rightElbow: [-119, -21, 12], rightWrist: [0, 10, -24],
       leftHip: [1, 0, -2], rightHip: [-2, 0, 2], leftKnee: [2, 0, 0], rightKnee: [5, 0, 0],
       ...handShape("right", "straight"),
     }),
@@ -659,6 +682,79 @@ export const DIRECTOR_MANNEQUIN_POSE_PRESETS: Array<{
       ...handShape("left", "soft-fist"), ...handShape("right", "soft-fist"),
     }),
   },
+]
+
+export interface DirectorMannequinPoseDefinition {
+  id: Exclude<DirectorMannequinPosePreset, "custom">
+  label: string
+  category: DirectorMannequinPoseCategory
+  description: string
+  keywords: string[]
+  ground_contact: "feet" | "knees" | "pelvis"
+  joints: Record<DirectorMannequinJoint, [number, number, number]>
+}
+
+const CORE_POSE_METADATA: Record<
+  DirectorMannequinCorePosePreset,
+  { category: DirectorMannequinPoseCategory; keywords: string[] }
+> = {
+  relaxed: { category: "基础站姿", keywords: ["自然", "站立", "默认"] },
+  attention: { category: "基础站姿", keywords: ["立正", "正式", "军姿"] },
+  "a-pose": { category: "骨骼基准", keywords: ["绑定", "基准", "校准"] },
+  "t-pose": { category: "骨骼基准", keywords: ["绑定", "基准", "校准"] },
+  walk: { category: "行走运动", keywords: ["走路", "步行", "路过"] },
+  run: { category: "行走运动", keywords: ["跑步", "追赶", "逃跑"] },
+  sit: { category: "日常生活", keywords: ["坐下", "椅子", "沙发"] },
+  crouch: { category: "日常生活", keywords: ["蹲下", "下蹲", "查看"] },
+  wave: { category: "沟通交流", keywords: ["挥手", "再见", "打招呼"] },
+  point: { category: "沟通交流", keywords: ["指向", "指路", "指责"] },
+  "hands-hips": { category: "基础站姿", keywords: ["叉腰", "不满", "等待"] },
+  "open-arms": { category: "沟通交流", keywords: ["欢迎", "展开", "拥抱"] },
+  explain: { category: "沟通交流", keywords: ["讲解", "介绍", "说话"] },
+  "hands-back": { category: "基础站姿", keywords: ["背手", "领导", "巡视"] },
+  "look-back": { category: "基础站姿", keywords: ["回头", "转身", "回望"] },
+  salute: { category: "沟通交流", keywords: ["示意", "敬礼", "问候"] },
+  celebrate: { category: "情绪表演", keywords: ["庆祝", "欢呼", "胜利"] },
+  lunge: { category: "行走运动", keywords: ["弓步", "发力", "向前"] },
+  "high-step": { category: "行走运动", keywords: ["抬腿", "跨越", "上台阶"] },
+}
+
+const corePosePresets: DirectorMannequinPoseDefinition[] = DIRECTOR_MANNEQUIN_CORE_POSE_PRESETS.map((preset) => ({
+  ...preset,
+  ...CORE_POSE_METADATA[preset.id],
+  ground_contact: "feet",
+}))
+
+const shortDramaPosePresets = DIRECTOR_SHORT_DRAMA_POSE_DEFINITIONS.reduce<DirectorMannequinPoseDefinition[]>(
+  (presets, definition) => {
+    const poseDefinition: DirectorShortDramaPoseDefinition = definition
+    const base = [...corePosePresets, ...presets].find((preset) => preset.id === poseDefinition.base)
+      || corePosePresets[0]
+    const handValues: DirectorMannequinJointValues = {
+      ...(poseDefinition.hands?.left
+        ? handShape("left", poseDefinition.hands.left as DirectorShortDramaHandShape)
+        : {}),
+      ...(poseDefinition.hands?.right
+        ? handShape("right", poseDefinition.hands.right as DirectorShortDramaHandShape)
+        : {}),
+    }
+    presets.push({
+      id: poseDefinition.id as DirectorShortDramaPoseId,
+      label: poseDefinition.label,
+      category: poseDefinition.category,
+      description: poseDefinition.description,
+      keywords: [...poseDefinition.keywords],
+      ground_contact: poseDefinition.ground_contact || "feet",
+      joints: pose({ ...base.joints, ...handValues, ...poseDefinition.joints }),
+    })
+    return presets
+  },
+  [],
+)
+
+export const DIRECTOR_MANNEQUIN_POSE_PRESETS: DirectorMannequinPoseDefinition[] = [
+  ...corePosePresets,
+  ...shortDramaPosePresets,
 ]
 
 const BODY_PRESET_IDS: ReadonlySet<string> = new Set(DIRECTOR_MANNEQUIN_BODY_PRESETS.map((item) => item.id))
