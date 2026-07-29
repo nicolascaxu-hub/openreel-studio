@@ -98,6 +98,7 @@ interface DirectorRuntime {
   transformHelper: THREE.Object3D
   root: THREE.Group
   cameraRoot: THREE.Group
+  ground: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>
   grid: THREE.GridHelper
   objectRoots: Map<string, THREE.Group>
   cameraRigs: Map<string, DirectorCameraRig>
@@ -382,6 +383,7 @@ function disposeRuntimePanorama(runtime: DirectorRuntime): void {
   }
   runtime.panoramaTexture?.dispose()
   runtime.panoramaTexture = null
+  runtime.ground.visible = true
 }
 
 const DIRECTOR_MODEL_THUMBNAIL_SIZE = 144
@@ -1291,6 +1293,7 @@ export default function DirectorDesk({
       transformHelper,
       root,
       cameraRoot,
+      ground,
       grid,
       objectRoots: new Map(),
       cameraRigs: new Map(),
@@ -1655,6 +1658,7 @@ export default function DirectorDesk({
         runtime.panoramaTexture = texture
         runtime.panoramaMesh = mesh
         runtime.scene.add(mesh)
+        runtime.ground.visible = false
         setPanoramaStatus("ready")
       },
       undefined,
