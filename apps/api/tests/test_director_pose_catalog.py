@@ -195,5 +195,8 @@ def test_director_ui_maps_canvas_panorama_nodes_into_spatial_environment() -> No
     assert "new THREE.SphereGeometry(360, 96, 48)" in ui_source
     assert "side: THREE.BackSide" in ui_source
     assert 'data-director-panorama-status={panoramaStatus}' in ui_source
+    assert "data-director-panorama-import" in ui_source
+    assert '"导入全景图"' in ui_source
+    assert "importProjectCanvasImage" in ui_source
     assert "isDirectorPanoramaNode" in canvas_source
     assert "panoramaImages={directorPanoramaImages}" in canvas_source

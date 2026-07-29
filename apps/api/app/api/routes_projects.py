@@ -2210,6 +2210,7 @@ async def import_project_canvas_image(
     creator: Literal["user", "agent"] = Form(default="user"),
     x: float | None = Form(default=None),
     y: float | None = Form(default=None),
+    panorama: bool = Form(default=False),
     db: AsyncSession = Depends(get_session),
 ):
     """Create a completed canvas image node from an external image file."""
@@ -2239,6 +2240,19 @@ async def import_project_canvas_image(
     if clean_prompt:
         input_data["prompt"] = clean_prompt
         input_data["fields"]["prompt"] = clean_prompt
+    if panorama:
+        input_data.update({
+            "panorama": True,
+            "is_panorama": True,
+            "projection": "equirectangular",
+            "aspect_ratio": "2:1",
+        })
+        input_data["fields"].update({
+            "panorama": True,
+            "is_panorama": True,
+            "projection": "equirectangular",
+            "aspect_ratio": "2:1",
+        })
 
     create_payload: dict[str, Any] = {
         "type": "image",
@@ -2268,6 +2282,7 @@ async def import_project_canvas_image(
         raise
     result["generation_backend"] = clean_backend
     result["creator"] = clean_creator
+    result["panorama"] = panorama
     return result
 
 

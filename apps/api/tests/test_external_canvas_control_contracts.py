@@ -366,6 +366,7 @@ async def test_external_image_import_preserves_caller_provenance(
         creator="agent",
         x=None,
         y=None,
+        panorama=True,
         db=canvas_session,
     )
 
@@ -381,9 +382,15 @@ async def test_external_image_import_preserves_caller_provenance(
         "kind": "external_import",
         "generation_backend": "codex_builtin",
     }
+    assert input_data["panorama"] is True
+    assert input_data["is_panorama"] is True
+    assert input_data["projection"] == "equirectangular"
+    assert input_data["aspect_ratio"] == "2:1"
+    assert input_data["fields"]["panorama"] is True
     assert json.loads(node.model_config_json or "{}")["_ui_creator"] == "agent"
     assert result["generation_backend"] == "codex_builtin"
     assert result["creator"] == "agent"
+    assert result["panorama"] is True
     assert result["uploaded_media"]["mime_type"] == "image/png"
     assert [action for action, _payload in events] == ["update_node"]
     assert events[0][1]["status"] == "completed"
@@ -421,6 +428,7 @@ async def test_external_image_import_uses_generic_defaults(
         creator="user",
         x=240,
         y=160,
+        panorama=False,
         db=canvas_session,
     )
 
@@ -432,3 +440,4 @@ async def test_external_image_import_uses_generic_defaults(
     assert json.loads(node.model_config_json or "{}")["_ui_creator"] == "user"
     assert result["generation_backend"] == "external_import"
     assert result["creator"] == "user"
+    assert result["panorama"] is False

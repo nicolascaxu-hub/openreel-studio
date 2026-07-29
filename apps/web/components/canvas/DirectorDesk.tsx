@@ -17,6 +17,7 @@ import {
   deleteProjectDirectorCapture,
   deleteProjectDirectorModel,
   getProjectDirector,
+  importProjectCanvasImage,
   promoteProjectDirectorCapture,
   reorderProjectDirectorCaptures,
   resolveMediaUrl,
@@ -134,6 +135,12 @@ interface DirectorApiResponse {
   node?: { id?: string }
   created?: boolean
   captures?: DirectorCapture[]
+}
+
+interface DirectorPanoramaImportResponse {
+  id?: string
+  output?: unknown
+  uploaded_media?: { url?: string }
 }
 
 const TRANSFORM_LABELS: Record<DirectorTransformMode, string> = {
@@ -384,6 +391,46 @@ function disposeRuntimePanorama(runtime: DirectorRuntime): void {
   runtime.panoramaTexture?.dispose()
   runtime.panoramaTexture = null
   runtime.ground.visible = true
+}
+
+async function panoramaFileDimensions(file: File): Promise<{ width: number; height: number }> {
+  if (typeof createImageBitmap === "function") {
+    const bitmap = await createImageBitmap(file)
+    try {
+      return { width: bitmap.width, height: bitmap.height }
+    } finally {
+      bitmap.close()
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => {
+      URL.revokeObjectURL(url)
+      resolve({ width: image.naturalWidth, height: image.naturalHeight })
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error("无法读取图片尺寸"))
+    }
+    image.src = url
+  })
+}
+
+function panoramaUrlFromImport(result: DirectorPanoramaImportResponse): string {
+  const output = result.output && typeof result.output === "object" && !Array.isArray(result.output)
+    ? result.output as Record<string, unknown>
+    : {}
+  for (const candidate of [
+    result.uploaded_media?.url,
+    output.local_url,
+    output.url,
+    output.remote_url,
+    output.composite_url,
+  ]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim()
+  }
+  return ""
 }
 
 const DIRECTOR_MODEL_THUMBNAIL_SIZE = 144
@@ -866,6 +913,7 @@ export default function DirectorDesk({
 }: DirectorDeskProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const panoramaInputRef = useRef<HTMLInputElement | null>(null)
   const runtimeRef = useRef<DirectorRuntime | null>(null)
   const directorRef = useRef<DirectorDeskState>(defaultDirectorDesk())
   const rebuildRuntimeRef = useRef<() => void>(() => undefined)
@@ -884,6 +932,7 @@ export default function DirectorDesk({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loadingModels, setLoadingModels] = useState(0)
+  const [importingPanorama, setImportingPanorama] = useState(false)
   const [panoramaStatus, setPanoramaStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
   const [panoramaError, setPanoramaError] = useState<string | null>(null)
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
@@ -2601,6 +2650,55 @@ export default function DirectorDesk({
     replaceScene(scene, true)
   }, [replaceScene])
 
+  const importPanorama = useCallback(async (file: File) => {
+    if (importingPanorama) return
+    if (!file.type.startsWith("image/")) {
+      setError("请选择 PNG、JPG、WebP 或 BMP 图片")
+      return
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setError("全景图不能超过 50 MB")
+      return
+    }
+    setImportingPanorama(true)
+    setError(null)
+    try {
+      const dimensions = await panoramaFileDimensions(file)
+      const ratio = dimensions.width / Math.max(1, dimensions.height)
+      if (Math.abs(ratio - 2) > 0.06) {
+        throw new Error(`全景图需要接近 2:1，当前图片为 ${dimensions.width}×${dimensions.height}`)
+      }
+      const rawTitle = file.name.replace(/\.[^.]+$/, "").trim() || "导入全景"
+      const title = /全景|panorama|360/i.test(rawTitle) ? rawTitle : `${rawTitle} 全景`
+      const result = await importProjectCanvasImage<DirectorPanoramaImportResponse>(projectId, file, {
+        title,
+        prompt: "2:1 equirectangular 360 panorama environment",
+        generation_backend: "director_panorama_import",
+        creator: "user",
+        x: canvasPosition.x + 380,
+        y: canvasPosition.y,
+        panorama: true,
+      })
+      const nodeId = String(result.id || "").trim()
+      const imageUrl = panoramaUrlFromImport(result)
+      if (!nodeId || !imageUrl) throw new Error("全景图上传成功，但没有返回可用的媒体地址")
+      const scene = cloneDirectorScene(directorRef.current.scene)
+      scene.panorama = {
+        source_node_id: nodeId,
+        title,
+        image_url: imageUrl,
+        rotation_y: scene.panorama?.rotation_y || 0,
+        visible: true,
+      }
+      replaceScene(scene, true)
+      setInspectorTab("scene")
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError))
+    } finally {
+      setImportingPanorama(false)
+    }
+  }, [canvasPosition.x, canvasPosition.y, importingPanorama, projectId, replaceScene])
+
   const runViewportContextAction = useCallback((action: () => void) => {
     setViewportContextMenu(null)
     action()
@@ -3021,6 +3119,29 @@ export default function DirectorDesk({
             </div>
 
             <div className="openreel-director-toolbar absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-[#3a3a3a] bg-[#202020]/95 p-1 shadow-[0_10px_28px_rgba(0,0,0,.38)] backdrop-blur-xl">
+              <button
+                type="button"
+                data-director-panorama-import
+                title="导入本地 2:1 全景图并显示在空间中"
+                onClick={() => panoramaInputRef.current?.click()}
+                disabled={importingPanorama}
+                className="flex h-8 items-center gap-1.5 rounded-md bg-[#4f8ef7] px-3 text-[9px] font-semibold text-white shadow-sm transition hover:bg-[#629cff] disabled:cursor-wait disabled:opacity-55"
+              >
+                <DirectorIcon name="upload" className="h-3 w-3" />
+                {importingPanorama ? "正在导入" : director.scene.panorama ? "替换全景图" : "导入全景图"}
+              </button>
+              <input
+                ref={panoramaInputRef}
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ""
+                  if (file) void importPanorama(file)
+                }}
+              />
+              <span className="mx-1 h-5 w-px bg-white/[0.08]" />
               <button type="button" onClick={() => switchCameraView("overview")} className={cn("h-8 rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "overview" ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>空间总览</button>
               <button type="button" onClick={() => switchCameraView("camera")} className={cn("h-8 max-w-[112px] truncate rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "camera" ? "bg-violet-300/15 text-violet-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>取景 · {selectedCamera.name}</button>
               <button type="button" title="把当前观察位置、方向和视场角保存为新机位" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[9px] font-medium text-cyan-200/80 transition hover:bg-cyan-300/[0.09] hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-25"><DirectorIcon name="camera" className="h-3 w-3" />在此放置机位</button>

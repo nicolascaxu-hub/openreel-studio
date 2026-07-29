@@ -1005,6 +1005,40 @@ export async function uploadProjectNodeMedia<T = Record<string, unknown>>(
   return result
 }
 
+export async function importProjectCanvasImage<T = Record<string, unknown>>(
+  projectId: string,
+  file: File,
+  input: {
+    title?: string
+    prompt?: string
+    generation_backend?: string
+    creator?: 'user' | 'agent'
+    x?: number
+    y?: number
+    panorama?: boolean
+  } = {},
+): Promise<T> {
+  const base = await getApiBase()
+  const form = new FormData()
+  form.append('file', file)
+  form.append('title', input.title || '导入图片')
+  form.append('prompt', input.prompt || '')
+  form.append('generation_backend', input.generation_backend || 'external_import')
+  form.append('creator', input.creator || 'user')
+  form.append('panorama', input.panorama ? 'true' : 'false')
+  if (input.x !== undefined && input.y !== undefined) {
+    form.append('x', String(input.x))
+    form.append('y', String(input.y))
+  }
+  const res = await fetch(`${base}/api/projects/${projectId}/nodes/import-image`, {
+    method: 'POST',
+    body: form,
+  })
+  const result = await asJson<T>(res)
+  requestCanvasRefresh({ projectId, preserveOnEmpty: true, preserveLayout: true })
+  return result
+}
+
 export async function switchProjectNodeHistory<T = Record<string, unknown>>(
   projectId: string,
   nodeId: string,

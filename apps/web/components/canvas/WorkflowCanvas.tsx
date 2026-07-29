@@ -9950,7 +9950,13 @@ function panoramaRatioFromValue(value: unknown): number | null {
 function isDirectorPanoramaNode(node: FlowNode): boolean {
   const data = node.data as Record<string, unknown>
   if (data.type !== "image") return false
-  const candidates = [previewObject(data.preview), previewObject(data.output)].filter(Boolean) as Record<string, unknown>[]
+  const input = previewObject(data.input)
+  const candidates = [
+    previewObject(data.preview),
+    previewObject(data.output),
+    input,
+    previewObject(input?.fields),
+  ].filter(Boolean) as Record<string, unknown>[]
   if (candidates.some((item) => (
     item.panorama === true
     || item.is_panorama === true
