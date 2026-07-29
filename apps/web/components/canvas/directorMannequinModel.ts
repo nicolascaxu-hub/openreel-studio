@@ -438,7 +438,10 @@ function applyPose(
 
     const hip = combineFrames(pelvis, state.joints[hipJoint])
     const knee = combineFrames(hip, state.joints[kneeJoint])
-    const ankle = combineFrames(knee, state.joints[ankleJoint])
+    // Ankles are authored as world-level foot controls. This keeps a zeroed
+    // foot flat on the stage after a deep knee bend instead of inheriting the
+    // complete hip/knee rotation and pointing the toes into the air.
+    const ankle = combineFrames(identity, state.joints[ankleJoint])
     const toe = combineFrames(ankle, state.joints[toeJoint])
     applyBoneFrame(frames[hipJoint], hip)
     applyBoneFrame(frames[kneeJoint], knee)

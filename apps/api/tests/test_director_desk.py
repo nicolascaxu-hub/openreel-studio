@@ -152,8 +152,8 @@ def test_director_normalizes_legacy_joint_angles_into_standard_rig_limits() -> N
     normalized = normalize_director_state({"scene": scene})
     joints = normalized["scene"]["objects"][0]["mannequin"]["joints"]
 
-    assert joints["leftKnee"] == [-5.0, 15.0, -15.0]
-    assert joints["rightShoulder"] == [120.0, -90.0, 150.0]
+    assert joints["leftKnee"] == [-30.0, 80.0, -90.0]
+    assert joints["rightShoulder"] == [170.0, -120.0, 175.0]
     assert joints["leftIndex2"] == [110.0, -12.0, 12.0]
     assert scene["objects"][0]["mannequin"]["joints"]["leftKnee"] == [-30, 80, -90]
 
@@ -550,7 +550,7 @@ async def test_director_persists_mannequin_proportions_and_rejects_invalid_joint
 
         invalid_knee = _scene()
         invalid_knee["objects"][0]["mannequin"] = {
-            "joints": {"leftKnee": [-30, 0, 0]},
+            "joints": {"leftKnee": [-181, 0, 0]},
         }
         with pytest.raises(DirectorDeskError, match="超出旋转范围"):
             await service.save_scene("director-project", invalid_knee, expected_revision=1)

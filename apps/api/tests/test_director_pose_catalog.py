@@ -7,6 +7,7 @@ from app.services.director_desk import MANNEQUIN_JOINT_RANGES
 
 ROOT = Path(__file__).resolve().parents[3]
 POSE_SOURCE = ROOT / "apps/web/lib/directorShortDramaPoses.ts"
+REFINEMENT_SOURCE = ROOT / "apps/web/lib/directorPoseRefinements.ts"
 MANNEQUIN_SOURCE = ROOT / "apps/web/lib/directorMannequin.ts"
 DIRECTOR_UI_SOURCE = ROOT / "apps/web/components/canvas/DirectorDesk.tsx"
 
@@ -86,3 +87,42 @@ def test_ground_actions_and_pose_picker_are_explicit() -> None:
     assert 'aria-label="动作分类"' in ui_source
     assert "data-director-pose={preset.id}" in ui_source
     assert "单帧定格动作" in ui_source
+
+
+def test_every_action_has_a_modular_kinematic_refinement() -> None:
+    pose_source = _pose_source()
+    mannequin_source = MANNEQUIN_SOURCE.read_text(encoding="utf-8")
+    refinement_source = REFINEMENT_SOURCE.read_text(encoding="utf-8")
+    extra_ids = set(re.findall(r'^    id: "([a-z0-9-]+)",$', pose_source, flags=re.MULTILINE))
+    metadata = mannequin_source.split("const CORE_POSE_METADATA:", 1)[1].split(
+        "const corePosePresets:", 1,
+    )[0]
+    core_ids = {
+        quoted or bare
+        for quoted, bare in re.findall(
+            r'^  (?:"([a-z0-9-]+)"|([a-z0-9-]+)):', metadata, flags=re.MULTILINE,
+        )
+    }
+    refinement_ids = set(re.findall(
+        r'^  "([a-z0-9-]+)":', refinement_source, flags=re.MULTILINE,
+    ))
+
+    assert len(refinement_ids) == 80
+    assert refinement_ids == extra_ids | core_ids
+    assert "composeDirectorPoseModules" in refinement_source
+    assert "DIRECTOR_POSE_MODULES" in refinement_source
+    assert 'assertModuleKeys("torso"' in refinement_source
+    assert 'assertModuleKeys("head"' in refinement_source
+    assert 'assertModuleKeys("arms"' in refinement_source
+    assert 'assertModuleKeys("legs"' in refinement_source
+    assert "必须且只能输出 15 根指骨" in refinement_source
+    assert "必须物化为完整" in mannequin_source
+
+
+def test_joint_editor_exposes_every_deforming_joint_and_precise_axes() -> None:
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+
+    assert 'aria-label="搜索人物关节"' in ui_source
+    assert "data-director-joint={joint.id}" in ui_source
+    assert "支持 0.1° 数字精调" in ui_source
+    assert "原版 66 骨架" in ui_source

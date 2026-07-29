@@ -883,6 +883,7 @@ export default function DirectorDesk({
   const [placementMode, setPlacementMode] = useState<"ground" | "free">("ground")
   const [snapToGrid, setSnapToGrid] = useState(false)
   const [selectedJoint, setSelectedJoint] = useState<DirectorMannequinJoint>("spine")
+  const [jointQuery, setJointQuery] = useState("")
 
   const filteredBundledModels = useMemo(() => {
     const query = modelQuery.trim().toLocaleLowerCase()
@@ -903,6 +904,17 @@ export default function DirectorDesk({
         .some((value) => value.toLocaleLowerCase().includes(query))
     })
   }, [poseCategory, poseQuery])
+
+  const filteredJointInfo = useMemo(() => {
+    const query = jointQuery.trim().toLocaleLowerCase()
+    if (!query) return DIRECTOR_MANNEQUIN_JOINT_INFO
+    return DIRECTOR_MANNEQUIN_JOINT_INFO.filter((joint) =>
+      [joint.id, joint.label, joint.group].some((value) => value.toLocaleLowerCase().includes(query)),
+    )
+  }, [jointQuery])
+
+  const selectedJointInfo = DIRECTOR_MANNEQUIN_JOINT_INFO.find((joint) => joint.id === selectedJoint)
+    || DIRECTOR_MANNEQUIN_JOINT_INFO[0]
 
   const setLocalDirector = useCallback((next: DirectorDeskState) => {
     directorRef.current = next
@@ -3024,27 +3036,29 @@ export default function DirectorDesk({
 
                   {rigInspectorTab === "joints" ? (
                   <div>
-                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">关节微调</span><button type="button" onClick={resetMannequinJoint} className="text-[8px] text-zinc-600 transition hover:text-zinc-200">归零当前关节</button></div>
-                    <select value={selectedJoint} onChange={(event) => setSelectedJoint(event.target.value as DirectorMannequinJoint)} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-violet-300/35">
-                      {(["躯干", "左臂", "左手", "右臂", "右手", "左腿", "右腿"] as const).map((group) => (
-                        <optgroup key={group} label={group}>
-                          {DIRECTOR_MANNEQUIN_JOINT_INFO.filter((joint) => joint.group === group).map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
+                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">全部可变形关节</span><span className="text-[8px] tabular-nums text-violet-200/65">{DIRECTOR_MANNEQUIN_JOINTS.length} / 52</span></div>
+                    <input aria-label="搜索人物关节" value={jointQuery} onChange={(event) => setJointQuery(event.target.value)} placeholder="搜索骨盆、肩、手指、脚趾…" className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[8px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-300/35" />
+                    <div className="mt-2 grid max-h-56 grid-cols-2 gap-1 overflow-y-auto rounded-xl border border-white/[0.06] bg-black/15 p-1.5 pr-1">
+                      {(["躯干", "左臂", "左手", "右臂", "右手", "左腿", "右腿"] as const).map((group) => {
+                        const joints = filteredJointInfo.filter((joint) => joint.group === group)
+                        if (!joints.length) return null
+                        return <div key={group} className="contents"><div className="col-span-2 px-1 pb-0.5 pt-1 text-[7px] font-semibold tracking-wide text-zinc-700">{group} · {joints.length}</div>{joints.map((joint) => <button data-director-joint={joint.id} key={joint.id} type="button" onClick={() => setSelectedJoint(joint.id)} className={cn("min-h-7 rounded-md border px-1.5 py-1 text-left text-[7px] transition", selectedJoint === joint.id ? "border-violet-300/30 bg-violet-300/12 text-violet-100" : "border-white/[0.045] bg-black/10 text-zinc-600 hover:border-white/[0.12] hover:text-zinc-300")}>{joint.label}</button>)}</div>
+                      })}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between rounded-lg border border-violet-300/10 bg-violet-300/[0.045] px-2 py-1.5"><span className="text-[8px] text-violet-100/80">当前：{selectedJointInfo.label}</span><button type="button" onClick={resetMannequinJoint} className="text-[7px] text-zinc-600 transition hover:text-zinc-200">归零此关节</button></div>
                     <div className="mt-3 space-y-2.5">
                       {(["X", "Y", "Z"] as const).map((axis, index) => {
                         const value = selectedMannequin.joints[selectedJoint][index]
                         return (
-                          <label key={axis} className="grid grid-cols-[16px_minmax(0,1fr)_48px] items-center gap-2">
+                          <label key={axis} className="grid grid-cols-[16px_minmax(0,1fr)_58px] items-center gap-2">
                             <span className={cn("text-[9px] font-semibold", index === 0 ? "text-rose-300/75" : index === 1 ? "text-emerald-300/75" : "text-sky-300/75")}>{axis}</span>
                             <input type="range" min={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][0]} max={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][1]} step="1" value={value} onChange={(event) => updateMannequinJoint(index, Number(event.target.value))} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-cyan-300" />
-                            <span className="rounded-md bg-black/25 px-1.5 py-1 text-right text-[8px] tabular-nums text-zinc-400">{Math.round(value)}°</span>
+                            <input aria-label={`${selectedJointInfo.label} ${axis}轴角度`} type="number" min={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][0]} max={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedJoint][index][1]} step="0.1" value={Number(value.toFixed(1))} onChange={(event) => updateMannequinJoint(index, Number(event.target.value))} className="h-7 rounded-md border border-white/[0.07] bg-black/25 px-1 text-right text-[8px] tabular-nums text-zinc-300 outline-none focus:border-cyan-300/30" />
                           </label>
                         )
                       })}
                     </div>
-                    <div className="mt-2 text-[7px] leading-3 text-zinc-700">XYZ 使用原版骨骼的分部位安全活动范围；手指含根节、中节、末节，足部含踝和前脚掌。</div>
+                    <div className="mt-2 text-[7px] leading-3 text-zinc-700">每个按钮是一根独立蒙皮关节，XYZ 是该关节的三个旋转轴；支持 0.1° 数字精调。原文件另含 14 个不带子网格的末端叶节点，不作为无效滑杆展示。</div>
                   </div>
                   ) : null}
                 </div>

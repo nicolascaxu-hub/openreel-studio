@@ -4,6 +4,11 @@ import {
   type DirectorShortDramaPoseDefinition,
   type DirectorShortDramaPoseId,
 } from "@/lib/directorShortDramaPoses"
+import {
+  DIRECTOR_POSE_REFINEMENTS,
+  directorHandPose,
+  type DirectorHandPoseName,
+} from "@/lib/directorPoseRefinements"
 
 export const DIRECTOR_MANNEQUIN_JOINTS = [
   "pelvis",
@@ -142,9 +147,13 @@ export const DIRECTOR_MANNEQUIN_JOINT_LIMITS: DirectorMannequinJointLimits = {
   neck: [[-45, 45], [-70, 70], [-35, 35]],
   head: [[-55, 55], [-80, 80], [-45, 45]],
   leftClavicle: [[-35, 35], [-30, 30], [-40, 40]],
-  leftShoulder: [[-120, 120], [-90, 90], [-150, 150]],
-  leftElbow: [[-145, 15], [-45, 45], [-120, 120]],
-  leftWrist: [[-75, 75], [-80, 80], [-75, 75]],
+  // These values drive rig-aligned XYZ orientation controls rather than a
+  // single anatomical hinge angle. Full orientation ranges are required for
+  // legitimate overhead, hand-to-face and crossed-arm chains; authored pose
+  // directions provide the biomechanical constraint.
+  leftShoulder: [[-180, 180], [-180, 180], [-180, 180]],
+  leftElbow: [[-180, 180], [-180, 180], [-180, 180]],
+  leftWrist: [[-180, 180], [-180, 180], [-180, 180]],
   leftThumb1: [[-55, 65], [-55, 55], [-55, 55]],
   leftThumb2: [[-15, 85], [-25, 25], [-25, 25]],
   leftThumb3: [[-10, 85], [-20, 20], [-20, 20]],
@@ -161,9 +170,9 @@ export const DIRECTOR_MANNEQUIN_JOINT_LIMITS: DirectorMannequinJointLimits = {
   leftPinky2: [[-10, 110], [-12, 12], [-12, 12]],
   leftPinky3: [[-10, 100], [-12, 12], [-12, 12]],
   rightClavicle: [[-35, 35], [-30, 30], [-40, 40]],
-  rightShoulder: [[-120, 120], [-90, 90], [-150, 150]],
-  rightElbow: [[-145, 15], [-45, 45], [-120, 120]],
-  rightWrist: [[-75, 75], [-80, 80], [-75, 75]],
+  rightShoulder: [[-180, 180], [-180, 180], [-180, 180]],
+  rightElbow: [[-180, 180], [-180, 180], [-180, 180]],
+  rightWrist: [[-180, 180], [-180, 180], [-180, 180]],
   rightThumb1: [[-55, 65], [-55, 55], [-55, 55]],
   rightThumb2: [[-15, 85], [-25, 25], [-25, 25]],
   rightThumb3: [[-10, 85], [-20, 20], [-20, 20]],
@@ -179,12 +188,12 @@ export const DIRECTOR_MANNEQUIN_JOINT_LIMITS: DirectorMannequinJointLimits = {
   rightPinky1: [[-25, 95], [-25, 25], [-25, 25]],
   rightPinky2: [[-10, 110], [-12, 12], [-12, 12]],
   rightPinky3: [[-10, 100], [-12, 12], [-12, 12]],
-  leftHip: [[-110, 65], [-60, 60], [-55, 55]],
-  leftKnee: [[-5, 145], [-15, 15], [-15, 15]],
+  leftHip: [[-180, 180], [-180, 180], [-180, 180]],
+  leftKnee: [[-180, 180], [-180, 180], [-180, 180]],
   leftAnkle: [[-55, 45], [-35, 35], [-35, 35]],
   leftToe: [[-45, 55], [-18, 18], [-18, 18]],
-  rightHip: [[-110, 65], [-60, 60], [-55, 55]],
-  rightKnee: [[-5, 145], [-15, 15], [-15, 15]],
+  rightHip: [[-180, 180], [-180, 180], [-180, 180]],
+  rightKnee: [[-180, 180], [-180, 180], [-180, 180]],
   rightAnkle: [[-55, 45], [-35, 35], [-35, 35]],
   rightToe: [[-45, 55], [-18, 18], [-18, 18]],
 }
@@ -298,96 +307,11 @@ type DirectorMannequinJointValues = Partial<
   Record<DirectorMannequinJoint, [number, number, number]>
 >
 
-type DirectorHandShape =
-  | "relaxed"
-  | "straight"
-  | "open"
-  | "soft-fist"
-  | "fist"
-  | "point"
-  | "waist"
-  | "clasp"
-
-function fingerShape(
-  side: "left" | "right",
-  finger: "Thumb" | "Index" | "Middle" | "Ring" | "Pinky",
-  curl: [number, number, number],
-  spread = 0,
-): DirectorMannequinJointValues {
-  return {
-    [`${side}${finger}1`]: [curl[0], 0, spread],
-    [`${side}${finger}2`]: [curl[1], 0, 0],
-    [`${side}${finger}3`]: [curl[2], 0, 0],
-  }
-}
-
 function handShape(
   side: "left" | "right",
-  shape: DirectorHandShape,
+  shape: DirectorHandPoseName,
 ): DirectorMannequinJointValues {
-  const mirror = side === "left" ? -1 : 1
-  const fingers = (
-    index: [number, number, number],
-    middle: [number, number, number],
-    ring: [number, number, number],
-    pinky: [number, number, number],
-    spread = 0,
-  ): DirectorMannequinJointValues => ({
-    ...fingerShape(side, "Index", index, -spread * mirror),
-    ...fingerShape(side, "Middle", middle, -spread * 0.3 * mirror),
-    ...fingerShape(side, "Ring", ring, spread * 0.35 * mirror),
-    ...fingerShape(side, "Pinky", pinky, spread * mirror),
-  })
-
-  if (shape === "straight") {
-    return {
-      ...fingerShape(side, "Thumb", [2, 3, 2], 2 * mirror),
-      ...fingers([0, 1, 0], [0, 1, 0], [1, 2, 1], [2, 3, 2]),
-    }
-  }
-  if (shape === "open") {
-    return {
-      ...fingerShape(side, "Thumb", [-5, 4, 2], 8 * mirror),
-      ...fingers([0, 1, 1], [0, 1, 1], [1, 2, 1], [2, 3, 2], 5),
-    }
-  }
-  if (shape === "soft-fist") {
-    return {
-      ...fingerShape(side, "Thumb", [18, 18, 10], 3 * mirror),
-      ...fingers([34, 48, 30], [38, 52, 34], [42, 56, 38], [46, 60, 42], 1),
-    }
-  }
-  if (shape === "fist") {
-    return {
-      ...fingerShape(side, "Thumb", [30, 34, 20], 1 * mirror),
-      ...fingers([58, 84, 64], [62, 88, 68], [64, 90, 70], [66, 92, 72]),
-    }
-  }
-  if (shape === "point") {
-    return {
-      ...fingerShape(side, "Thumb", [30, 34, 20], 1 * mirror),
-      ...fingerShape(side, "Index", [0, 1, 1]),
-      ...fingerShape(side, "Middle", [62, 86, 66]),
-      ...fingerShape(side, "Ring", [66, 90, 70]),
-      ...fingerShape(side, "Pinky", [68, 92, 72]),
-    }
-  }
-  if (shape === "waist") {
-    return {
-      ...fingerShape(side, "Thumb", [8, 10, 6], 3 * mirror),
-      ...fingers([12, 20, 12], [14, 23, 14], [16, 25, 16], [18, 28, 18], 1.5),
-    }
-  }
-  if (shape === "clasp") {
-    return {
-      ...fingerShape(side, "Thumb", [20, 24, 14], 1 * mirror),
-      ...fingers([26, 38, 24], [30, 42, 27], [34, 46, 30], [38, 50, 34]),
-    }
-  }
-  return {
-    ...fingerShape(side, "Thumb", [7, 9, 5], 3 * mirror),
-    ...fingers([5, 8, 5], [7, 10, 7], [9, 12, 8], [12, 15, 10], 1.5),
-  }
+  return directorHandPose(side, shape) as DirectorMannequinJointValues
 }
 
 function pose(
@@ -752,10 +676,28 @@ const shortDramaPosePresets = DIRECTOR_SHORT_DRAMA_POSE_DEFINITIONS.reduce<Direc
   [],
 )
 
-export const DIRECTOR_MANNEQUIN_POSE_PRESETS: DirectorMannequinPoseDefinition[] = [
+const unrefinedPosePresets: DirectorMannequinPoseDefinition[] = [
   ...corePosePresets,
   ...shortDramaPosePresets,
 ]
+
+export const DIRECTOR_MANNEQUIN_POSE_PRESETS: DirectorMannequinPoseDefinition[] = unrefinedPosePresets.map((preset) => ({
+  ...preset,
+  joints: pose({
+    ...preset.joints,
+    ...(DIRECTOR_POSE_REFINEMENTS[preset.id] as DirectorMannequinJointValues | undefined),
+  }),
+}))
+
+for (const preset of DIRECTOR_MANNEQUIN_POSE_PRESETS) {
+  if (!DIRECTOR_POSE_REFINEMENTS[preset.id]) {
+    throw new Error(`导演动作 ${preset.id} 缺少模块化运动学精修`)
+  }
+  const missing = DIRECTOR_MANNEQUIN_JOINTS.filter((joint) => !preset.joints[joint])
+  if (missing.length || Object.keys(preset.joints).length !== DIRECTOR_MANNEQUIN_JOINTS.length) {
+    throw new Error(`导演动作 ${preset.id} 必须物化为完整 ${DIRECTOR_MANNEQUIN_JOINTS.length} 关节数据`)
+  }
+}
 
 const BODY_PRESET_IDS: ReadonlySet<string> = new Set(DIRECTOR_MANNEQUIN_BODY_PRESETS.map((item) => item.id))
 const POSE_PRESET_IDS: ReadonlySet<string> = new Set(DIRECTOR_MANNEQUIN_POSE_PRESETS.map((item) => item.id))
