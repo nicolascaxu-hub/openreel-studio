@@ -121,6 +121,7 @@ def default_director_scene() -> dict[str, Any]:
             "target": [0.0, 1.0, 0.0],
             "fov": 45.0,
         },
+        "panorama": None,
         "objects": [],
     }
 
@@ -360,6 +361,33 @@ def validate_director_scene(scene: Any) -> dict[str, Any]:
             camera_ids.add(camera_id)
         if str(scene.get("active_camera_id") or "") not in camera_ids:
             raise DirectorDeskError("active_camera_id 必须指向现有机位")
+    panorama = scene.get("panorama")
+    if panorama is not None:
+        if not isinstance(panorama, dict):
+            raise DirectorDeskError("panorama 必须是对象或 null")
+        image_url = str(panorama.get("image_url") or "").strip()
+        if (
+            not image_url
+            or len(image_url) > 2048
+            or not image_url.startswith(("/", "http://", "https://"))
+        ):
+            raise DirectorDeskError("panorama.image_url 无效")
+        source_node_id = str(panorama.get("source_node_id") or "").strip()
+        if len(source_node_id) > 128:
+            raise DirectorDeskError("panorama.source_node_id 无效")
+        title = str(panorama.get("title") or "").strip()
+        if not title or len(title) > 200:
+            raise DirectorDeskError("panorama.title 无效")
+        if not isinstance(panorama.get("visible"), bool):
+            raise DirectorDeskError("panorama.visible 必须是布尔值")
+        rotation_y = panorama.get("rotation_y")
+        if (
+            not isinstance(rotation_y, (int, float))
+            or isinstance(rotation_y, bool)
+            or not math.isfinite(float(rotation_y))
+            or not -180 <= float(rotation_y) <= 180
+        ):
+            raise DirectorDeskError("panorama.rotation_y 必须在 -180 到 180 之间")
     objects = scene.get("objects")
     if not isinstance(objects, list) or len(objects) > MAX_DIRECTOR_OBJECTS:
         raise DirectorDeskError("导演台物体数量超出限制")

@@ -10,6 +10,7 @@ POSE_SOURCE = ROOT / "apps/web/lib/directorShortDramaPoses.ts"
 REFINEMENT_SOURCE = ROOT / "apps/web/lib/directorPoseRefinements.ts"
 MANNEQUIN_SOURCE = ROOT / "apps/web/lib/directorMannequin.ts"
 DIRECTOR_UI_SOURCE = ROOT / "apps/web/components/canvas/DirectorDesk.tsx"
+WORKFLOW_CANVAS_SOURCE = ROOT / "apps/web/components/canvas/WorkflowCanvas.tsx"
 MANNEQUIN_MODEL_SOURCE = ROOT / "apps/web/components/canvas/directorMannequinModel.ts"
 DIRECTOR_STYLE_SOURCE = ROOT / "apps/web/app/globals.css"
 
@@ -184,3 +185,15 @@ def test_director_ui_uses_flat_panels_clear_type_and_one_primary_accent() -> Non
     assert '.openreel-director-desk [class*="text-[7px]"]' in style_source
     assert ".openreel-director-inspector section" in style_source
     assert ".openreel-director-toolbar" in style_source
+
+
+def test_director_ui_maps_canvas_panorama_nodes_into_spatial_environment() -> None:
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+    canvas_source = WORKFLOW_CANVAS_SOURCE.read_text(encoding="utf-8")
+
+    assert "空间全景" in ui_source
+    assert "new THREE.SphereGeometry(360, 96, 48)" in ui_source
+    assert "side: THREE.BackSide" in ui_source
+    assert 'data-director-panorama-status={panoramaStatus}' in ui_source
+    assert "isDirectorPanoramaNode" in canvas_source
+    assert "panoramaImages={directorPanoramaImages}" in canvas_source

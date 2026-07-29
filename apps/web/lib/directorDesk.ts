@@ -35,12 +35,21 @@ export interface DirectorObjectState {
   rig?: DirectorCustomRigState
 }
 
+export interface DirectorPanoramaState {
+  source_node_id?: string
+  title: string
+  image_url: string
+  rotation_y: number
+  visible: boolean
+}
+
 export interface DirectorSceneState {
   aspect_ratio: DirectorAspectRatio
   camera: DirectorCameraPose
   cameras: DirectorCameraState[]
   active_camera_id: string
   viewport_camera: DirectorCameraPose
+  panorama: DirectorPanoramaState | null
   objects: DirectorObjectState[]
 }
 
@@ -207,6 +216,7 @@ export function defaultDirectorScene(): DirectorSceneState {
       target: [0, 1, 0],
       fov: 45,
     },
+    panorama: null,
     objects: [],
   }
 }
@@ -442,6 +452,10 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
   }
   const aspectCandidate = String(source.aspect_ratio || "16:9") as DirectorAspectRatio
   const rawObjects = Array.isArray(source.objects) ? source.objects : []
+  const rawPanorama = source.panorama && typeof source.panorama === "object" && !Array.isArray(source.panorama)
+    ? source.panorama as Record<string, unknown>
+    : null
+  const panoramaUrl = String(rawPanorama?.image_url || "").trim()
   return {
     aspect_ratio: ASPECT_RATIOS.has(aspectCandidate) ? aspectCandidate : "16:9",
     camera: {
@@ -452,6 +466,15 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
     cameras,
     active_camera_id: activeCamera.id,
     viewport_camera: normalizeCameraPose(source.viewport_camera, viewportFallback),
+    panorama: rawPanorama && panoramaUrl
+      ? {
+          source_node_id: String(rawPanorama.source_node_id || "").trim() || undefined,
+          title: String(rawPanorama.title || "全景环境").trim().slice(0, 200) || "全景环境",
+          image_url: panoramaUrl,
+          rotation_y: Math.min(180, Math.max(-180, finiteNumber(rawPanorama.rotation_y, 0))),
+          visible: rawPanorama.visible !== false,
+        }
+      : null,
     objects: rawObjects.slice(0, 100).flatMap((item, index): DirectorObjectState[] => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return []
       const raw = item as Record<string, unknown>

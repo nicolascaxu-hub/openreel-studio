@@ -19,6 +19,7 @@ from app.services.director_desk import (
     MANNEQUIN_JOINT_RANGES,
     default_director_scene,
     normalize_director_state,
+    validate_director_scene,
 )
 from app.services.director_glb import analyze_glb_document
 
@@ -137,6 +138,31 @@ def test_director_normalizes_legacy_single_camera_into_multi_camera_scene() -> N
         "target": [0.0, 1.0, 0.0],
         "fov": 45.0,
     }
+
+
+def test_director_persists_and_validates_spatial_panorama_environment() -> None:
+    scene = default_director_scene()
+    scene["panorama"] = {
+        "source_node_id": "panorama-node-1",
+        "title": "庭院 360° 全景",
+        "image_url": "/api/media/director-project/panorama.webp",
+        "rotation_y": -42.5,
+        "visible": True,
+    }
+
+    assert validate_director_scene(scene)["panorama"] == scene["panorama"]
+    normalized = normalize_director_state({"scene": scene})
+    assert normalized["scene"]["panorama"] == scene["panorama"]
+
+    invalid = json.loads(json.dumps(scene))
+    invalid["panorama"]["image_url"] = "data:image/png;base64,oversized-state"
+    with pytest.raises(DirectorDeskError, match="panorama.image_url"):
+        validate_director_scene(invalid)
+
+    invalid = json.loads(json.dumps(scene))
+    invalid["panorama"]["rotation_y"] = 181
+    with pytest.raises(DirectorDeskError, match="panorama.rotation_y"):
+        validate_director_scene(invalid)
 
 
 def test_director_normalizes_legacy_joint_angles_into_standard_rig_limits() -> None:

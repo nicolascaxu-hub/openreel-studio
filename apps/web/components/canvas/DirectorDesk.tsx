@@ -46,6 +46,7 @@ import {
   type DirectorModelAsset,
   type DirectorModelHumanoid,
   type DirectorObjectState,
+  type DirectorPanoramaState,
   type DirectorSceneState,
   type DirectorTransformMode,
 } from "@/lib/directorDesk"
@@ -73,10 +74,17 @@ import {
 import { cn } from "@/lib/utils"
 
 
+export interface DirectorPanoramaOption {
+  nodeId: string
+  title: string
+  imageUrl: string
+}
+
 interface DirectorDeskProps {
   projectId: string
   projectTitle?: string
   canvasPosition: { x: number; y: number }
+  panoramaImages?: DirectorPanoramaOption[]
   onClose: () => void
   onCapturePromoted: (nodeId: string, created: boolean) => Promise<void> | void
 }
@@ -99,6 +107,9 @@ interface DirectorRuntime {
   viewport: HTMLDivElement
   cameraViewMode: "overview" | "camera"
   cameraGuidesVisible: boolean
+  panoramaMesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial> | null
+  panoramaTexture: THREE.Texture | null
+  panoramaLoadToken: number
   disposed: boolean
 }
 
@@ -360,6 +371,17 @@ function disposeObject(object: THREE.Object3D): void {
       value.dispose()
     }
   })
+}
+
+function disposeRuntimePanorama(runtime: DirectorRuntime): void {
+  if (runtime.panoramaMesh) {
+    runtime.scene.remove(runtime.panoramaMesh)
+    runtime.panoramaMesh.geometry.dispose()
+    runtime.panoramaMesh.material.dispose()
+    runtime.panoramaMesh = null
+  }
+  runtime.panoramaTexture?.dispose()
+  runtime.panoramaTexture = null
 }
 
 const DIRECTOR_MODEL_THUMBNAIL_SIZE = 144
@@ -836,6 +858,7 @@ export default function DirectorDesk({
   projectId,
   projectTitle,
   canvasPosition,
+  panoramaImages = [],
   onClose,
   onCapturePromoted,
 }: DirectorDeskProps) {
@@ -859,6 +882,8 @@ export default function DirectorDesk({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loadingModels, setLoadingModels] = useState(0)
+  const [panoramaStatus, setPanoramaStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [panoramaError, setPanoramaError] = useState<string | null>(null)
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [selectedCaptureId, setSelectedCaptureId] = useState<string | null>(null)
@@ -1275,6 +1300,9 @@ export default function DirectorDesk({
       viewport,
       cameraViewMode: cameraViewModeRef.current,
       cameraGuidesVisible: false,
+      panoramaMesh: null,
+      panoramaTexture: null,
+      panoramaLoadToken: 0,
       disposed: false,
     }
     runtimeRef.current = runtime
@@ -1575,6 +1603,8 @@ export default function DirectorDesk({
       transform.detach()
       stopRuntimeMixers(runtime)
       clearDirectorCameraRigs(runtime)
+      runtime.panoramaLoadToken += 1
+      disposeRuntimePanorama(runtime)
       transform.dispose()
       orbit.dispose()
       for (const object of runtime.objectRoots.values()) disposeObject(object)
@@ -1585,6 +1615,65 @@ export default function DirectorDesk({
       if (runtimeRef.current === runtime) runtimeRef.current = null
     }
   }, [commitRuntimeScene, enqueueSceneSave, loaded, setLocalDirector])
+
+  useEffect(() => {
+    const runtime = runtimeRef.current
+    const panorama = director.scene.panorama
+    if (!runtime || runtime.disposed) return
+    runtime.panoramaLoadToken += 1
+    const token = runtime.panoramaLoadToken
+    disposeRuntimePanorama(runtime)
+    setPanoramaError(null)
+    if (!panorama?.visible || !panorama.image_url) {
+      setPanoramaStatus("idle")
+      return
+    }
+    setPanoramaStatus("loading")
+    const loader = new THREE.TextureLoader()
+    loader.load(
+      resolveMediaUrl(panorama.image_url),
+      (texture) => {
+        if (runtime.disposed || runtime.panoramaLoadToken !== token || runtimeRef.current !== runtime) {
+          texture.dispose()
+          return
+        }
+        texture.colorSpace = THREE.SRGBColorSpace
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.BackSide,
+          depthWrite: false,
+          fog: false,
+        })
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(360, 96, 48), material)
+        mesh.name = "director panorama environment"
+        mesh.rotation.y = THREE.MathUtils.degToRad(panorama.rotation_y)
+        mesh.renderOrder = -100
+        mesh.raycast = () => undefined
+        runtime.panoramaTexture = texture
+        runtime.panoramaMesh = mesh
+        runtime.scene.add(mesh)
+        setPanoramaStatus("ready")
+      },
+      undefined,
+      () => {
+        if (runtime.disposed || runtime.panoramaLoadToken !== token || runtimeRef.current !== runtime) return
+        setPanoramaStatus("error")
+        setPanoramaError("全景图加载失败，请确认图片仍可访问")
+      },
+    )
+    return () => {
+      if (runtime.panoramaLoadToken !== token) return
+      runtime.panoramaLoadToken += 1
+      disposeRuntimePanorama(runtime)
+    }
+  }, [director.scene.panorama?.image_url, director.scene.panorama?.visible, loaded])
+
+  useEffect(() => {
+    const panorama = director.scene.panorama
+    const mesh = runtimeRef.current?.panoramaMesh
+    if (!panorama || !mesh) return
+    mesh.rotation.y = THREE.MathUtils.degToRad(panorama.rotation_y)
+  }, [director.scene.panorama?.rotation_y])
 
   useEffect(() => {
     const runtime = runtimeRef.current
@@ -1675,6 +1764,18 @@ export default function DirectorDesk({
       || activeDirectorCamera(director.scene),
     [director.scene, selectedCameraId],
   )
+  const panoramaChoices = useMemo(() => {
+    const byNodeId = new Map(panoramaImages.map((item) => [item.nodeId, item]))
+    const current = director.scene.panorama
+    if (current?.source_node_id && !byNodeId.has(current.source_node_id)) {
+      byNodeId.set(current.source_node_id, {
+        nodeId: current.source_node_id,
+        title: current.title,
+        imageUrl: current.image_url,
+      })
+    }
+    return [...byNodeId.values()]
+  }, [director.scene.panorama, panoramaImages])
   const contextObject = useMemo(
     () => viewportContextMenu?.target === "object"
       ? director.scene.objects.find((item) => item.id === viewportContextMenu.targetId) || null
@@ -2183,7 +2284,7 @@ export default function DirectorDesk({
   }, [])
 
   const createCapture = useCallback(async () => {
-    if (capturing || loadingModels > 0) return
+    if (capturing || loadingModels > 0 || panoramaStatus === "loading") return
     const runtime = runtimeRef.current
     if (!runtime) return
     setCapturing(true)
@@ -2218,7 +2319,7 @@ export default function DirectorDesk({
     } finally {
       setCapturing(false)
     }
-  }, [captureImage, capturing, enqueueSceneSave, loadingModels, mergeServerDirector, projectId, setLocalDirector])
+  }, [captureImage, capturing, enqueueSceneSave, loadingModels, mergeServerDirector, panoramaStatus, projectId, setLocalDirector])
 
   const uploadModel = useCallback(async (file: File) => {
     if (uploading) return
@@ -2450,6 +2551,50 @@ export default function DirectorDesk({
     replaceScene(scene, true)
   }, [replaceScene])
 
+  const selectPanorama = useCallback((nodeId: string) => {
+    const option = panoramaChoices.find((item) => item.nodeId === nodeId)
+    if (!option) return
+    const scene = cloneDirectorScene(directorRef.current.scene)
+    const previousRotation = scene.panorama?.rotation_y || 0
+    scene.panorama = {
+      source_node_id: option.nodeId,
+      title: option.title,
+      image_url: option.imageUrl,
+      rotation_y: previousRotation,
+      visible: true,
+    }
+    replaceScene(scene, true)
+  }, [panoramaChoices, replaceScene])
+
+  const updatePanorama = useCallback((patch: Partial<DirectorPanoramaState>) => {
+    const current = directorRef.current
+    if (!current.scene.panorama) return
+    const scene = cloneDirectorScene(current.scene)
+    scene.panorama = { ...scene.panorama!, ...patch }
+    undoRef.current = [...undoRef.current.slice(-49), cloneDirectorScene(current.scene)]
+    redoRef.current = []
+    setLocalDirector({ ...current, scene })
+    void enqueueSceneSave(scene)
+  }, [enqueueSceneSave, setLocalDirector])
+
+  const previewPanoramaRotation = useCallback((rotationY: number) => {
+    const current = directorRef.current
+    if (!current.scene.panorama) return
+    const scene = cloneDirectorScene(current.scene)
+    scene.panorama = { ...scene.panorama!, rotation_y: rotationY }
+    setLocalDirector({ ...current, scene })
+  }, [setLocalDirector])
+
+  const commitPanoramaRotation = useCallback(() => {
+    void enqueueSceneSave(directorRef.current.scene)
+  }, [enqueueSceneSave])
+
+  const clearPanorama = useCallback(() => {
+    const scene = cloneDirectorScene(directorRef.current.scene)
+    scene.panorama = null
+    replaceScene(scene, true)
+  }, [replaceScene])
+
   const runViewportContextAction = useCallback((action: () => void) => {
     setViewportContextMenu(null)
     action()
@@ -2514,11 +2659,11 @@ export default function DirectorDesk({
           <button
             type="button"
             onClick={() => void createCapture()}
-            disabled={!loaded || capturing || loadingModels > 0}
+            disabled={!loaded || capturing || loadingModels > 0 || panoramaStatus === "loading"}
             className="group relative ml-1 flex h-8 items-center gap-2 overflow-hidden rounded-md border border-[#70a7ff] bg-[#4f8ef7] px-3 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#629cff] disabled:cursor-wait disabled:opacity-50"
           >
             <DirectorIcon name="camera" className="h-4 w-4" />
-            {capturing ? `正在保存 ${director.scene.cameras.length} 个机位…` : loadingModels > 0 ? "模型加载中" : `截图全部机位 · ${director.scene.cameras.length}`}
+            {capturing ? `正在保存 ${director.scene.cameras.length} 个机位…` : loadingModels > 0 ? "模型加载中" : panoramaStatus === "loading" ? "全景加载中" : `截图全部机位 · ${director.scene.cameras.length}`}
           </button>
         </div>
       </header>
@@ -3250,6 +3395,70 @@ export default function DirectorDesk({
 
           {inspectorTab === "scene" ? (
             <div className="space-y-3">
+              <section
+                data-director-panorama-status={panoramaStatus}
+                className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]"
+              >
+                <div className="flex items-center justify-between gap-2 border-b border-white/[0.065] px-3 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#4f8ef7]/10 text-blue-200"><DirectorIcon name="image" className="h-3.5 w-3.5" /></span>
+                    <div className="min-w-0"><div className="text-[10px] font-medium text-zinc-300">空间全景</div><div className="mt-0.5 text-[8px] text-zinc-700">将 2:1 全景图映射到 360° 球形空间</div></div>
+                  </div>
+                  {director.scene.panorama ? (
+                    <span className={cn(
+                      "shrink-0 rounded-full px-1.5 py-0.5 text-[7px]",
+                      panoramaStatus === "ready" ? "bg-emerald-300/10 text-emerald-200/80" : panoramaStatus === "error" ? "bg-red-300/10 text-red-200/80" : "bg-white/[0.055] text-zinc-500",
+                    )}>{panoramaStatus === "ready" ? "已加载" : panoramaStatus === "loading" ? "加载中" : panoramaStatus === "error" ? "加载失败" : "已隐藏"}</span>
+                  ) : null}
+                </div>
+                <div className="space-y-2.5 p-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[9px] font-medium text-zinc-500">画布全景图</span>
+                    <select
+                      aria-label="选择空间全景图"
+                      value={director.scene.panorama?.source_node_id || ""}
+                      disabled={panoramaChoices.length === 0}
+                      onChange={(event) => selectPanorama(event.target.value)}
+                      className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#171717] px-2 text-[9px] text-zinc-300 outline-none transition focus:border-[#4f8ef7]/55 disabled:cursor-not-allowed disabled:text-zinc-700"
+                    >
+                      <option value="">{panoramaChoices.length ? "选择一张全景图" : "画布中还没有全景图"}</option>
+                      {panoramaChoices.map((item) => <option key={item.nodeId} value={item.nodeId}>{item.title}</option>)}
+                    </select>
+                  </label>
+
+                  {director.scene.panorama ? (
+                    <>
+                      <div className="flex items-center gap-2 rounded-xl border border-white/[0.065] bg-black/20 p-2">
+                        <img src={resolveMediaUrl(director.scene.panorama.image_url)} alt="全景环境缩略图" className="h-10 w-16 shrink-0 rounded-md object-cover" />
+                        <div className="min-w-0 flex-1"><div className="truncate text-[9px] font-medium text-zinc-300">{director.scene.panorama.title}</div><div className="mt-0.5 text-[7px] text-zinc-700">环境会出现在总览、机位视角和截图中</div></div>
+                        <button type="button" onClick={() => updatePanorama({ visible: !director.scene.panorama?.visible })} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200" title={director.scene.panorama.visible ? "隐藏全景" : "显示全景"}><DirectorIcon name={director.scene.panorama.visible ? "eye" : "eye-off"} className="h-3 w-3" /></button>
+                        <button type="button" onClick={clearPanorama} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-red-300/10 text-red-300/60 transition hover:bg-red-300/10 hover:text-red-200" title="移除全景环境"><DirectorIcon name="trash" className="h-3 w-3" /></button>
+                      </div>
+                      <label className="block rounded-xl border border-white/[0.065] bg-black/15 p-2.5">
+                        <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-500">水平朝向</span><span className="rounded-md bg-black/25 px-1.5 py-0.5 text-[9px] tabular-nums text-blue-200/80">{Math.round(director.scene.panorama.rotation_y)}°</span></div>
+                        <input
+                          aria-label="全景水平朝向"
+                          type="range"
+                          min="-180"
+                          max="180"
+                          step="1"
+                          value={director.scene.panorama.rotation_y}
+                          onChange={(event) => previewPanoramaRotation(Number(event.target.value))}
+                          onPointerUp={commitPanoramaRotation}
+                          onKeyUp={commitPanoramaRotation}
+                          onBlur={commitPanoramaRotation}
+                          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-[#4f8ef7]"
+                        />
+                        <div className="mt-1.5 flex justify-between text-[7px] text-zinc-700"><span>-180°</span><span>调整空间正面</span><span>180°</span></div>
+                      </label>
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-white/[0.075] px-3 py-3 text-center text-[8px] leading-4 text-zinc-600">先在画布生成或上传一张 2:1 等距柱状投影全景图，再从上方选择。</div>
+                  )}
+                  {panoramaError ? <div className="rounded-lg border border-red-300/10 bg-red-300/[0.04] px-2.5 py-2 text-[8px] leading-4 text-red-200/70">{panoramaError}</div> : null}
+                </div>
+              </section>
+
               <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018]">
                 <div className="flex items-center gap-2 border-b border-white/[0.065] px-3 py-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055] text-zinc-300"><DirectorIcon name="layers" className="h-3.5 w-3.5" /></span><div><div className="text-[10px] font-medium text-zinc-300">场景概览</div><div className="text-[8px] text-zinc-700">内容数量与输出状态</div></div></div>
                 <div className="grid grid-cols-3 gap-1.5 p-3 text-center">

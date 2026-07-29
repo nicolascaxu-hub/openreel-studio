@@ -9933,6 +9933,42 @@ function previewImageUrlFromNode(node: FlowNode | undefined): string {
   return previewUrlFromObject(output)
 }
 
+function panoramaRatioFromValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value
+  if (typeof value !== "string") return null
+  const text = value.trim().toLowerCase()
+  const pair = text.match(/(\d+(?:\.\d+)?)\s*[:/x×*]\s*(\d+(?:\.\d+)?)/)
+  if (pair) {
+    const width = Number(pair[1])
+    const height = Number(pair[2])
+    return width > 0 && height > 0 ? width / height : null
+  }
+  const numeric = Number(text)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+}
+
+function isDirectorPanoramaNode(node: FlowNode): boolean {
+  const data = node.data as Record<string, unknown>
+  if (data.type !== "image") return false
+  const candidates = [previewObject(data.preview), previewObject(data.output)].filter(Boolean) as Record<string, unknown>[]
+  if (candidates.some((item) => (
+    item.panorama === true
+    || item.is_panorama === true
+    || String(item.projection || "").toLowerCase() === "equirectangular"
+    || String(item.projection || "").toLowerCase().includes("360")
+  ))) return true
+  const label = `${previewString(data.title)}\n${previewString(data.prompt)}`.toLowerCase()
+  if (!/全景|panorama|equirectangular|360/.test(label)) return false
+  return candidates.some((item) => {
+    const width = Number(item.width)
+    const height = Number(item.height)
+    const ratio = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+      ? width / height
+      : panoramaRatioFromValue(item.aspect_ratio || item.ratio || item.size || item.size_final || item.resolution)
+    return ratio !== null && Math.abs(ratio - 2) <= 0.04
+  })
+}
+
 function previewVideoFromNode(node: FlowNode | undefined): { src: string; poster?: string } | null {
   const data = node?.data as { type?: string; preview?: Record<string, unknown>; output?: unknown } | undefined
   if (data?.type !== "video") return null
@@ -11303,6 +11339,17 @@ export default function WorkflowCanvas({
     ),
     [allNodes, canvasVisibleEdges, canvasVisibleNodeIds],
   )
+  const directorPanoramaImages = useMemo(() => nodes.flatMap((node) => {
+    if (!isDirectorPanoramaNode(node)) return []
+    const imageUrl = previewImageUrlFromNode(node)
+    if (!imageUrl) return []
+    const data = node.data as { title?: string }
+    return [{
+      nodeId: node.id,
+      title: String(data.title || "全景图"),
+      imageUrl,
+    }]
+  }), [nodes])
   const videoEditMediaNodes = useMemo<VideoEditPanelMediaNode[]>(() => {
     return nodes
       .map((node): VideoEditPanelMediaNode | null => {
@@ -14761,6 +14808,7 @@ export default function WorkflowCanvas({
           projectId={currentProject.id}
           projectTitle={currentProject.title}
           canvasPosition={directorCanvasPosition}
+          panoramaImages={directorPanoramaImages}
           onClose={() => setDirectorDeskOpen(false)}
           onCapturePromoted={handleDirectorCapturePromoted}
         />
