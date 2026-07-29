@@ -2691,6 +2691,7 @@ export default function DirectorDesk({
         visible: true,
       }
       replaceScene(scene, true)
+      setSelectedCameraId(null)
       setInspectorTab("scene")
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : String(importError))
