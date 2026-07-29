@@ -2479,51 +2479,43 @@ export default function DirectorDesk({
   )
 
   return createPortal((
-    <div className="openreel-director-desk fixed inset-0 z-[100] isolate grid min-w-[960px] grid-rows-[68px_minmax(0,1fr)_208px] overflow-hidden overscroll-none bg-[#070910] text-zinc-100">
-      <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_18%_-10%,rgba(139,124,255,.11),transparent_30%),radial-gradient(circle_at_82%_0%,rgba(85,215,255,.06),transparent_28%)]" />
-      <header className="relative z-30 flex items-center justify-between gap-4 border-b border-white/[0.075] bg-[#0b0e16]/95 px-4 shadow-[0_14px_45px_rgba(0,0,0,.24)] backdrop-blur-xl">
+    <div className={cn("openreel-director-desk fixed inset-0 z-[100] isolate grid min-w-[960px] overflow-hidden overscroll-none bg-[#181818] text-zinc-100", director.captures.length ? "grid-rows-[52px_minmax(0,1fr)_164px]" : "grid-rows-[52px_minmax(0,1fr)_86px]")}>
+      <header className="openreel-director-header relative z-30 flex items-center justify-between gap-4 border-b border-[#303030] bg-[#202020] px-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={() => void closeDesk()}
-            className="group flex h-9 items-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.025] px-3 text-[11px] font-medium text-zinc-300 transition hover:border-violet-300/25 hover:bg-violet-300/[0.07] hover:text-white"
+            className="group flex h-8 items-center gap-2 rounded-md border border-transparent px-2 text-[11px] font-medium text-zinc-400 transition hover:border-[#3a3a3a] hover:bg-[#292929] hover:text-white"
           >
             <DirectorIcon name="arrow-left" className="h-3.5 w-3.5 transition group-hover:-translate-x-0.5" />
             返回画布
           </button>
-          <div className="h-7 w-px bg-white/[0.08]" />
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-300/20 bg-[linear-gradient(145deg,rgba(139,124,255,.22),rgba(85,215,255,.1))] text-violet-100 shadow-[0_12px_30px_rgba(83,63,205,.18)]">
-            <DirectorIcon name="camera" className="h-[18px] w-[18px]" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="truncate text-sm font-semibold tracking-[-.01em] text-zinc-50">导演台</div>
-              <span className="rounded-full border border-violet-300/15 bg-violet-300/[0.07] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[.14em] text-violet-200/80">3D blocking</span>
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-zinc-500">
-              <span className="truncate">{projectTitle || "当前项目"}</span>
-              <span className="text-zinc-700">/</span>
-              <span>空间构图与镜头预演</span>
-            </div>
-          </div>
+          <div className="h-5 w-px bg-[#383838]" />
+          <div className="truncate text-[13px] font-semibold tracking-[-.01em] text-zinc-100">3D 导演台</div>
+          <div className="max-w-[240px] truncate text-[10px] text-zinc-500">{projectTitle || "当前项目"}</div>
+        </div>
+
+        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center rounded-lg border border-[#343434] bg-[#151515] p-0.5 xl:flex" role="group" aria-label="导演台视角">
+          <button type="button" onClick={() => switchCameraView("overview")} className={cn("h-7 rounded-md px-3 text-[10px] font-medium transition", cameraViewMode === "overview" ? "bg-[#333333] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-200")}>导演视角</button>
+          <button type="button" onClick={() => switchCameraView("camera")} className={cn("h-7 rounded-md px-3 text-[10px] font-medium transition", cameraViewMode === "camera" ? "bg-[#333333] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-200")}>机位视角</button>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="hidden items-center rounded-xl border border-white/[0.075] bg-black/20 p-1 lg:flex">
+          <div className="hidden items-center rounded-lg border border-[#343434] bg-[#181818] p-0.5 lg:flex">
             <button type="button" title="撤销 (Ctrl/⌘ Z)" onClick={undo} disabled={undoRef.current.length === 0} className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-25"><DirectorIcon name="undo" className="h-3.5 w-3.5" /></button>
             <button type="button" title="重做 (Ctrl/⌘ Shift Z)" onClick={redo} disabled={redoRef.current.length === 0} className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-25"><DirectorIcon name="redo" className="h-3.5 w-3.5" /></button>
           </div>
-          <div className="hidden items-center rounded-xl border border-white/[0.075] bg-black/20 p-1 md:flex">
+          <div className="hidden">
             <button type="button" title="显示网格" onClick={() => setShowGrid((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showGrid ? "bg-violet-300/12 text-violet-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name="grid" className="h-3.5 w-3.5" />网格</button>
             <button type="button" title="显示三分构图线" onClick={() => setShowThirds((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showThirds ? "bg-violet-300/12 text-violet-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name="thirds" className="h-3.5 w-3.5" />三分线</button>
             <button type="button" title="显示机位朝向和取景框" onClick={() => setShowCameraGuides((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] transition", showCameraGuides ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><DirectorIcon name={showCameraGuides ? "eye" : "eye-off"} className="h-3.5 w-3.5" />机位线</button>
           </div>
-          <button type="button" title="查看导演台快捷键 (?)" aria-label="快捷键" onClick={() => setShowShortcuts((value) => !value)} className={cn("flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[9px] font-medium transition", showShortcuts ? "border-violet-300/25 bg-violet-300/10 text-violet-100" : "border-white/[0.075] bg-black/20 text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200")}><span className="text-[12px]">⌨</span><span className="hidden xl:inline">快捷键</span><kbd className="rounded border border-white/[0.09] bg-black/25 px-1 py-0.5 text-[7px] text-zinc-500">?</kbd></button>
+          <button type="button" title="查看导演台快捷键 (?)" aria-label="快捷键" onClick={() => setShowShortcuts((value) => !value)} className={cn("flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[10px] font-medium transition", showShortcuts ? "border-[#4f8ef7]/50 bg-[#4f8ef7]/15 text-blue-100" : "border-[#343434] bg-[#181818] text-zinc-500 hover:bg-[#292929] hover:text-zinc-200")}><span className="text-[12px]">⌨</span><span className="hidden xl:inline">快捷键</span><kbd className="rounded border border-white/[0.09] bg-black/25 px-1 py-0.5 text-[8px] text-zinc-500">?</kbd></button>
           <button
             type="button"
             onClick={() => void createCapture()}
             disabled={!loaded || capturing || loadingModels > 0}
-            className="group relative ml-1 flex h-10 items-center gap-2 overflow-hidden rounded-xl border border-cyan-100/25 bg-[linear-gradient(135deg,#72e4ff,#9be8ff)] px-4 text-[11px] font-semibold text-[#06121a] shadow-[0_10px_30px_rgba(85,215,255,.2)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(85,215,255,.28)] disabled:translate-y-0 disabled:cursor-wait disabled:opacity-50"
+            className="group relative ml-1 flex h-8 items-center gap-2 overflow-hidden rounded-md border border-[#70a7ff] bg-[#4f8ef7] px-3 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#629cff] disabled:cursor-wait disabled:opacity-50"
           >
             <DirectorIcon name="camera" className="h-4 w-4" />
             {capturing ? `正在保存 ${director.scene.cameras.length} 个机位…` : loadingModels > 0 ? "模型加载中" : `截图全部机位 · ${director.scene.cameras.length}`}
@@ -2532,7 +2524,7 @@ export default function DirectorDesk({
       </header>
 
       {showShortcuts ? (
-        <section className="absolute right-4 top-[76px] z-50 w-[610px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border border-violet-200/15 bg-[#0b0f18]/95 shadow-[0_28px_90px_rgba(0,0,0,.58)] backdrop-blur-2xl" aria-label="导演台快捷键列表">
+        <section className="absolute right-4 top-[60px] z-50 w-[610px] max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-[#3a3a3a] bg-[#202020]/98 shadow-[0_24px_70px_rgba(0,0,0,.58)] backdrop-blur-2xl" aria-label="导演台快捷键列表">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
             <div><div className="text-[12px] font-semibold text-zinc-100">导演台快捷键</div><div className="mt-0.5 text-[8px] text-zinc-600">融合 3D 场景编辑与多机位切换习惯</div></div>
             <button type="button" onClick={() => setShowShortcuts(false)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.07] text-[13px] text-zinc-500 transition hover:bg-white/[0.06] hover:text-white" aria-label="关闭快捷键">×</button>
@@ -2618,13 +2610,13 @@ export default function DirectorDesk({
         </div>
       ) : null}
 
-      <div className="relative z-10 grid min-h-0 grid-cols-[220px_minmax(0,1fr)_300px] 2xl:grid-cols-[260px_minmax(0,1fr)_340px]">
-        <aside className="flex min-h-0 flex-col border-r border-white/[0.07] bg-[#0a0d14]/94">
+      <div className="relative z-10 grid min-h-0 grid-cols-[212px_minmax(0,1fr)_292px] 2xl:grid-cols-[232px_minmax(0,1fr)_320px]">
+        <aside className="openreel-director-sidebar flex min-h-0 flex-col border-r border-[#303030] bg-[#1c1c1c]">
           <div className="border-b border-white/[0.065] px-3 pb-3 pt-3">
-            <div className="grid grid-cols-3 rounded-xl border border-white/[0.075] bg-black/25 p-1">
-              <button type="button" onClick={() => setLeftPanelTab("library")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "library" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="sparkles" className="h-3.5 w-3.5" />素材</button>
-              <button type="button" onClick={() => setLeftPanelTab("scene")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "scene" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="layers" className="h-3.5 w-3.5" />场景 <span className="rounded-full bg-black/30 px-1.5 text-[8px] tabular-nums text-zinc-400">{director.scene.objects.length}</span></button>
-              <button type="button" onClick={() => setLeftPanelTab("cameras")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[10px] font-medium transition", leftPanelTab === "cameras" ? "bg-white/[0.085] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="camera" className="h-3.5 w-3.5" />机位 <span className="rounded-full bg-black/30 px-1.5 text-[8px] tabular-nums text-zinc-400">{director.scene.cameras.length}</span></button>
+            <div className="grid grid-cols-3 border-b border-[#343434]" role="tablist" aria-label="场景资源分类">
+              <button type="button" onClick={() => setLeftPanelTab("library")} className={cn("flex h-9 items-center justify-center gap-1 whitespace-nowrap border-b-2 text-[10px] font-medium transition", leftPanelTab === "library" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="sparkles" className="h-3.5 w-3.5" />素材</button>
+              <button type="button" onClick={() => setLeftPanelTab("scene")} className={cn("flex h-9 items-center justify-center gap-1 whitespace-nowrap border-b-2 text-[10px] font-medium transition", leftPanelTab === "scene" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="layers" className="h-3.5 w-3.5" />场景 <span className="ml-0.5 text-[8px] tabular-nums text-zinc-500">{director.scene.objects.length}</span></button>
+              <button type="button" onClick={() => setLeftPanelTab("cameras")} className={cn("flex h-9 items-center justify-center gap-1 whitespace-nowrap border-b-2 text-[10px] font-medium transition", leftPanelTab === "cameras" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}><DirectorIcon name="camera" className="h-3.5 w-3.5" />机位 <span className="ml-0.5 text-[8px] tabular-nums text-zinc-500">{director.scene.cameras.length}</span></button>
             </div>
           </div>
 
@@ -2817,9 +2809,8 @@ export default function DirectorDesk({
           </div>
         </aside>
 
-        <main className="relative min-h-0 overflow-hidden bg-[#05070c] p-3 2xl:p-4">
-          <div ref={viewportRef} data-director-viewport data-director-loading-models={loadingModels} className="relative h-full touch-none select-none overflow-hidden overscroll-none rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
-            <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(circle_at_50%_38%,transparent_35%,rgba(0,0,0,.24)_100%)]" />
+        <main className="relative min-h-0 overflow-hidden bg-[#111111]">
+          <div ref={viewportRef} data-director-viewport data-director-loading-models={loadingModels} className="relative h-full touch-none select-none overflow-hidden overscroll-none bg-[#111111]">
             {!loaded && <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#070a10]/90 text-[10px] text-zinc-500 backdrop-blur-sm"><span className="mb-3 h-7 w-7 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />正在准备 3D 场景…</div>}
             {showThirds && (
               <div className="pointer-events-none absolute inset-[15px] z-10 rounded-xl border border-white/[0.06]">
@@ -2878,7 +2869,7 @@ export default function DirectorDesk({
               <span>{director.scene.aspect_ratio}</span>
             </div>
 
-            <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/[0.1] bg-[#0a0d14]/76 p-1 shadow-[0_12px_34px_rgba(0,0,0,.28)] backdrop-blur-xl">
+            <div className="openreel-director-toolbar absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-[#3a3a3a] bg-[#202020]/95 p-1 shadow-[0_10px_28px_rgba(0,0,0,.38)] backdrop-blur-xl">
               <button type="button" onClick={() => switchCameraView("overview")} className={cn("h-8 rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "overview" ? "bg-cyan-300/12 text-cyan-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>空间总览</button>
               <button type="button" onClick={() => switchCameraView("camera")} className={cn("h-8 max-w-[112px] truncate rounded-lg px-3 text-[9px] font-medium transition", cameraViewMode === "camera" ? "bg-violet-300/15 text-violet-100" : "text-zinc-500 hover:bg-white/[0.07] hover:text-white")}>取景 · {selectedCamera.name}</button>
               <button type="button" title="把当前观察位置、方向和视场角保存为新机位" onClick={addCamera} disabled={director.scene.cameras.length >= MAX_DIRECTOR_CAMERAS} className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[9px] font-medium text-cyan-200/80 transition hover:bg-cyan-300/[0.09] hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-25"><DirectorIcon name="camera" className="h-3 w-3" />在此放置机位</button>
@@ -2893,21 +2884,21 @@ export default function DirectorDesk({
           </div>
         </main>
 
-        <aside className="flex min-h-0 flex-col overflow-hidden border-l border-white/[0.07] bg-[#0a0d14]/94">
-          <div className="shrink-0 border-b border-white/[0.065] bg-[#0b0e16]/96 px-3 pb-3 pt-3 2xl:px-4">
+        <aside className="openreel-director-sidebar openreel-director-inspector flex min-h-0 flex-col overflow-hidden border-l border-[#303030] bg-[#1c1c1c]">
+          <div className="shrink-0 border-b border-[#303030] bg-[#202020] px-3 pb-2 pt-3 2xl:px-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-zinc-200">属性检查器</div>
+                <div className="text-[12px] font-semibold text-zinc-100">属性检查器</div>
                 <div className="mt-0.5 truncate text-[8px] text-zinc-600">
                   {inspectorTab === "object" ? selectedObject?.name || "尚未选择对象" : inspectorTab === "camera" ? selectedCamera.name : "场景与视口设置"}
                 </div>
               </div>
               <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2 py-0.5 text-[8px] tabular-nums text-zinc-600">r{director.revision}</span>
             </div>
-            <div className="grid grid-cols-3 rounded-xl border border-white/[0.075] bg-black/25 p-1" role="tablist" aria-label="检查器分类">
-              <button type="button" role="tab" aria-selected={inspectorTab === "object"} disabled={!selectedObject} onClick={() => setInspectorTab("object")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-30", inspectorTab === "object" ? "bg-violet-300/[0.13] text-violet-100 shadow-sm" : "text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="move" className="h-3 w-3" />对象</button>
-              <button type="button" role="tab" aria-selected={inspectorTab === "camera"} onClick={() => setInspectorTab("camera")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[9px] font-medium transition", inspectorTab === "camera" ? "bg-cyan-300/[0.12] text-cyan-100 shadow-sm" : "text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="camera" className="h-3 w-3" />机位</button>
-              <button type="button" role="tab" aria-selected={inspectorTab === "scene"} onClick={() => setInspectorTab("scene")} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-[9px] font-medium transition", inspectorTab === "scene" ? "bg-white/[0.09] text-zinc-100 shadow-sm" : "text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="grid" className="h-3 w-3" />场景</button>
+            <div className="grid grid-cols-3 border-b border-[#343434]" role="tablist" aria-label="检查器分类">
+              <button type="button" role="tab" aria-selected={inspectorTab === "object"} disabled={!selectedObject} onClick={() => setInspectorTab("object")} className={cn("flex h-9 items-center justify-center gap-1.5 border-b-2 text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-30", inspectorTab === "object" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="move" className="h-3 w-3" />对象</button>
+              <button type="button" role="tab" aria-selected={inspectorTab === "camera"} onClick={() => setInspectorTab("camera")} className={cn("flex h-9 items-center justify-center gap-1.5 border-b-2 text-[9px] font-medium transition", inspectorTab === "camera" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="camera" className="h-3 w-3" />机位</button>
+              <button type="button" role="tab" aria-selected={inspectorTab === "scene"} onClick={() => setInspectorTab("scene")} className={cn("flex h-9 items-center justify-center gap-1.5 border-b-2 text-[9px] font-medium transition", inspectorTab === "scene" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}><DirectorIcon name="grid" className="h-3 w-3" />场景</button>
             </div>
           </div>
 
@@ -2916,9 +2907,9 @@ export default function DirectorDesk({
             <>
           {selectedObject ? (
             <>
-            <div className="mb-3 grid grid-cols-2 rounded-xl border border-white/[0.07] bg-black/20 p-1">
-              <button type="button" onClick={() => setObjectInspectorTab("transform")} className={cn("h-8 rounded-lg text-[9px] font-medium transition", objectInspectorTab === "transform" ? "bg-white/[0.09] text-white" : "text-zinc-500 hover:text-zinc-200")}>基础与变换</button>
-              <button type="button" disabled={!selectedMannequin && !selectedCustomAsset} onClick={() => { setObjectInspectorTab("rig"); setRigInspectorTab(selectedMannequin ? "setup" : "motion") }} className={cn("h-8 rounded-lg text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", objectInspectorTab === "rig" ? "bg-violet-300/[0.13] text-violet-100" : "text-zinc-500 hover:text-zinc-200")}>角色与动作</button>
+            <div className="mb-2 grid grid-cols-2 border-b border-[#303030]">
+              <button type="button" onClick={() => setObjectInspectorTab("transform")} className={cn("h-9 border-b-2 text-[9px] font-medium transition", objectInspectorTab === "transform" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}>属性</button>
+              <button type="button" disabled={!selectedMannequin && !selectedCustomAsset} onClick={() => { setObjectInspectorTab("rig"); setRigInspectorTab(selectedMannequin ? "setup" : "motion") }} className={cn("h-9 border-b-2 text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", objectInspectorTab === "rig" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}>姿势与骨骼</button>
             </div>
             {objectInspectorTab === "transform" ? (
             <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018] shadow-[inset_0_1px_rgba(255,255,255,.025)]">
@@ -3294,7 +3285,7 @@ export default function DirectorDesk({
         </aside>
       </div>
 
-      <section className="relative z-20 min-w-0 border-t border-white/[0.075] bg-[#090c13]/97 px-4 py-3 shadow-[0_-16px_48px_rgba(0,0,0,.2)]">
+      <section className="openreel-director-timeline relative z-20 min-w-0 border-t border-[#303030] bg-[#1c1c1c] px-4 py-2.5">
         <div className="mb-2.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/15 bg-violet-300/[0.07] text-violet-200/80"><DirectorIcon name="image" className="h-3.5 w-3.5" /></span>
@@ -3302,10 +3293,10 @@ export default function DirectorDesk({
           </div>
           <div className="flex items-center gap-2 text-[8px] text-zinc-600"><span className="hidden md:inline">镜头不会自动进入创作画布</span><span className="h-1 w-1 rounded-full bg-zinc-700" /><span>手动选择“放入画布”</span></div>
         </div>
-        <div className="flex h-[142px] min-w-0 gap-3 overflow-x-auto pb-1">
+        <div className={cn("flex min-w-0 gap-2.5 overflow-x-auto pb-1", director.captures.length ? "h-[108px]" : "h-[34px]")}>
           {director.captures.length === 0 ? (
-            <div className="group flex w-full items-center justify-center rounded-2xl border border-dashed border-white/[0.085] bg-[radial-gradient(circle_at_50%_0%,rgba(139,124,255,.07),transparent_45%)]">
-              <div className="flex items-center gap-3 text-left"><span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.025] text-zinc-600"><DirectorIcon name="camera" className="h-4 w-4" /></span><span><span className="block text-[10px] font-medium text-zinc-400">还没有保存镜头</span><span className="mt-1 block text-[8px] text-zinc-700">添加和摆放多个机位，然后点击右上角“截图全部机位”</span></span></div>
+            <div className="group flex w-full items-center justify-center rounded-md border border-dashed border-[#343434] bg-[#202020]">
+              <div className="flex items-center gap-2 text-left text-[10px] text-zinc-500"><DirectorIcon name="camera" className="h-3.5 w-3.5" /><span>还没有保存镜头 · 放置机位后点击右上角截图</span></div>
             </div>
           ) : director.captures.map((capture, index) => (
             <article
@@ -3315,9 +3306,9 @@ export default function DirectorDesk({
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => void dropCapture(capture.id)}
               onClick={() => setSelectedCaptureId(capture.id)}
-              className={cn("group relative w-[218px] shrink-0 cursor-pointer overflow-hidden rounded-xl border bg-[#111620] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(0,0,0,.3)]", selectedCaptureId === capture.id ? "border-cyan-200/55 ring-2 ring-cyan-300/10" : "border-white/[0.09] hover:border-white/[0.18]")}
+              className={cn("group relative w-[188px] shrink-0 cursor-pointer overflow-hidden rounded-md border bg-[#242424] transition duration-200 hover:border-[#555]", selectedCaptureId === capture.id ? "border-[#4f8ef7] ring-1 ring-[#4f8ef7]/30" : "border-[#343434]")}
             >
-              <div className="relative h-[96px] overflow-hidden bg-black/30">
+              <div className="relative h-[70px] overflow-hidden bg-black/30">
                 <img src={resolveMediaUrl(capture.image_url)} alt={capture.title} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.025]" />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0d121b]/90 via-transparent to-black/10" />
                 <span className="absolute left-2 top-2 rounded-md border border-white/[0.09] bg-black/45 px-1.5 py-0.5 text-[8px] font-semibold tabular-nums text-white/80 backdrop-blur">{String(index + 1).padStart(2, "0")}</span>
@@ -3329,7 +3320,7 @@ export default function DirectorDesk({
                   <button type="button" title="移除镜头" onClick={(event) => { event.stopPropagation(); void removeCapture(capture) }} className="ml-auto flex h-6 w-6 items-center justify-center rounded-lg border border-red-300/10 bg-black/55 text-red-300/80 backdrop-blur hover:bg-red-400/15"><DirectorIcon name="trash" className="h-2.5 w-2.5" /></button>
                 </div>
               </div>
-              <div className="flex h-[44px] items-center gap-2 px-2.5">
+              <div className="flex h-[36px] items-center gap-2 px-2.5">
                 <span className="min-w-0 flex-1 truncate text-[9px] font-medium text-zinc-200">{capture.title}</span>
                 <button
                   type="button"

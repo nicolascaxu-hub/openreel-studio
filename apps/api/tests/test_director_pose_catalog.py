@@ -11,6 +11,7 @@ REFINEMENT_SOURCE = ROOT / "apps/web/lib/directorPoseRefinements.ts"
 MANNEQUIN_SOURCE = ROOT / "apps/web/lib/directorMannequin.ts"
 DIRECTOR_UI_SOURCE = ROOT / "apps/web/components/canvas/DirectorDesk.tsx"
 MANNEQUIN_MODEL_SOURCE = ROOT / "apps/web/components/canvas/directorMannequinModel.ts"
+DIRECTOR_STYLE_SOURCE = ROOT / "apps/web/app/globals.css"
 
 
 def _pose_source() -> str:
@@ -164,3 +165,22 @@ def test_joint_editor_exposes_every_deforming_joint_and_precise_axes() -> None:
     assert "data-director-joint={joint.id}" in ui_source
     assert "支持 0.1° 数字精调" in ui_source
     assert "原版 66 骨架" in ui_source
+
+
+def test_director_ui_uses_flat_panels_clear_type_and_one_primary_accent() -> None:
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+    style_source = DIRECTOR_STYLE_SOURCE.read_text(encoding="utf-8")
+
+    assert "grid-rows-[52px_minmax(0,1fr)_164px]" in ui_source
+    assert "grid-rows-[52px_minmax(0,1fr)_86px]" in ui_source
+    assert 'aria-label="导演台视角"' in ui_source
+    assert "openreel-director-sidebar" in ui_source
+    assert "openreel-director-inspector" in ui_source
+    assert "openreel-director-toolbar" in ui_source
+    assert "openreel-director-timeline" in ui_source
+    assert "--director-accent: #4f8ef7" in style_source
+    assert '[class^="text-cyan-"]' in style_source
+    assert '[class^="bg-violet-"]' in style_source
+    assert '.openreel-director-desk [class*="text-[7px]"]' in style_source
+    assert ".openreel-director-inspector section" in style_source
+    assert ".openreel-director-toolbar" in style_source

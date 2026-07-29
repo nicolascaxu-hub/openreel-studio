@@ -1559,6 +1559,142 @@ body.openreel-video-editor-open .studio-pointer-aura {
   fill: rgb(8 145 178 / 0.9) !important;
 }
 
+/* Director desk: flat, high-contrast panels inspired by conventional 3D
+   blocking tools. The blue accent is reserved for current state and primary
+   actions; content and controls keep neutral grayscale contrast. */
+.openreel-director-desk {
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+  --director-panel: #1c1c1c;
+  --director-panel-raised: #242424;
+  --director-border: #303030;
+  --director-control: #292929;
+  --director-accent: #4f8ef7;
+}
+
+.openreel-director-desk button,
+.openreel-director-desk input,
+.openreel-director-desk select {
+  letter-spacing: 0;
+}
+
+.openreel-director-desk button:focus-visible,
+.openreel-director-desk input:focus-visible,
+.openreel-director-desk select:focus-visible,
+.openreel-director-desk summary:focus-visible {
+  outline: 1px solid var(--director-accent);
+  outline-offset: 1px;
+}
+
+.openreel-director-desk input[type="range"] {
+  accent-color: var(--director-accent) !important;
+}
+
+/* Legacy semantic accents inside the director controls now share the same
+   selection blue. Red/green remain available for destructive/success states. */
+.openreel-director-desk [class^="text-cyan-"],
+.openreel-director-desk [class*=" text-cyan-"],
+.openreel-director-desk [class^="text-violet-"],
+.openreel-director-desk [class*=" text-violet-"] {
+  color: #a9c9ff !important;
+}
+
+.openreel-director-desk [class^="bg-cyan-"],
+.openreel-director-desk [class*=" bg-cyan-"],
+.openreel-director-desk [class^="bg-violet-"],
+.openreel-director-desk [class*=" bg-violet-"] {
+  background-color: rgb(79 142 247 / 0.14) !important;
+}
+
+.openreel-director-desk [class^="border-cyan-"],
+.openreel-director-desk [class*=" border-cyan-"],
+.openreel-director-desk [class^="border-violet-"],
+.openreel-director-desk [class*=" border-violet-"] {
+  border-color: rgb(79 142 247 / 0.38) !important;
+}
+
+.openreel-director-desk [class^="ring-cyan-"],
+.openreel-director-desk [class*=" ring-cyan-"],
+.openreel-director-desk [class^="ring-violet-"],
+.openreel-director-desk [class*=" ring-violet-"] {
+  --tw-ring-color: rgb(79 142 247 / 0.3) !important;
+}
+
+.openreel-director-desk [class*="text-[6px]"] {
+  font-size: 9px !important;
+  line-height: 12px !important;
+}
+
+.openreel-director-desk [class*="text-[7px]"],
+.openreel-director-desk [class*="text-[8px]"] {
+  font-size: 10px !important;
+  line-height: 14px !important;
+}
+
+.openreel-director-desk [class*="text-[9px]"],
+.openreel-director-desk [class*="text-[10px]"] {
+  font-size: 11px !important;
+  line-height: 15px !important;
+}
+
+.openreel-director-desk .text-zinc-700 {
+  color: #858585 !important;
+}
+
+.openreel-director-desk .text-zinc-600 {
+  color: #969696 !important;
+}
+
+.openreel-director-desk .text-zinc-500 {
+  color: #adadad !important;
+}
+
+.openreel-director-sidebar {
+  scrollbar-color: #494949 transparent;
+  scrollbar-width: thin;
+}
+
+.openreel-director-sidebar ::-webkit-scrollbar,
+.openreel-director-timeline ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.openreel-director-sidebar ::-webkit-scrollbar-thumb,
+.openreel-director-timeline ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #494949;
+}
+
+.openreel-director-inspector section {
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.openreel-director-inspector section + section {
+  margin-top: 10px;
+  border-top-color: var(--director-border) !important;
+}
+
+.openreel-director-inspector input,
+.openreel-director-inspector select {
+  border-color: #383838 !important;
+  background-color: var(--director-control) !important;
+  color: #e4e4e7 !important;
+}
+
+.openreel-director-toolbar button:hover {
+  background-color: #303030;
+}
+
+.openreel-director-toolbar {
+  white-space: nowrap;
+}
+
 @media (pointer: coarse) {
   .react-flow__handle.openreel-port-handle {
     opacity: 0.82 !important;
