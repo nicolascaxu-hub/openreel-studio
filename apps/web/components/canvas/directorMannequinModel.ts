@@ -220,6 +220,71 @@ function captureBoneFrame(
   }
 }
 
+function constrainedDirectionAlignment(
+  sourcePrimaryValue: THREE.Vector3,
+  sourceSecondaryValue: THREE.Vector3,
+  targetPrimaryValue: THREE.Vector3,
+  targetSecondaryValue: THREE.Vector3,
+): THREE.Quaternion {
+  const sourcePrimary = sourcePrimaryValue.clone().normalize()
+  const targetPrimary = targetPrimaryValue.clone().normalize()
+  const swing = new THREE.Quaternion().setFromUnitVectors(sourcePrimary, targetPrimary)
+  const swungSecondary = sourceSecondaryValue.clone().applyQuaternion(swing)
+  swungSecondary.addScaledVector(targetPrimary, -swungSecondary.dot(targetPrimary)).normalize()
+  const targetSecondary = targetSecondaryValue.clone()
+    .addScaledVector(targetPrimary, -targetSecondaryValue.dot(targetPrimary))
+    .normalize()
+  const signedAngle = Math.atan2(
+    targetPrimary.dot(swungSecondary.clone().cross(targetSecondary)),
+    THREE.MathUtils.clamp(swungSecondary.dot(targetSecondary), -1, 1),
+  )
+  const twist = new THREE.Quaternion().setFromAxisAngle(targetPrimary, signedAngle)
+  return twist.multiply(swing)
+}
+
+/**
+ * Calibrate the imported T-pose wrist with both finger and palm directions.
+ * A one-vector alignment leaves an unconstrained 180° roll, which is why one
+ * hand used to flip inside the body in clap, surrender and hand-to-face poses.
+ */
+function captureWristFrame(
+  root: THREE.Object3D,
+  wristName: string | THREE.Bone | undefined,
+  middleName: string | THREE.Bone | undefined,
+  indexName: string | THREE.Bone | undefined,
+  pinkyName: string | THREE.Bone | undefined,
+  baselinePalmDirection: THREE.Vector3,
+): BoneFrame | null {
+  const wrist = bone(root, wristName)
+  const middle = bone(root, middleName)
+  const index = bone(root, indexName)
+  const pinky = bone(root, pinkyName)
+  if (!wrist || !middle || !index || !pinky) return null
+
+  const wristPosition = wrist.getWorldPosition(new THREE.Vector3())
+  const fingerDirection = middle.getWorldPosition(new THREE.Vector3())
+    .sub(wristPosition)
+    .normalize()
+  const indexDirection = index.getWorldPosition(new THREE.Vector3()).sub(wristPosition)
+  const pinkyDirection = pinky.getWorldPosition(new THREE.Vector3()).sub(wristPosition)
+  const palmDirection = indexDirection.cross(pinkyDirection).normalize()
+  // Mesh2Motion's reference rig is a palms-down T pose. Normalize both sides
+  // to that same surface before mapping them to their viewer-side inward axes.
+  if (palmDirection.y > 0) palmDirection.negate()
+
+  const alignment = constrainedDirectionAlignment(
+    fingerDirection,
+    palmDirection,
+    new THREE.Vector3(0, -1, 0),
+    baselinePalmDirection,
+  )
+  return {
+    bone: wrist,
+    baseWorld: alignment.multiply(wrist.getWorldQuaternion(new THREE.Quaternion())),
+    baseLocal: wrist.quaternion.clone(),
+  }
+}
+
 function captureRestBoneFrame(
   root: THREE.Object3D,
   boneName: string | THREE.Bone | undefined,
@@ -362,11 +427,13 @@ function applyPose(
       jointBones[wristJoint],
       down,
     )
-    frames[wristJoint] = captureBoneFrame(
+    frames[wristJoint] = captureWristFrame(
       model,
       jointBones[wristJoint],
       jointBones[`${side}Middle1`],
-      down,
+      jointBones[`${side}Index1`],
+      jointBones[`${side}Pinky1`],
+      new THREE.Vector3(side === "left" ? 1 : -1, 0, 0),
     )
     frames[hipJoint] = captureBoneFrame(model, jointBones[hipJoint], jointBones[kneeJoint], down)
     frames[kneeJoint] = captureBoneFrame(model, jointBones[kneeJoint], jointBones[ankleJoint], down)

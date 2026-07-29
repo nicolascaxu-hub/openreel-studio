@@ -2818,7 +2818,7 @@ export default function DirectorDesk({
         </aside>
 
         <main className="relative min-h-0 overflow-hidden bg-[#05070c] p-3 2xl:p-4">
-          <div ref={viewportRef} data-director-viewport className="relative h-full touch-none select-none overflow-hidden overscroll-none rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
+          <div ref={viewportRef} data-director-viewport data-director-loading-models={loadingModels} className="relative h-full touch-none select-none overflow-hidden overscroll-none rounded-2xl border border-white/[0.075] bg-[#05080d] shadow-[0_24px_70px_rgba(0,0,0,.38),inset_0_1px_rgba(255,255,255,.035)]">
             <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(circle_at_50%_38%,transparent_35%,rgba(0,0,0,.24)_100%)]" />
             {!loaded && <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#070a10]/90 text-[10px] text-zinc-500 backdrop-blur-sm"><span className="mb-3 h-7 w-7 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />正在准备 3D 场景…</div>}
             {showThirds && (

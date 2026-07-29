@@ -82,6 +82,25 @@ function directionQuaternion(direction: DirectorPoseDirection): THREE.Quaternion
   return new THREE.Quaternion().setFromUnitVectors(DOWN, target.normalize())
 }
 
+function orientationQuaternion(
+  direction: DirectorPoseDirection,
+  facing: DirectorPoseDirection,
+  baselineFacing: DirectorPoseDirection,
+): THREE.Quaternion {
+  const sourcePrimary = DOWN.clone()
+  const targetPrimary = new THREE.Vector3(...direction).normalize()
+  const swing = new THREE.Quaternion().setFromUnitVectors(sourcePrimary, targetPrimary)
+  const swungFacing = new THREE.Vector3(...baselineFacing).applyQuaternion(swing)
+  swungFacing.addScaledVector(targetPrimary, -swungFacing.dot(targetPrimary)).normalize()
+  const targetFacing = new THREE.Vector3(...facing)
+  targetFacing.addScaledVector(targetPrimary, -targetFacing.dot(targetPrimary)).normalize()
+  const signedAngle = Math.atan2(
+    targetPrimary.dot(swungFacing.clone().cross(targetFacing)),
+    THREE.MathUtils.clamp(swungFacing.dot(targetFacing), -1, 1),
+  )
+  return new THREE.Quaternion().setFromAxisAngle(targetPrimary, signedAngle).multiply(swing)
+}
+
 function rotationFromQuaternion(quaternion: THREE.Quaternion): DirectorPoseRotation {
   const euler = new THREE.Euler().setFromQuaternion(quaternion.normalize(), "XYZ")
   return [euler.x, euler.y, euler.z].map((value) =>
@@ -100,10 +119,13 @@ export function directorArmChain(
   upperArm: DirectorPoseDirection,
   forearm: DirectorPoseDirection,
   hand: DirectorPoseDirection = forearm,
+  palmFacing?: DirectorPoseDirection,
 ): DirectorPoseJointValues {
   const shoulderWorld = directionQuaternion(upperArm)
   const elbowWorld = directionQuaternion(forearm)
-  const handWorld = directionQuaternion(hand)
+  const handWorld = palmFacing
+    ? orientationQuaternion(hand, palmFacing, [side === "left" ? 1 : -1, 0, 0])
+    : directionQuaternion(hand)
   const elbowLocal = shoulderWorld.clone().invert().multiply(elbowWorld)
   const wristLocal = elbowWorld.clone().invert().multiply(handWorld)
   const prefix = side
@@ -122,10 +144,17 @@ export function directorSymmetricArms(
   leftUpperArm: DirectorPoseDirection,
   leftForearm: DirectorPoseDirection,
   leftHand: DirectorPoseDirection = leftForearm,
+  leftPalmFacing?: DirectorPoseDirection,
 ): DirectorPoseJointValues {
   return {
-    ...directorArmChain("left", leftUpperArm, leftForearm, leftHand),
-    ...directorArmChain("right", mirror(leftUpperArm), mirror(leftForearm), mirror(leftHand)),
+    ...directorArmChain("left", leftUpperArm, leftForearm, leftHand, leftPalmFacing),
+    ...directorArmChain(
+      "right",
+      mirror(leftUpperArm),
+      mirror(leftForearm),
+      mirror(leftHand),
+      leftPalmFacing ? mirror(leftPalmFacing) : undefined,
+    ),
   }
 }
 
@@ -162,26 +191,53 @@ export function directorSymmetricLegs(
 const relaxedArms = () => directorSymmetricArms([-.10, -.99, .06], [-.03, -1, .02])
 const attentionArms = () => directorSymmetricArms([-.025, -1, .015], [-.015, -1, .01])
 const standingLegs = () => directorSymmetricLegs([-.035, -1, .015], [-.015, -1, .01])
-const handsFront = () => directorSymmetricArms([-.30, -.62, .72], [.58, .08, .81], [.12, .08, .99])
-const handsChest = () => directorSymmetricArms([-.38, -.40, .83], [.74, .25, .62], [.08, .12, .99])
-const handsHips = () => directorSymmetricArms([-.58, -.62, .53], [.62, -.68, -.22], [.08, -.94, -.34])
-const handsBack = () => directorSymmetricArms([-.36, -.72, -.59], [.76, -.30, -.58], [.12, -.55, -.83])
-const openArms = () => directorSymmetricArms([-.78, -.16, .61], [-.84, -.10, .53], [-.05, .10, .99])
-const shrugArms = () => directorSymmetricArms([-.62, -.28, .73], [-.78, .25, .57], [-.08, .10, .99])
-const hugArms = () => directorSymmetricArms([-.66, -.06, .75], [.78, .05, .62], [.12, .12, .99])
-const carryArms = () => directorSymmetricArms([-.46, -.42, .78], [.62, -.08, .78], [.10, .08, .99])
-const faceArms = () => directorSymmetricArms([-.67, -.42, .61], [.76, .56, .33], [.10, .96, .26])
-const guardArms = () => directorSymmetricArms([-.58, .08, .81], [.58, .72, .38], [.08, .98, .16])
-const raisedArms = () => directorSymmetricArms([-.58, .69, .43], [-.14, .98, .12], [-.05, .99, .08])
-const victoryArms = () => directorSymmetricArms([-.52, .78, .34], [-.46, .82, .34], [-.44, .84, .31])
+const handsFront = () => directorSymmetricArms(
+  [-.30, -.62, .72], [.58, .08, .81], [.05, -.20, .98], [1, 0, 0],
+)
+const handsChest = () => directorSymmetricArms(
+  [-.38, -.40, .83], [.82, .20, .54], [0, 1, .04], [1, 0, 0],
+)
+const handsHips = () => directorSymmetricArms(
+  [-.58, -.62, .53], [.52, -.72, -.25], [-.20, -.98, 0], [1, 0, 0],
+)
+const handsBack = () => directorSymmetricArms(
+  [-.36, -.72, -.59], [.76, -.30, -.58], [.05, -.82, -.57], [0, 0, -1],
+)
+const openArms = () => directorSymmetricArms(
+  [-.78, -.16, .61], [-.84, -.10, .53], [-.62, .42, .66], [0, .78, .62],
+)
+const shrugArms = () => directorSymmetricArms(
+  [-.62, -.28, .73], [-.78, .25, .57], [-.80, .18, .57], [0, 1, 0],
+)
+const hugArms = () => directorSymmetricArms(
+  [-.72, -.10, .69], [.80, -.02, .60], [0, 1, .04], [1, 0, 0],
+)
+const carryArms = () => directorSymmetricArms(
+  [-.46, -.42, .78], [.62, -.08, .78], [0, -1, .06], [1, 0, 0],
+)
+const faceArms = () => directorSymmetricArms(
+  [-.64, -.30, .71], [.84, .42, .34], [1, .04, 0], [0, 0, -1],
+)
+const guardArms = () => directorSymmetricArms(
+  [-.58, .08, .81], [.58, .72, .38], [0, 1, .10], [0, 0, 1],
+)
+const raisedArms = () => directorSymmetricArms(
+  [-.58, .69, .43], [-.14, .98, .12], [0, 1, .04], [0, 0, 1],
+)
+const victoryArms = () => directorSymmetricArms(
+  [-.52, .78, .34], [-.46, .82, .34], [-.08, .99, .08], [0, 0, 1],
+)
 const seatedLegs = () => directorSymmetricLegs([-.06, -.08, 1], [-.03, -.98, -.20])
 const crouchedLegs = () => directorSymmetricLegs([-.09, -.38, .92], [-.04, -.83, -.56])
+const deepCrouchedLegs = () => directorSymmetricLegs([-.12, -.42, .90], [-.05, -.43, -.90])
 const lungeLegs = () => ({
-  ...directorLegChain("left", [-.05, -.55, .83], [-.02, -.97, .24]),
-  ...directorLegChain("right", [.04, -.78, -.62], [.02, -1, -.02]),
+  // Both chains have the same vertical reach, so the forward and rear soles
+  // meet the stage instead of leaving the lead foot floating in mid-air.
+  ...directorLegChain("left", [-.05, -.65, .76], [-.02, -.98, -.20]),
+  ...directorLegChain("right", [.05, -.65, -.76], [.02, -.98, .20]),
 })
 const highStepLegs = () => ({
-  ...directorLegChain("left", [-.04, .16, .99], [-.03, -.48, -.88], [-8, 0, 0]),
+  ...directorLegChain("left", [-.04, .16, .99], [-.02, -1, .02], [0, 0, 0]),
   ...directorLegChain("right", [.02, -1, .02], [.01, -1, 0]),
 })
 const walkLegs = () => ({
@@ -189,13 +245,16 @@ const walkLegs = () => ({
   ...directorLegChain("right", [.04, -.84, -.54], [.02, -1, -.04], [3, 0, 0]),
 })
 
-const rightFace = () => directorArmChain("right", [.69, -.45, .57], [-.76, .58, .29], [-.12, .97, .22])
-const rightTemple = () => directorArmChain("right", [.75, -.08, .65], [-.55, .82, .18], [-.20, .97, .13])
-const rightEar = () => directorArmChain("right", [.74, -.27, .62], [-.48, .86, .17], [-.12, .98, .13])
-const rightWave = () => directorArmChain("right", [.52, .43, .74], [-.08, .99, .12], [-.05, .99, .08])
-const rightForward = () => directorArmChain("right", [.18, -.18, .97], [.04, -.05, 1], [.02, .05, 1])
-const rightLowForward = () => directorArmChain("right", [.31, -.58, .75], [-.08, -.06, 1], [.02, .08, 1])
-const rightExplain = () => directorArmChain("right", [.48, -.45, .75], [.40, .20, .89], [.04, .18, .98])
+const rightFace = () => directorArmChain("right", [.64, -.30, .71], [-.90, .38, .20], [-.99, .08, .03], [0, 0, -1])
+const rightTemple = () => directorArmChain("right", [.75, -.08, .65], [-.55, .82, .18], [-.12, .98, .13], [0, 0, -1])
+const rightEar = () => directorArmChain("right", [.74, -.27, .62], [-.48, .86, .17], [-.12, .98, .13], [-1, 0, 0])
+const rightDrink = () => directorArmChain("right", [.69, -.45, .57], [-.76, .58, .29], [0, 1, .05], [-1, 0, 0])
+const rightWhisper = () => directorArmChain("right", [.70, -.35, .62], [-.68, .66, .32], [0, 1, .05], [0, 0, -1])
+const rightWave = () => directorArmChain("right", [.52, .43, .74], [-.08, .99, .12], [-.05, .99, .08], [0, 0, 1])
+const rightForward = () => directorArmChain("right", [.18, -.18, .97], [.04, -.05, 1], [.02, .05, 1], [0, -1, 0])
+const rightStop = () => directorArmChain("right", [.18, -.18, .97], [.04, -.05, 1], [0, 1, .04], [0, 0, 1])
+const rightLowForward = () => directorArmChain("right", [.31, -.58, .75], [-.08, -.06, 1], [.02, .08, 1], [-1, 0, 0])
+const rightExplain = () => directorArmChain("right", [.48, -.45, .75], [.40, .20, .89], [.20, .10, .97], [0, 1, 0])
 const rightRelaxed = () => directorArmChain("right", [.10, -.99, .06], [.03, -1, .02])
 const leftRelaxed = () => directorArmChain("left", [-.10, -.99, .06], [-.03, -1, .02])
 
@@ -239,8 +298,11 @@ export const DIRECTOR_POSE_MODULES = Object.freeze({
     rightFace,
     rightTemple,
     rightEar,
+    rightDrink,
+    rightWhisper,
     rightWave,
     rightForward,
+    rightStop,
     rightLowForward,
     rightExplain,
     rightRelaxed,
@@ -250,6 +312,7 @@ export const DIRECTOR_POSE_MODULES = Object.freeze({
     standing: standingLegs,
     seated: seatedLegs,
     crouched: crouchedLegs,
+    deepCrouched: deepCrouchedLegs,
     lunge: lungeLegs,
     highStep: highStepLegs,
     walk: walkLegs,
@@ -321,7 +384,12 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
     ...directorLegChain("right", [.04, -.62, -.78], [.02, -.42, -.91], [8, 0, 0]),
   },
   "sit": { ...handsFront(), ...seatedLegs() },
-  "crouch": { ...directorSymmetricArms([-.32, -.45, .83], [-.15, -.18, .97], [-.04, .04, 1]), ...crouchedLegs() },
+  "crouch": {
+    pelvis: [8, 0, 0], spine: [10, 0, 0], spineMiddle: [6, 0, 0], chest: [2, 0, 0],
+    neck: [-7, 0, 0], head: [-4, 0, 0],
+    ...directorSymmetricArms([-.30, -.42, .85], [-.12, -.12, .98], [0, .04, 1], [0, -1, 0]),
+    ...deepCrouchedLegs(),
+  },
   "wave": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.leftRelaxed(), DIRECTOR_POSE_MODULES.arms.rightWave(), DIRECTOR_POSE_MODULES.legs.standing()),
   "point": { ...leftRelaxed(), ...rightForward(), ...standingLegs() },
   "hands-hips": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.handsHips(), DIRECTOR_POSE_MODULES.legs.standing()),
@@ -338,72 +406,70 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
     ...highStepLegs(),
   },
   "arms-crossed": {
-    leftShoulder: [-37, -28, 0], rightShoulder: [-37, 28, 0],
-    leftElbow: [-2, 20, 100], rightElbow: [-2, -20, -100],
-    leftWrist: [8, -12, -18], rightWrist: [8, 12, 18],
+    ...directorSymmetricArms([.03, -.75, .66], [.96, .17, .22], [1, .02, .04], [0, 0, -1]),
     ...standingLegs(),
   },
-  "one-hand-hip": { ...leftRelaxed(), ...directorArmChain("right", [.58, -.62, .53], [-.62, -.68, -.22], [-.08, -.94, -.34]), ...standingLegs() },
+  "one-hand-hip": { ...leftRelaxed(), ...directorArmChain("right", [.58, -.62, .53], [-.52, -.72, -.25], [.20, -.98, 0], [-1, 0, 0]), ...standingLegs() },
   "hands-front": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.handsFront(), DIRECTOR_POSE_MODULES.legs.standing()),
-  "hands-pockets": { ...directorSymmetricArms([-.25, -.82, .52], [.34, -.72, .60], [.05, -.96, .27]), ...standingLegs() },
+  "hands-pockets": { ...directorSymmetricArms([-.25, -.82, .52], [.34, -.72, .60], [0, -.99, .08], [1, 0, 0]), ...standingLegs() },
   "lean-wall": { ...relaxedArms(), ...standingLegs() },
   "wait": { ...handsFront(), ...standingLegs() },
-  "beckon": { ...leftRelaxed(), ...directorArmChain("right", [.52, -.24, .82], [.18, .61, .77], [-.05, .20, .98]), ...standingLegs() },
-  "stop": { ...leftRelaxed(), ...rightForward(), ...standingLegs() },
+  "beckon": { ...leftRelaxed(), ...directorArmChain("right", [.52, -.24, .82], [.18, .61, .77], [0, 1, .04], [0, 0, 1]), ...standingLegs() },
+  "stop": { ...leftRelaxed(), ...rightStop(), ...standingLegs() },
   "shrug": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.shrug(), DIRECTOR_POSE_MODULES.legs.standing()),
   "clap": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.handsChest(), DIRECTOR_POSE_MODULES.legs.standing()),
   "greeting-bow": { ...handsFront(), ...standingLegs() },
   "apology-bow": { ...handsFront(), ...standingLegs() },
-  "whisper": { ...leftRelaxed(), ...rightFace(), ...standingLegs() },
+  "whisper": { ...leftRelaxed(), ...rightWhisper(), ...standingLegs() },
   "listen": { ...leftRelaxed(), ...rightEar(), ...standingLegs() },
   "phone-call": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.leftRelaxed(), DIRECTOR_POSE_MODULES.arms.rightEar(), DIRECTOR_POSE_MODULES.legs.standing()),
-  "selfie": { ...leftRelaxed(), ...directorArmChain("right", [.42, -.12, .90], [.18, .12, .98], [-.03, .05, 1]), ...standingLegs() },
-  "read-phone": { ...directorSymmetricArms([-.28, -.67, .69], [.58, .16, .80], [.10, .10, .99]), ...standingLegs() },
-  "handover": { ...directorSymmetricArms([-.26, -.45, .85], [.12, -.08, .99], [.04, .06, 1]), ...standingLegs() },
-  "handshake": { ...leftRelaxed(), ...directorArmChain("right", [.30, -.60, .74], [.12, -.18, .98], [.03, .03, 1]), ...standingLegs() },
+  "selfie": { ...leftRelaxed(), ...directorArmChain("right", [.42, -.12, .90], [.18, .12, .98], [0, 1, .04], [0, 0, -1]), ...standingLegs() },
+  "read-phone": { ...directorSymmetricArms([-.28, -.67, .69], [.58, .16, .80], [0, 1, .04], [0, 0, -1]), ...standingLegs() },
+  "handover": { ...directorSymmetricArms([-.26, -.45, .85], [.12, -.08, .99], [.04, .06, 1], [0, 1, 0]), ...standingLegs() },
+  "handshake": { ...leftRelaxed(), ...directorArmChain("right", [.30, -.60, .74], [.12, -.18, .98], [.03, .03, 1], [-1, 0, 0]), ...standingLegs() },
   "hug": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.hug(), DIRECTOR_POSE_MODULES.legs.standing()),
   "present": {
-    ...directorArmChain("left", [-.42, -.50, .76], [.74, .08, .67], [.12, .16, .98]),
-    ...directorArmChain("right", [.34, -.48, .81], [.38, .10, .92], [.08, .18, .98]),
+    ...directorArmChain("left", [-.42, -.50, .76], [.74, .08, .67], [.20, .12, .97], [0, 1, 0]),
+    ...directorArmChain("right", [.34, -.48, .81], [.38, .10, .92], [.20, .12, .97], [0, 1, 0]),
     ...standingLegs(),
   },
-  "surprise": { ...directorSymmetricArms([-.54, -.16, .83], [.26, .67, .70], [.05, .96, .28]), ...standingLegs() },
+  "surprise": { ...directorSymmetricArms([-.54, -.16, .83], [.26, .67, .70], [0, 1, .04], [0, 0, 1]), ...standingLegs() },
   "fear": { ...guardArms(), ...directorSymmetricLegs([-.09, -.96, .28], [-.04, -.99, -.08]) },
-  "angry": { ...directorSymmetricArms([-.42, -.50, .76], [.46, .36, .81], [.08, .55, .83]), ...lungeLegs() },
+  "angry": { ...directorSymmetricArms([-.42, -.50, .76], [.46, .36, .81], [0, 1, .05], [0, 0, 1]), ...lungeLegs() },
   "argue": {
-    ...directorArmChain("left", [-.52, -.42, .75], [-.48, .12, .87], [-.08, .16, .98]),
+    ...directorArmChain("left", [-.52, -.42, .75], [-.48, .12, .87], [-.08, .16, .98], [0, 1, 0]),
     ...rightForward(),
     ...standingLegs(),
   },
   "cry": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.face(), DIRECTOR_POSE_MODULES.legs.standing()),
   "wipe-tears": { ...leftRelaxed(), ...rightFace(), ...standingLegs() },
-  "laugh": { ...leftRelaxed(), ...directorArmChain("right", [.30, -.70, .65], [-.43, -.20, .88], [-.05, -.05, 1]), ...standingLegs() },
+  "laugh": { ...leftRelaxed(), ...directorArmChain("right", [.30, -.70, .65], [-.43, -.20, .88], [-.05, -.05, 1], [0, -1, 0]), ...standingLegs() },
   "shy": { ...handsFront(), ...standingLegs() },
   "plead": { ...handsChest(), ...standingLegs() },
   "disappointed": { ...relaxedArms(), ...standingLegs() },
   "protect-head": { ...guardArms(), ...directorSymmetricLegs([-.08, -.90, .42], [-.03, -.98, -.18]) },
   "surrender": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.raised(), DIRECTOR_POSE_MODULES.legs.standing()),
-  "exhausted": { ...directorSymmetricArms([-.34, -.58, .74], [-.08, -.96, .28], [-.04, -.97, .22]), ...crouchedLegs() },
+  "exhausted": { ...directorSymmetricArms([-.34, -.58, .74], [-.08, -.96, .28], [0, 0, 1], [0, -1, 0]), ...crouchedLegs() },
   "cover-mouth": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.leftRelaxed(), DIRECTOR_POSE_MODULES.arms.rightFace(), DIRECTOR_POSE_MODULES.legs.standing()),
   "facepalm": { ...leftRelaxed(), ...rightTemple(), ...standingLegs() },
   "headache": { ...leftRelaxed(), ...rightTemple(), ...standingLegs() },
   "stomachache": { ...handsFront(), ...directorSymmetricLegs([-.06, -.94, .34], [-.03, -.99, -.12]) },
-  "drink": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.leftRelaxed(), DIRECTOR_POSE_MODULES.arms.rightFace(), DIRECTOR_POSE_MODULES.legs.standing()),
-  "eat": { ...directorArmChain("left", [-.36, -.66, .66], [.48, -.18, .86], [.06, .04, 1]), ...rightFace(), ...standingLegs() },
+  "drink": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.leftRelaxed(), DIRECTOR_POSE_MODULES.arms.rightDrink(), DIRECTOR_POSE_MODULES.legs.standing()),
+  "eat": { ...directorArmChain("left", [-.36, -.66, .66], [.48, -.18, .86], [.06, .04, 1], [0, 1, 0]), ...rightDrink(), ...standingLegs() },
   "carry-box": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.carry(), directorSymmetricLegs([-.05, -.96, .28], [-.02, -1, -.04])),
-  "hold-baby": { ...directorSymmetricArms([-.48, -.52, .70], [.64, .04, .77], [.10, .20, .97]), ...standingLegs() },
+  "hold-baby": { ...directorSymmetricArms([-.48, -.52, .70], [.64, .04, .77], [.10, .20, .97], [0, 1, 0]), ...standingLegs() },
   "sweep": {
     ...directorArmChain("left", [-.42, -.64, .64], [.30, -.70, .65], [.06, -.72, .69]),
     ...directorArmChain("right", [.34, -.42, .84], [-.24, -.82, .52], [-.06, -.80, .60]),
     ...lungeLegs(),
   },
-  "type": { ...directorSymmetricArms([-.34, -.50, .80], [.35, -.38, .86], [.04, -.10, .99]), ...seatedLegs() },
+  "type": { ...directorSymmetricArms([-.34, -.50, .80], [.35, -.38, .86], [.04, -.10, .99], [0, -1, 0]), ...seatedLegs() },
   "write": {
-    ...directorArmChain("left", [-.38, -.54, .75], [.42, -.46, .78], [.05, -.14, .99]),
-    ...directorArmChain("right", [.34, -.46, .82], [-.24, -.42, .88], [-.03, -.16, .99]),
+    ...directorArmChain("left", [-.38, -.54, .75], [.42, -.46, .78], [.05, -.14, .99], [0, -1, 0]),
+    ...directorArmChain("right", [.34, -.46, .82], [-.24, -.42, .88], [-.03, -.16, .99], [0, -1, 0]),
     ...seatedLegs(),
   },
-  "drive": { ...directorSymmetricArms([-.42, -.34, .84], [-.20, -.06, .98], [-.04, .06, 1]), ...seatedLegs() },
+  "drive": { ...directorSymmetricArms([-.42, -.34, .84], [-.20, -.06, .98], [0, 1, .04], [1, 0, 0]), ...seatedLegs() },
   "pick-up": {
     ...leftRelaxed(),
     ...directorArmChain("right", [.20, -.86, .47], [-.05, -.96, .28], [-.02, -.98, .20]),
@@ -416,32 +482,32 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
     ...directorLegChain("right", [.05, -.86, -.50], [.02, -.22, .98], [-8, 0, 0]),
   },
   "sit-cross-legged": {
-    ...directorSymmetricArms([-.36, -.64, .68], [-.52, -.62, .58], [-.12, -.20, .97]),
+    ...directorSymmetricArms([-.36, -.64, .68], [-.52, -.62, .58], [-.12, -.20, .97], [0, -1, 0]),
     ...directorLegChain("left", [-.72, -.16, .68], [.68, -.20, -.70]),
     ...directorLegChain("right", [.72, -.16, .68], [-.68, -.20, -.70]),
   },
   "cook": {
-    ...directorArmChain("left", [-.38, -.55, .75], [.26, -.28, .92], [.03, -.08, 1]),
-    ...directorArmChain("right", [.32, -.46, .83], [-.08, -.12, .99], [.02, .03, 1]),
+    ...directorArmChain("left", [-.38, -.55, .75], [.26, -.28, .92], [.03, -.08, 1], [0, -1, 0]),
+    ...directorArmChain("right", [.32, -.46, .83], [-.08, -.12, .99], [.02, .03, 1], [0, -1, 0]),
     ...standingLegs(),
   },
   "sneak": {
-    ...directorArmChain("left", [-.34, -.48, .81], [.28, .24, .93], [.05, .32, .95]),
-    ...directorArmChain("right", [.38, -.52, .76], [-.26, .18, .95], [-.04, .27, .96]),
+    ...directorArmChain("left", [-.34, -.48, .81], [.28, .24, .93], [.05, .32, .95], [0, -1, 0]),
+    ...directorArmChain("right", [.38, -.52, .76], [-.26, .18, .95], [-.04, .27, .96], [0, -1, 0]),
     ...crouchedLegs(),
   },
-  "tiptoe": { ...directorSymmetricArms([-.48, -.80, .35], [-.55, -.78, .30], [-.08, -.18, .98]), ...directorSymmetricLegs([-.04, -.98, .18], [-.02, -1, .04], [26, 0, 0]) },
+  "tiptoe": { ...directorSymmetricArms([-.48, -.80, .35], [-.55, -.78, .30], [-.08, -.18, .98], [0, -1, 0]), ...directorSymmetricLegs([-.04, -.98, .18], [-.02, -1, .04], [26, 0, 0]) },
   "stumble": {
-    ...directorSymmetricArms([-.78, -.14, .61], [-.88, -.04, .47], [-.08, .08, .99]),
+    ...directorSymmetricArms([-.78, -.14, .61], [-.88, -.04, .47], [-.08, .08, .99], [0, -1, 0]),
     ...walkLegs(),
   },
   "fall-back": {
-    ...directorSymmetricArms([-.66, -.62, -.42], [-.72, -.58, -.38], [-.08, -.20, .98]),
+    ...directorSymmetricArms([-.66, -.62, -.42], [-.72, -.58, -.38], [-.08, -.20, .98], [0, -1, 0]),
     ...seatedLegs(),
   },
   "punch": {
-    ...directorArmChain("left", [-.18, -.10, .98], [-.04, -.03, 1], [-.02, .02, 1]),
-    ...directorArmChain("right", [.46, -.42, .78], [-.34, .46, .82], [-.08, .62, .78]),
+    ...directorArmChain("left", [-.18, -.10, .98], [-.04, -.03, 1], [-.02, .02, 1], [0, -1, 0]),
+    ...directorArmChain("right", [.46, -.42, .78], [-.34, .46, .82], [-.08, .62, .78], [0, 0, 1]),
     ...lungeLegs(),
   },
   "kick": {
@@ -450,11 +516,11 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
     ...directorLegChain("right", [.02, -1, .01], [.01, -1, 0]),
   },
   "block": composeDirectorPoseModules(DIRECTOR_POSE_MODULES.arms.guard(), DIRECTOR_POSE_MODULES.legs.lunge()),
-  "push": { ...directorSymmetricArms([-.26, -.22, .94], [-.06, -.08, 1], [-.02, .05, 1]), ...lungeLegs() },
+  "push": { ...directorSymmetricArms([-.26, -.22, .94], [-.06, -.08, 1], [0, 1, .04], [0, 0, 1]), ...lungeLegs() },
   "dodge": { ...guardArms(), ...crouchedLegs() },
   "slap": {
-    ...directorArmChain("left", [-.74, -.05, .67], [-.46, .08, .88], [-.08, .08, .99]),
-    ...directorArmChain("right", [.38, -.62, .68], [-.28, .18, .94], [-.05, .22, .97]),
+    ...directorArmChain("left", [-.74, -.05, .67], [-.46, .08, .88], [0, 1, .04], [0, 0, 1]),
+    ...directorArmChain("right", [.38, -.62, .68], [-.28, .18, .94], [-.05, .22, .97], [0, 0, 1]),
     ...lungeLegs(),
   },
 }
