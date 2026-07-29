@@ -945,6 +945,7 @@ export default function DirectorDesk({
   const [showGrid, setShowGrid] = useState(true)
   const [showThirds, setShowThirds] = useState(false)
   const [showCameraGuides, setShowCameraGuides] = useState(false)
+  const [showCaptureLegend, setShowCaptureLegend] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [viewportContextMenu, setViewportContextMenu] = useState<DirectorViewportContextMenu | null>(null)
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
@@ -2302,7 +2303,7 @@ export default function DirectorDesk({
     if (!ctx) throw new Error("无法创建截图画布")
     ctx.drawImage(source, 0, 0, width, height)
     const legend = actorLegend(scene, allDirectorModelAssets(directorRef.current.model_assets))
-    if (legend.length > 0) {
+    if (showCaptureLegend && legend.length > 0) {
       const lineHeight = Math.max(28, Math.round(height * 0.035))
       const panelWidth = Math.min(width * 0.42, 430)
       const panelHeight = lineHeight * legend.length + 28
@@ -2336,7 +2337,7 @@ export default function DirectorDesk({
     runtime.camera.aspect = aspect
     runtime.camera.updateProjectionMatrix()
     return dataUrl
-  }, [])
+  }, [showCaptureLegend])
 
   const createCapture = useCallback(async () => {
     if (capturing || loadingModels > 0 || panoramaStatus === "loading") return
@@ -3603,6 +3604,7 @@ export default function DirectorDesk({
                     <button type="button" onClick={() => setShowThirds((value) => !value)} className={cn("h-9 rounded-xl border text-[8px] transition", showThirds ? "border-violet-300/20 bg-violet-300/[0.09] text-violet-100" : "border-white/[0.065] bg-black/15 text-zinc-500")}>三分线 · {showThirds ? "开" : "关"}</button>
                     <button type="button" onClick={() => setShowCameraGuides((value) => !value)} className={cn("h-9 rounded-xl border text-[8px] transition", showCameraGuides ? "border-cyan-300/20 bg-cyan-300/[0.09] text-cyan-100" : "border-white/[0.065] bg-black/15 text-zinc-500")}>机位线 · {showCameraGuides ? "开" : "关"}</button>
                   </div>
+                  <button type="button" onClick={() => setShowCaptureLegend((value) => !value)} className={cn("h-8 w-full rounded-xl border text-[8px] transition", showCaptureLegend ? "border-[#4f8ef7]/30 bg-[#4f8ef7]/10 text-blue-100" : "border-white/[0.065] bg-black/15 text-zinc-500")}>截图角色图例 · {showCaptureLegend ? "显示" : "不显示（默认）"}</button>
                 </div>
               </section>
 

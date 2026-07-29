@@ -198,5 +198,8 @@ def test_director_ui_maps_canvas_panorama_nodes_into_spatial_environment() -> No
     assert "data-director-panorama-import" in ui_source
     assert '"导入全景图"' in ui_source
     assert "importProjectCanvasImage" in ui_source
+    assert "const [showCaptureLegend, setShowCaptureLegend] = useState(false)" in ui_source
+    assert "showCaptureLegend && legend.length > 0" in ui_source
+    assert "截图角色图例" in ui_source
     assert "isDirectorPanoramaNode" in canvas_source
     assert "panoramaImages={directorPanoramaImages}" in canvas_source
