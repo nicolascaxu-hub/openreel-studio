@@ -8,7 +8,7 @@ Section trigger types:
   - plan_mode   : 显式 Plan Mode，只读规划
   - workflow_build_mode : 显式 Workflow Build Mode，搭建/修改工作流
   - attachments : 用户带了附件
-  - factory     : 动态构造(runtime_context, tools_manifest)
+  - factory     : 动态构造(runtime_context)
 
 Historical business triggers such as create/video/template/introspect are not
 loaded automatically. Detailed workflow guidance must be requested explicitly
@@ -263,19 +263,6 @@ def assemble_split_result(ctx: PromptContext) -> PromptAssemblyResult:
     # factory section 始终进 system(实时数据,每次必更)
     namespaces = tuple(select_tool_namespaces(ctx))
     tool_profile = select_tool_profile(ctx)
-    tools_sec = prompts_pkg.get("tools_manifest")
-    if tools_sec and tools_sec.build:
-        text = tools_sec.build(namespaces=list(namespaces))
-        if text:
-            s_blocks.append(text)
-            stats.append(PromptSectionStat(
-                name=tools_sec.name,
-                trigger=tools_sec.trigger,
-                tier=tools_sec.tier,
-                chars=len(text),
-                source="factory",
-            ))
-
     rt_sec = prompts_pkg.get("runtime_context")
     if rt_sec and rt_sec.build:
         text = rt_sec.build(

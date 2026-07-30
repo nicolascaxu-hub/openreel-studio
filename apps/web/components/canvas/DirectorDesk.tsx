@@ -2255,10 +2255,6 @@ export default function DirectorDesk({
     updateSelectedMannequin((current) => applyDirectorMannequinBodyPreset(current, presetId))
   }, [updateSelectedMannequin])
 
-  const applyPosePreset = useCallback((presetId: Exclude<DirectorMannequinPosePreset, "custom">) => {
-    updateSelectedMannequin((current) => applyDirectorMannequinPosePreset(current, presetId))
-  }, [updateSelectedMannequin])
-
   const updateMannequinProportion = useCallback((
     key: keyof DirectorMannequinProportions,
     value: number,

@@ -162,7 +162,6 @@ const TRACK_LABEL_WIDTH = 112
 const DEFAULT_CLIP_SECONDS = 4
 const DEFAULT_TIMELINE_SECONDS = 12
 const DEFAULT_PX_PER_SECOND = 84
-const MIN_CLIP_SECONDS = 0.25
 const SNAP_PIXELS = 10
 const PLAYBACK_UI_FRAME_MS = 1000 / 20
 const MEDIA_CLOCK_STALL_GRACE_MS = 600
@@ -850,11 +849,6 @@ function mediaTypeLabel(type: VideoEditPanelMediaNode["type"]): string {
 
 function mediaSourceKey(item: Pick<VideoEditPanelMediaNode, "id" | "sourceNodeId">): string {
   return item.sourceNodeId || item.id
-}
-
-function mediaFramesPerSecond(index: VideoEditorMediaIndex | undefined): number {
-  if (!index || index.frame_rate.denominator <= 0) return DEFAULT_FRAME_RATE
-  return index.frame_rate.numerator / index.frame_rate.denominator
 }
 
 function gainAmplitude(gainDb: number): number {
@@ -2215,7 +2209,6 @@ export default function VideoEditPanel({
     () => normalizedVisualTransform(transitionVideoClip?.visualTransform),
     [transitionVideoClip?.visualTransform],
   )
-  const selectedVideoItem = selectedVideoClip ? mediaById.get(selectedVideoClip.mediaId) : undefined
   const currentVisualTransform = useMemo(
     () => normalizedVisualTransform(currentVideoClip?.visualTransform),
     [currentVideoClip?.visualTransform],

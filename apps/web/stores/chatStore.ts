@@ -16,12 +16,6 @@ export interface NodeBubble {
   status: "running" | "completed" | "failed"
 }
 
-export interface ToolBubble {
-  tool: string
-  status: "running" | "completed" | "failed"
-  startedAt: number
-}
-
 export interface AgentRound {
   round: number
   content: string
@@ -215,7 +209,6 @@ export interface ChatMessage {
   content: string
   createdAt: string
   nodes?: NodeBubble[]
-  tools?: ToolBubble[]
   rounds?: AgentRound[]
   stepProgress?: StepProgress
   proposedPlan?: PlanDoc
@@ -245,8 +238,6 @@ interface ChatStore {
   appendToLastAssistant: (delta: string) => void
   setLastAssistantNode: (node: NodeBubble) => void
   updateLastAssistantNode: (nodeId: string, patch: Partial<NodeBubble>) => void
-  addToolBubble: (tool: string) => void
-  updateToolBubble: (tool: string, patch: Partial<ToolBubble>) => void
   addAgentRound: (round: Omit<AgentRound, "status" | "startedAt" | "results">) => void
   addAgentRoundToolStart: (tool: string, summary: string) => void
   addAgentRoundToolResult: (result: AgentRoundToolResult) => void
@@ -429,31 +420,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...next[idx],
         nodes: current.map((n) => (n.nodeId === nodeId ? { ...n, ...patch } : n)),
       }
-      return { messages: next }
-    }),
-
-  addToolBubble: (tool) =>
-    set((s) => {
-      const idx = findLastAssistantIndex(s.messages)
-      if (idx === -1) return s
-      const next = [...s.messages]
-      const current = next[idx].tools ?? []
-      next[idx] = { ...next[idx], tools: [...current, { tool, status: "running", startedAt: Date.now() }] }
-      return { messages: next }
-    }),
-
-  updateToolBubble: (tool, patch) =>
-    set((s) => {
-      const idx = findLastAssistantIndex(s.messages)
-      if (idx === -1) return s
-      const next = [...s.messages]
-      const current = next[idx].tools ?? []
-      const toolIdx = [...current].reverse().findIndex((t) => t.tool === tool)
-      if (toolIdx === -1) return s
-      const realIdx = current.length - 1 - toolIdx
-      const updated = [...current]
-      updated[realIdx] = { ...updated[realIdx], ...patch }
-      next[idx] = { ...next[idx], tools: updated }
       return { messages: next }
     }),
 

@@ -27,16 +27,11 @@ from app.agent.blueprint_tree_normalizer import (
     _VALID_TEXT_FIELDS,
     _VALID_VIDEO_FIELDS,
     _VIDEO_ASPECT_RATIOS,
-    _as_bool,
     _aspect_ratio_conflict,
     _available_node_refs,
     _coerce_tree_children,
     _collect_node_ids,
-    _field_text,
-    _is_segment_node,
-    _node_materializes,
     _node_summary,
-    _node_text,
     _normalize_all_links,
     _normalize_node_links,
     _normalize_node_type,
@@ -48,12 +43,8 @@ from app.agent.blueprint_tree_normalizer import (
     _normalize_semantic_node,
     _parse_jsonish,
     _preview_tree_nodes,
-    _prompt_evidence_error,
-    _prompt_text,
     _slug,
     _tree_summary,
-    _walk_nodes,
-    _walk_nodes_with_parent,
 )
 from app.agent.blueprint_tree_repair import (
     _auto_repair_default_segment_container,
@@ -74,7 +65,6 @@ from app.agent.blueprint_tree_store import (
     _replacement_draft,
 )
 from app.agent.blueprint_tree_validator import (
-    _runtime_evidence_error,
     _semantic_quality_error,
     _video_output_readiness_error,
     validate_children_for_review,
@@ -1782,7 +1772,7 @@ async def blueprint_set_prompt(
     try:
         from app.db.session import AsyncSessionLocal
         from app.db.models import WorkflowNode
-        from sqlmodel import select, or_
+        from sqlmodel import select
         import json as _json
         async with AsyncSessionLocal() as session:
             stmt = select(WorkflowNode).where(

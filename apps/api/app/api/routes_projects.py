@@ -979,7 +979,6 @@ def _manual_edge_reference_role(source: WorkflowNode, target: WorkflowNode) -> s
 
 
 def _add_edge_dependency(target: WorkflowNode, source: WorkflowNode | str) -> bool:
-    source_node_id = source.id if isinstance(source, WorkflowNode) else source
     source_ref = _public_node_ref(source)
     input_data = _parse_json_dict(target.input_json)
     aliases = _node_dependency_aliases(source)

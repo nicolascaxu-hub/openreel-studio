@@ -37,18 +37,14 @@ from app.mcp_tools import canvas_tools
 from app.mcp_tools.registry import register
 from app.mcp_tools.workflow_conditions import workflow_step_condition_skipped as _workflow_step_condition_skipped
 from app.mcp_tools.workflow_reference_matching import (
-    REFERENCE_SELECTOR_TOKEN_FIELDS as _REFERENCE_SELECTOR_TOKEN_FIELDS,
-    flatten_workflow_values as _flatten_workflow_values,
     selector_key as _selector_key,
     workflow_alias_equal as _workflow_alias_equal,
     workflow_context_get as _workflow_context_get,
-    workflow_token_variants as _workflow_token_variants,
     workflow_tokens_from_value as _workflow_tokens_from_value,
     workflow_tokens_match as _workflow_tokens_match,
     workflow_values_at_path as _workflow_values_at_path,
 )
 from app.mcp_tools.workflow_runtime_output import (
-    parse_json_object as _parse_json_object,
     structured_workflow_output as _structured_workflow_output,
     workflow_output_value_type as _workflow_output_value_type,
     workflow_runtime_clean_output_value as _workflow_runtime_clean_output_value,
@@ -56,7 +52,6 @@ from app.mcp_tools.workflow_runtime_output import (
     workflow_runtime_output_from_runner_payload as _workflow_runtime_output_from_runner_payload,
     workflow_runtime_output_preview,
     workflow_runtime_outputs_from_value as _workflow_runtime_outputs_from_value,
-    workflow_runtime_primary_output_value as _workflow_runtime_primary_output_value,
 )
 from app.services import media_history
 from app.services.reference_mentions import (
@@ -5933,7 +5928,6 @@ async def _prepare_visible_workflow_node_for_run(
     fields = dict(node.get("input") if isinstance(node.get("input"), dict) else {})
     workflow = dict(fields.get("workflow") if isinstance(fields.get("workflow"), dict) else {})
     instance_id = str(workflow.get("instance_id") or "").strip()
-    step_id = str(workflow.get("step_id") or step.get("id") or "").strip()
     runner = str(workflow.get("runner") or step.get("runner") or "").strip()
     kind = str(workflow.get("kind") or step.get("kind") or "").strip().lower().replace("-", "_")
     is_canvas_output_step = runner == "workflow_canvas_output" or kind == "canvas_text"

@@ -411,42 +411,6 @@ function mediaNodeDimensions(
   return { width: Math.round(width), height: Math.round(height) }
 }
 
-function statusBorderStyle(status: string, color: string): React.CSSProperties {
-  switch (status) {
-    case "running":
-      return { borderColor: `${color}cc`, background: `linear-gradient(180deg, ${color}18, rgba(18,20,26,0.96))` }
-    case "completed":
-      return { borderColor: `${color}88`, background: "rgba(18,20,26,0.96)" }
-    case "failed":
-      return { borderColor: "#ef4444aa", background: "rgba(42,18,22,0.95)" }
-    case "queued":
-    case "idle":
-      return { borderColor: "#3f4654", background: "rgba(18,20,26,0.86)", borderStyle: "dashed" }
-    default:
-      return { borderColor: "#343a46", background: "rgba(18,20,26,0.95)" }
-  }
-}
-
-function QueuedIndicator() {
-  return (
-    <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />
-      <span>排队中</span>
-    </div>
-  )
-}
-
-function RunningDots() {
-  return (
-    <div className="flex items-center gap-1 mt-1">
-      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-      <span className="text-xs text-blue-400 ml-1">生成中…</span>
-    </div>
-  )
-}
-
 interface MediaProgressInfo {
   percent: number
   label: string

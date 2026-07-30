@@ -43,8 +43,6 @@ const NUM = "text-amber-300 "
 const STR = "text-emerald-300 "
 const CMT = "text-gray-500 italic "
 const FUN = "text-sky-300 "
-const PUN = "text-gray-400 "
-
 const PY_RULES: RuleSet = {
   keywords: new Set(["def","class","return","if","elif","else","for","while","import","from","as","try","except","finally","with","yield","raise","pass","break","continue","and","or","not","in","is","None","True","False","async","await","lambda","nonlocal","global","assert","del"]),
   rules: [

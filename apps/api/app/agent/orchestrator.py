@@ -1040,7 +1040,6 @@ async def build_split_system_result(
         PromptSectionStat,
         derive_status_flags,
         get_split_prompt_result,
-        should_require_plan,
     )
 
     # Memory is available through tools; it is not injected automatically.
@@ -1587,7 +1586,7 @@ class AgentOrchestrator:
                     transition_reason="task_checklist_emitted_turn_start",
                     task_count=len(_init_tasks),
                 )
-        except Exception as exc:
+        except Exception:
             logger.exception("task checklist emission at turn start failed")
         trace.emit(
             "run_start",
@@ -3710,7 +3709,7 @@ class AgentOrchestrator:
                             transition_reason="task_checklist_emitted",
                             task_count=len(checklist_payload),
                         )
-                    except Exception as exc:
+                    except Exception:
                         logger.exception("task checklist emission failed")
 
                 elif event_tool_name == "node.run" and isinstance(result, dict) and (result.get("_canvas_node_id") or result.get("node_id")) \

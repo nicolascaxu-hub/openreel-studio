@@ -149,7 +149,7 @@ def test_packaged_media_downloads_share_one_persistent_directory_action() -> Non
     assert "fetch(resolvedUrl" not in desktop_branch
     assert "await saveMediaFile(url, filename)" in canvas
     assert 'mediaKind?: "image" | "video"' in canvas
-    assert chat.count("await saveMediaFile(url, assetBasename(item.path || item.title))") == 2
+    assert chat.count("await saveMediaFile(url, assetBasename(item.path || item.title))") == 1
     assert 'label: "下载位置"' in settings
     assert 'desktop && tab === "download"' in settings
     assert 'MEDIA_DOWNLOAD_EVENT = "openreel:media-download"' in api

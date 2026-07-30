@@ -194,11 +194,8 @@ export function MediaTab({ ctx, kind }: { ctx: ConfigContext; kind: MediaKind })
               editing={false}
               selected={!adding && selectedItem?.name === p.name}
               onSelect={() => { setSelectedKey(p.name); setAdding(false) }}
-              onEdit={() => { setSelectedKey(p.name); setEditingKey(p.name); setAdding(false) }}
               onCancel={() => setEditingKey(null)}
               onSave={(updated) => upsert(updated, p.name)}
-              onRemove={() => remove(p.name)}
-              onSetActive={() => setActive(p.name)}
               imageProtocols={ctx.imageProtocols}
               videoProtocols={ctx.videoProtocols}
               audioProtocols={ctx.audioProtocols}
@@ -217,11 +214,8 @@ export function MediaTab({ ctx, kind }: { ctx: ConfigContext; kind: MediaKind })
               key={`new-${kind}`}
               entry={blank(kind)}
               editing
-              onEdit={() => {}}
               onCancel={() => setAdding(false)}
               onSave={(updated) => upsert(updated)}
-              onRemove={() => setAdding(false)}
-              onSetActive={() => {}}
               imageProtocols={ctx.imageProtocols}
               videoProtocols={ctx.videoProtocols}
               audioProtocols={ctx.audioProtocols}
@@ -231,11 +225,8 @@ export function MediaTab({ ctx, kind }: { ctx: ConfigContext; kind: MediaKind })
               key={`edit-${selectedItem.name}`}
               entry={selectedItem}
               editing
-              onEdit={() => {}}
               onCancel={() => setEditingKey(null)}
               onSave={(updated) => upsert(updated, selectedItem.name)}
-              onRemove={() => remove(selectedItem.name)}
-              onSetActive={() => setActive(selectedItem.name)}
               imageProtocols={ctx.imageProtocols}
               videoProtocols={ctx.videoProtocols}
               audioProtocols={ctx.audioProtocols}
@@ -344,17 +335,14 @@ function blank(kind: MediaKind): MediaProviderEntry {
 }
 
 function Row({
-  entry, editing, selected = false, onSelect, onEdit, onCancel, onSave, onRemove, onSetActive, imageProtocols, videoProtocols, audioProtocols,
+  entry, editing, selected = false, onSelect, onCancel, onSave, imageProtocols, videoProtocols, audioProtocols,
 }: {
   entry: MediaProviderEntry
   editing: boolean
   selected?: boolean
   onSelect?: () => void
-  onEdit: () => void
   onCancel: () => void
   onSave: (e: MediaProviderEntry) => Promise<{ ok: boolean; errors: string[] }>
-  onRemove: () => void
-  onSetActive: () => void
   imageProtocols: MediaProtocolSummary[]
   videoProtocols: MediaProtocolSummary[]
   audioProtocols: MediaProtocolSummary[]

@@ -325,7 +325,6 @@ interface Props {
   projectId?: string | null
   onClose: () => void
   onRerun?: (nodeId: string) => void | Promise<void>
-  onDelete?: (nodeId: string) => void | Promise<void>
   onRequestStoryRevision?: (nodeId: string) => void | Promise<void>
   actionDisabled?: boolean
   presentation?: "drawer" | "modal" | "anchored"
@@ -1582,14 +1581,6 @@ function CheckIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   )
 }
 
-function PlusIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 function XIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -2332,34 +2323,6 @@ function pickReferences(input: Record<string, unknown>, output: Record<string, u
     }
   }
   return refs.length > 0 ? refs : undefined
-}
-
-function pickMediaInfo(input: Record<string, unknown>, output: Record<string, unknown>): Record<string, unknown> {
-  const keys = [
-    "duration",
-    "duration_seconds",
-    "aspect_ratio",
-    "resolution",
-    "size",
-    "quality",
-    "model",
-    "provider",
-    "style",
-    "voice",
-    "speed",
-    "instructions",
-    "format",
-    "instrumental",
-    "custom_mode",
-    "customMode",
-    "negative_tags",
-    "negativeTags",
-    "production_path",
-  ]
-  const entries = keys
-    .map((key) => [key, output[key] ?? input[key]] as const)
-    .filter(([, value]) => value != null && value !== "")
-  return Object.fromEntries(entries)
 }
 
 function firstText(...values: unknown[]): string {
@@ -4548,7 +4511,6 @@ function NodeEditView({
   setLightbox,
   onChange,
   onUploadRefs,
-  onSave,
 }: {
   node: NodeFull
   draft: EditableNodeDraft
@@ -4566,7 +4528,6 @@ function NodeEditView({
   setLightbox: (v: { src: string; alt?: string } | null) => void
   onChange: (patch: Partial<EditableNodeDraft>) => void
   onUploadRefs: (files: FileList | File[] | null) => void | Promise<void>
-  onSave: () => void | Promise<void>
 }) {
   const isText = node.type === "text"
   const isImage = node.type === "image"
@@ -6696,8 +6657,6 @@ function TypedRenderer({
   setLightbox,
   setVideoLightbox,
   onEdited,
-  onSwitchHistory,
-  switchingHistoryId,
 }: {
   node: NodeFull
   type: string
@@ -6709,8 +6668,6 @@ function TypedRenderer({
   setLightbox: (v: { src: string; alt?: string } | null) => void
   setVideoLightbox: (v: VideoLightboxState | null) => void
   onEdited?: () => void
-  onSwitchHistory: (entry: MediaHistoryEntry) => void | Promise<void>
-  switchingHistoryId?: string | null
 }) {
   const inObj = nodeInputFields(input)
   const outObj = asObj(parseJson(output)) || {}
@@ -6835,7 +6792,6 @@ export default function NodeDetailPanel({
   projectId,
   onClose,
   onRerun,
-  onDelete,
   onRequestStoryRevision,
   actionDisabled = false,
   presentation = "anchored",
@@ -7234,15 +7190,6 @@ export default function NodeDetailPanel({
     }
   }, [nodeId])
 
-  const saveDraft = async () => {
-    await persistDraft(true)
-  }
-
-  const closeWithAutoSave = () => {
-    void persistDraft(false)
-    onClose()
-  }
-
   const handlePanelBlur = (event: FocusEvent<HTMLDivElement>) => {
     const nextTarget = event.relatedTarget
     if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return
@@ -7484,7 +7431,6 @@ export default function NodeDetailPanel({
                 setLightbox={setLightbox}
                 onChange={updateDraft}
                 onUploadRefs={uploadReferenceFiles}
-                onSave={saveDraft}
               />
               )}
               <NodeMediaUploadSection
@@ -7505,8 +7451,6 @@ export default function NodeDetailPanel({
                 setLightbox={setLightbox}
                 setVideoLightbox={setVideoLightbox}
                 onEdited={() => setDetailReloadTick((tick) => tick + 1)}
-                onSwitchHistory={switchHistoryVersion}
-                switchingHistoryId={switchingHistoryId}
               />
               {!TYPED_RENDERED_NODE_TYPES.has(data.type) && (
                 <GenericNodeDetails node={data} />

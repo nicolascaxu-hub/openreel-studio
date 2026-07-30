@@ -8,7 +8,6 @@ import {
   type ChatMessage,
   type AgentRound,
   type NodeBubble,
-  type ToolBubble,
   type StepProgress,
   type PendingAttachment,
   type PlanDoc,
@@ -30,7 +29,6 @@ import {
   getChatQueueStatus,
   getAgentTokenUsage,
   uploadFile,
-  listProjectAssets,
   callTool,
   api,
   requestWorkflowRefresh,
@@ -41,7 +39,6 @@ import {
   type ChatStreamEvent,
   type BlueprintStreamEvent,
   type UploadedAttachment,
-  type ProjectAsset,
 } from "@/lib/api"
 import { ProposedPlanCard } from "./ProposedPlanCard"
 import { PendingActionCard } from "./PendingActionCard"
@@ -544,107 +541,6 @@ function NodeBubbleCard({ node }: { node: NodeBubble }) {
   )
 }
 
-const TOOL_LABEL: Record<string, string> = {
-  // project
-  "project.list": "项目列表",
-  "project.create": "创建项目",
-  "project.get_state": "读取项目状态",
-  // drama
-  "drama.parse_uploaded_script": "解析上传剧本",
-  // canvas
-  "canvas.delete": "删除画布节点",
-  // memory
-  "memory.save_fact": "保存记忆",
-  "memory.recall": "回忆记忆",
-  "memory.save_user_fact": "保存用户偏好",
-  "memory.recall_user": "读取用户偏好",
-  // system
-  "system.status": "系统状态",
-  "system.models": "模型列表",
-  // file
-  "file.list_dir": "列出文件",
-  "file.read_text": "读取文件",
-  "file.extract_text_from_upload": "提取文本",
-  // media
-  "media.cancel_image_generation": "停止图片生成",
-  "media.list_providers": "媒体源列表",
-  "media.test_provider": "测试媒体源",
-  // config
-  "config.read": "读取配置",
-  "config.read_file": "读取配置文件",
-  "config.validate": "校验配置",
-  // tool meta
-  "tool.describe": "工具描述",
-  // node (universal)
-  "node.create": "创建节点",
-  "node.get": "获取节点",
-  "node.list": "节点列表",
-  "node.update": "更新节点",
-  "node.run": "运行节点",
-  // project extras
-  "project.reset": "重置项目",
-  "media.get_presets": "生图预设",
-  // asset / shot
-  "scene.list": "场景列表",
-  "scene.update": "更新场景",
-  "scene.delete": "删除场景",
-  "asset.create": "创建资产",
-  "asset.list": "资产列表",
-  "asset.update": "更新资产",
-  "asset.delete": "删除资产",
-  "shot.list": "镜头列表",
-  "shot.delete": "删除镜头",
-  // skill (dynamic)
-  // assets
-  "assets.get_library_path": "查询资产库",
-  "assets.list_project": "资产列表",
-  "assets.list_shared": "资产列表",
-  "assets.read_asset": "读取资产",
-  "assets.list_categories": "资产分类",
-  "assets.create_category": "创建资产分类",
-  "assets.move_asset": "移动资产",
-  "assets.add_to_canvas": "资产加入画布",
-  // task
-  "task.create": "创建任务",
-  "task.list": "任务列表",
-  "task.update": "更新任务",
-  "task.complete": "完成任务",
-  // background
-  "background.list": "后台任务",
-  "background.status": "任务状态",
-  "background.list_running": "运行中任务",
-  // events
-  "events.tail": "事件追踪",
-  "events.query": "查询事件",
-  // agent
-  "agent.map_reduce": "并行归并",
-  "agent.pipeline": "流水线协作",
-  "agent.hierarchical": "层级协作",
-  // plan
-}
-
-function ToolBubbleCard({ tool }: { tool: ToolBubble }) {
-  const label = TOOL_LABEL[tool.tool] ?? tool.tool
-  const isRunning = tool.status === "running"
-  const elapsed = isRunning ? "" : `${((Date.now() - tool.startedAt) / 1000).toFixed(1)}s`
-
-  return (
-    <div className="flex items-center gap-2 text-[11px] text-gray-400 py-0.5">
-      {isRunning ? (
-        <span className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-      ) : tool.status === "completed" ? (
-        <span className="text-[10px] font-semibold text-green-400">OK</span>
-      ) : (
-        <span className="text-[10px] font-semibold text-red-400">FAIL</span>
-      )}
-      <span className={isRunning ? "text-blue-300" : "text-gray-500"}>
-        {isRunning ? `正在${label}` : tool.status === "completed" ? `${label}完成` : `${label}失败`}
-      </span>
-      {elapsed && <span className="text-gray-600">{elapsed}</span>}
-    </div>
-  )
-}
-
 function workflowSpecPreviewFromToolResult(result: unknown): Record<string, unknown> | null {
   if (!result || typeof result !== "object" || Array.isArray(result)) return null
   const outer = result as Record<string, unknown>
@@ -740,13 +636,7 @@ function AgentRoundCard({ round }: { round: AgentRound }) {
   )
 }
 
-function AgentActivityTimeline({
-  rounds,
-  tools,
-}: {
-  rounds?: AgentRound[]
-  tools?: ToolBubble[]
-}) {
+function AgentActivityTimeline({ rounds }: { rounds?: AgentRound[] }) {
   const hasRounds = Boolean(rounds && rounds.length > 0)
   if (!hasRounds) return null
 
@@ -922,492 +812,6 @@ function formatAssetSize(size?: number | null): string {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function generatedAssetUrl(asset: ProjectAsset): string {
-  if (asset.url) return resolveMediaUrl(asset.url)
-  const path = asset.path || ""
-  const match = path.match(/(?:^|\/)(generated_images|generated_videos|generated_audio)\/(.+)$/)
-  if (match && asset.project_id) {
-    return resolveMediaUrl(`/api/media/${asset.project_id}/${match[1]}/${match[2]}`)
-  }
-  return ""
-}
-
-function AssetInfoPanel({
-  projectId,
-  disabled,
-}: {
-  projectId?: string | null
-  disabled?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [items, setItems] = useState<AssetInfoItem[]>([])
-  const [categories, setCategories] = useState<AssetCategoryResult>({})
-  const [query, setQuery] = useState("")
-  const [action, setAction] = useState<AssetAction>(null)
-  const [form, setForm] = useState<AssetTargetForm>({
-    library: "shared",
-    kind: "character",
-    category: "",
-    episode: "1",
-    name: "",
-  })
-  const [operationLoading, setOperationLoading] = useState(false)
-  const [operationError, setOperationError] = useState<string | null>(null)
-  const [operationMessage, setOperationMessage] = useState<string | null>(null)
-  const canvasNodeCount = useCanvasStore((state) => state.nodes.length)
-
-  const itemUrl = useCallback((item: AssetInfoItem): string => {
-    if (item.previewUrl) return item.previewUrl
-    if (item.source !== "generated" && item.path) return resolveAssetLibraryPreviewUrl(projectId || "", item.path)
-    return ""
-  }, [projectId])
-
-  const resetOperationState = useCallback(() => {
-    setOperationError(null)
-    setOperationMessage(null)
-  }, [])
-
-  const defaultForm = useCallback((item?: AssetInfoItem): AssetTargetForm => {
-    return {
-      library: "shared",
-      kind: item?.kind || "character",
-      category: item?.category || "",
-      episode: "1",
-      name: "",
-    }
-  }, [])
-
-  const openAction = useCallback((nextAction: AssetAction) => {
-    resetOperationState()
-    if (nextAction && nextAction.type !== "preview" && "item" in nextAction) {
-      setForm(defaultForm(nextAction.item))
-    } else if (nextAction?.type === "category") {
-      setForm({ library: "shared", kind: "character", category: "", episode: "1", name: "" })
-    }
-    setAction(nextAction)
-  }, [defaultForm, resetOperationState])
-
-  const loadAssets = useCallback(async () => {
-    if (!projectId) return
-    setLoading(true)
-    setError(null)
-    try {
-      const next: AssetInfoItem[] = []
-      const generated = await listProjectAssets(projectId)
-      generated.assets.slice(0, 120).forEach((asset, index) => {
-        const title = asset.name || asset.type || assetBasename(asset.path || "") || `生成资产 ${index + 1}`
-        const pathText = asset.path || asset.url || asset.id
-        const mediaKind = assetMediaKind(`${asset.url || ""} ${asset.path || ""}`, asset.mime_type, asset.type)
-        next.push({
-          key: `generated:${asset.id}`,
-          source: "generated",
-          title,
-          subtitle: asset.type || asset.mime_type || "生成资产",
-          path: pathText,
-          sourceRef: `asset:${asset.id}`,
-          mediaKind,
-          mimeType: asset.mime_type,
-          previewUrl: mediaKind === "image" || mediaKind === "video" || mediaKind === "audio" ? generatedAssetUrl(asset) : "",
-          prompt: asset.prompt,
-        })
-      })
-
-      const [library, categoryResult] = await Promise.all([
-        callTool<AssetLibraryListResult>("assets.list_shared", { project_id: projectId }),
-        callTool<AssetCategoryResult>("assets.list_categories", { project_id: projectId }),
-      ])
-      if (!categoryResult?.error) setCategories(categoryResult)
-      ;(library?.items ?? []).slice(0, 120).forEach((item, index) => {
-        const path = String(item.path || "")
-        if (!path) return
-        const mediaKind = assetMediaKind(path)
-        next.push({
-          key: `asset:${path}:${index}`,
-          source: "shared_library",
-          title: assetBasename(path),
-          subtitle: item.category || item.kind || "资产库",
-          path,
-          sourceRef: path,
-          mediaKind,
-          kind: item.kind,
-          category: item.category,
-          episode: item.episode,
-          size: item.size,
-          previewUrl: mediaKind === "image" || mediaKind === "video" || mediaKind === "audio"
-            ? resolveAssetLibraryPreviewUrl(projectId, path)
-            : "",
-        })
-      })
-      setItems(next)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [projectId])
-
-  useEffect(() => {
-    if (open) void loadAssets()
-  }, [open, loadAssets])
-
-  const sharedCategoryOptions = useMemo(() => {
-    const targetKind = form.kind.trim()
-    return (categories.shared ?? [])
-      .filter((item) => !targetKind || item.kind === targetKind)
-      .map((item) => item.category)
-      .filter((item): item is string => Boolean(item))
-  }, [categories.shared, form.kind])
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return items
-    return items.filter((item) =>
-      `${item.title} ${item.subtitle} ${item.path} ${item.mimeType || ""} ${assetSourceLabel(item.source)} ${item.category || ""} ${item.kind || ""}`
-        .toLowerCase()
-        .includes(q),
-    )
-  }, [items, query])
-
-  const assertToolOk = (result: Record<string, unknown>) => {
-    if (result?.error) throw new Error(String(result.error))
-    if (result?.ok === false) throw new Error(String(result.error || "操作失败"))
-  }
-
-  const handleDownload = useCallback(async (item: AssetInfoItem) => {
-    const url = itemUrl(item)
-    if (!url) {
-      setOperationError("这个资产没有可下载地址")
-      return
-    }
-    try {
-      await saveMediaFile(url, assetBasename(item.path || item.title))
-    } catch (error) {
-      setOperationError(error instanceof Error ? error.message : String(error))
-    }
-  }, [itemUrl])
-
-  const handleAddToCanvas = useCallback(async (item: AssetInfoItem) => {
-    if (!projectId) return
-    resetOperationState()
-    setOperationLoading(true)
-    try {
-      const result = await callTool<Record<string, unknown>>("assets.add_to_canvas", {
-        project_id: projectId,
-        source: item.sourceRef,
-        title: item.title,
-        node_type: item.mediaKind === "file" ? undefined : item.mediaKind,
-        x: 120 + (canvasNodeCount % 4) * 300,
-        y: 90 + Math.floor(canvasNodeCount / 4) * 220,
-      })
-      assertToolOk(result)
-      setOperationMessage("已加入画布")
-    } catch (err) {
-      setOperationError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setOperationLoading(false)
-    }
-  }, [canvasNodeCount, projectId, resetOperationState])
-
-  const submitAssetAction = useCallback(async () => {
-    if (!projectId || !action || action.type === "preview") return
-    resetOperationState()
-    setOperationLoading(true)
-    try {
-      if (action.type === "category") {
-        const result = await callTool<Record<string, unknown>>("assets.create_category", {
-          project_id: projectId,
-          library: "asset",
-          kind: form.kind,
-          category: form.category,
-        })
-        assertToolOk(result)
-        setOperationMessage("分类已创建")
-      } else if (action.type === "save") {
-        const item = action.item
-        const result = await callTool<Record<string, unknown>>("assets.save_to_shared", {
-          project_id: projectId,
-          source: item.sourceRef,
-          kind: form.kind,
-          category: form.category,
-          name: form.name || undefined,
-        })
-        assertToolOk(result)
-        setOperationMessage("已加入资产库")
-      } else if (action.type === "move") {
-        const item = action.item
-        const result = await callTool<Record<string, unknown>>("assets.move_asset", {
-          project_id: projectId,
-          path: item.path,
-          library: "asset",
-          kind: form.kind,
-          category: form.category,
-          name: form.name || undefined,
-        })
-        assertToolOk(result)
-        setOperationMessage("资产已移动")
-      }
-      await loadAssets()
-      setAction(null)
-    } catch (err) {
-      setOperationError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setOperationLoading(false)
-    }
-  }, [action, form, loadAssets, projectId, resetOperationState])
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        disabled={!projectId || disabled}
-        title="查看资产信息"
-        className="h-8 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        资产
-      </button>
-      {open ? (
-        <div className="fixed inset-x-3 bottom-20 z-30 max-h-[70dvh] overflow-hidden rounded-lg border border-white/10 bg-[var(--studio-panel)] shadow-2xl shadow-black/50 sm:absolute sm:bottom-10 sm:left-0 sm:right-auto sm:max-h-none sm:w-[420px]">
-          <div className="border-b border-white/10 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <div className="text-sm font-medium text-zinc-100">资产信息</div>
-                <div className="mt-0.5 text-[11px] text-zinc-500">预览、下载、入库、分类整理和加入画布</div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => openAction({ type: "category" })}
-                  className="rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-400 hover:bg-white/[0.06]"
-                >
-                  新分类
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void loadAssets()}
-                  disabled={loading}
-                  className="rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-400 hover:bg-white/[0.06] disabled:opacity-50"
-                >
-                  刷新
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-400 hover:bg-white/[0.06]"
-                >
-                  关闭
-                </button>
-              </div>
-            </div>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索名称、类型或路径"
-              className="mt-2 h-8 w-full rounded-md border border-white/10 bg-[var(--studio-control)] px-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-200/60"
-            />
-          </div>
-          <div className="max-h-[calc(70dvh-88px)] overflow-y-auto p-2 sm:max-h-[420px]">
-            {operationError ? (
-              <div className="mb-2 rounded-md border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">{operationError}</div>
-            ) : null}
-            {operationMessage ? (
-              <div className="mb-2 rounded-md border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{operationMessage}</div>
-            ) : null}
-            {loading ? (
-              <div className="flex h-24 items-center justify-center text-xs text-zinc-500">正在读取资产…</div>
-            ) : error ? (
-              <div className="rounded-md border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</div>
-            ) : filtered.length === 0 ? (
-              <div className="flex h-24 items-center justify-center text-xs text-zinc-500">没有资产</div>
-            ) : (
-              <div className="space-y-2">
-                {filtered.map((item) => {
-                  const sizeText = formatAssetSize(item.size)
-                  return (
-                    <div key={item.key} className="flex gap-2 rounded-md border border-white/10 bg-white/[0.035] p-2">
-                      <div className="h-16 w-20 shrink-0 overflow-hidden rounded bg-black/25">
-                        {item.previewUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.previewUrl} alt={item.title} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-600">资产</div>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-xs font-medium text-zinc-200">{item.title}</span>
-                          <span className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-500">
-                            {assetSourceLabel(item.source)}
-                          </span>
-                        </div>
-                        <div className="mt-1 truncate text-[11px] text-zinc-500">{item.subtitle}</div>
-                        <div className="mt-1 truncate font-mono text-[10px] text-zinc-500">{item.path}</div>
-                        {(sizeText || item.mimeType || item.prompt) ? (
-                          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-zinc-600">
-                            <span>{assetKindLabel(item.mediaKind)}</span>
-                            {sizeText ? <span>{sizeText}</span> : null}
-                            {item.mimeType ? <span>{item.mimeType}</span> : null}
-                            {item.prompt ? <span className="max-w-full truncate">prompt: {item.prompt}</span> : null}
-                          </div>
-                        ) : null}
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openAction({ type: "preview", item })}
-                            className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-white/[0.06]"
-                          >
-                            预览
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDownload(item)}
-                            className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-white/[0.06]"
-                          >
-                            下载
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleAddToCanvas(item)}
-                            disabled={operationLoading}
-                            className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-white/[0.06] disabled:opacity-50"
-                          >
-                            加入画布
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openAction({ type: "save", item })}
-                            className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-white/[0.06]"
-                          >
-                            入库
-                          </button>
-                          {item.source !== "generated" ? (
-                            <button
-                              type="button"
-                              onClick={() => openAction({ type: "move", item })}
-                              className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-white/[0.06]"
-                            >
-                              移动
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-          {action ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/55 p-3">
-              <div className="w-full max-w-[360px] rounded-lg border border-white/10 bg-[var(--studio-panel)] p-3 shadow-xl">
-                {action.type === "preview" ? (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-zinc-100">{action.item.title}</div>
-                        <div className="mt-0.5 text-[11px] text-zinc-500">{assetSourceLabel(action.item.source)} · {assetKindLabel(action.item.mediaKind)}</div>
-                      </div>
-                      <button type="button" onClick={() => setAction(null)} className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 hover:bg-white/[0.06]">关闭</button>
-                    </div>
-                    <div className="mt-3 overflow-hidden rounded-md border border-white/10 bg-black/30">
-                      {action.item.mediaKind === "image" && itemUrl(action.item) ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={itemUrl(action.item)} alt={action.item.title} className="max-h-[48dvh] w-full object-contain" />
-                      ) : action.item.mediaKind === "video" && itemUrl(action.item) ? (
-                        <video controls preload="metadata" className="max-h-[48dvh] w-full">
-                          <source src={itemUrl(action.item)} />
-                        </video>
-                      ) : action.item.mediaKind === "audio" && itemUrl(action.item) ? (
-                        <div className="p-3">
-                          <audio controls preload="metadata" className="w-full">
-                            <source src={itemUrl(action.item)} />
-                          </audio>
-                        </div>
-                      ) : (
-                        <div className="p-3 text-xs text-zinc-400">
-                          <div className="font-medium text-zinc-200">{assetKindLabel(action.item.mediaKind)}</div>
-                          <div className="mt-1 break-all font-mono text-[11px] text-zinc-500">{action.item.path}</div>
-                          {action.item.prompt ? <div className="mt-2 text-zinc-500">{action.item.prompt}</div> : null}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-medium text-zinc-100">
-                          {action.type === "category" ? "创建分类" : action.type === "move" ? "移动资产" : "加入资产库"}
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-zinc-500">
-                          {action.type === "category" ? "创建资产分类" : "选择类型和分类"}
-                        </div>
-                      </div>
-                      <button type="button" onClick={() => setAction(null)} className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 hover:bg-white/[0.06]">关闭</button>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <label className="block text-[11px] text-zinc-500">
-                        类型
-                        <select
-                          value={form.kind}
-                          onChange={(event) => setForm((current) => ({ ...current, kind: event.target.value }))}
-                          className="mt-1 h-8 w-full rounded-md border border-white/10 bg-[var(--studio-control)] px-2 text-xs text-zinc-100"
-                        >
-                          {ASSET_LIBRARY_KINDS.map((kind) => (
-                            <option key={kind} value={kind}>{ASSET_LIBRARY_KIND_LABEL[kind] ?? kind}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="block text-[11px] text-zinc-500">
-                        分类
-                        <input
-                          value={form.category}
-                          list="asset-shared-category-options"
-                          onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                          placeholder="输入分类名，跟随当前用户语言"
-                          className="mt-1 h-8 w-full rounded-md border border-white/10 bg-[var(--studio-control)] px-2 text-xs text-zinc-100 placeholder-zinc-600"
-                        />
-                        <datalist id="asset-shared-category-options">
-                          {sharedCategoryOptions.map((category) => <option key={category} value={category} />)}
-                        </datalist>
-                      </label>
-                      {action.type !== "category" ? (
-                        <label className="block text-[11px] text-zinc-500">
-                          新名称
-                          <input
-                            value={form.name}
-                            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                            placeholder="选填，默认沿用原文件名"
-                            className="mt-1 h-8 w-full rounded-md border border-white/10 bg-[var(--studio-control)] px-2 text-xs text-zinc-100 placeholder-zinc-600"
-                          />
-                        </label>
-                      ) : null}
-                    </div>
-                    {operationError ? <div className="mt-3 rounded-md border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">{operationError}</div> : null}
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button type="button" onClick={() => setAction(null)} className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/[0.06]">取消</button>
-                      <button
-                        type="button"
-                        onClick={() => void submitAssetAction()}
-                        disabled={operationLoading || !form.category.trim()}
-                        className="rounded-md bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {operationLoading ? "处理中" : "确认"}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  )
 }
 
 type AssetFolder = {
@@ -2038,8 +1442,6 @@ export function ChatPanel() {
   const appendToLastAssistant = useChatStore((s) => s.appendToLastAssistant)
   const setLastAssistantNode = useChatStore((s) => s.setLastAssistantNode)
   const updateLastAssistantNode = useChatStore((s) => s.updateLastAssistantNode)
-  const addToolBubble = useChatStore((s) => s.addToolBubble)
-  const updateToolBubble = useChatStore((s) => s.updateToolBubble)
   const addAgentRound = useChatStore((s) => s.addAgentRound)
   const addAgentRoundToolResult = useChatStore((s) => s.addAgentRoundToolResult)
   const addAgentRoundToolStart = useChatStore((s) => s.addAgentRoundToolStart)
@@ -2057,7 +1459,6 @@ export function ChatPanel() {
   const resetProjectRuntime = useChatStore((s) => s.resetProjectRuntime)
   const setLastFailed = useChatStore((s) => s.setLastFailed)
   const setActiveChecklist = useChatStore((s) => s.setActiveChecklist)
-  const setUnfinishedNodes = useChatStore((s) => s.setUnfinishedNodes)
   const setTokenUsage = useChatStore((s) => s.setTokenUsage)
   const applyTokenUsageEvent = useChatStore((s) => s.applyTokenUsageEvent)
   const applyBlueprintEvent = useBlueprintStore((s) => s.applyStreamEvent)
@@ -2399,7 +1800,6 @@ export function ChatPanel() {
       if (isWorkflowSpecToolEvent(event)) return
       const tool = String(event.tool)
       console.info("[chat-ui:tool_start]", { round: event.round, tool, content: event.content })
-      addToolBubble(tool)
       addAgentRoundToolStart(tool, String(event.content ?? ""))
       return
     }
@@ -2419,14 +1819,6 @@ export function ChatPanel() {
       }
       if (isWorkflowSpecToolEvent(event)) return
       const summary = summarizeAgentRoundToolResult(tool, result)
-      const resultObj = result as Record<string, unknown> | null
-      const awaitingConfirmation = Boolean(resultObj?.requires_user_confirm) && !resultObj?.error
-      const failed = Boolean(
-        result && typeof result === "object" &&
-        !awaitingConfirmation &&
-        ("error" in result || ("ok" in result && result.ok === false))
-      )
-      updateToolBubble(tool, { status: failed ? "failed" : "completed" })
       addAgentRoundToolResult(summary)
       return
     }
@@ -3903,7 +3295,6 @@ function MessageBubbleImpl({
 
   const hasLiveProgress = Boolean(
     (msg.rounds && msg.rounds.length > 0) ||
-    (msg.tools && msg.tools.length > 0) ||
     (msg.stepProgress && msg.stepProgress.steps.length > 0) ||
     (msg.nodes && msg.nodes.length > 0) ||
     msg.proposedPlan
@@ -3940,7 +3331,7 @@ function MessageBubbleImpl({
           <SubmittedDecisionCard metadata={msg.metadata} />
         ) : null}
         {msg.role === "assistant" && (
-          <AgentActivityTimeline rounds={msg.rounds} tools={msg.tools} />
+          <AgentActivityTimeline rounds={msg.rounds} />
         )}
         {msg.stepProgress && msg.stepProgress.steps.length > 0 && (
           <StepProgressCard progress={msg.stepProgress} />

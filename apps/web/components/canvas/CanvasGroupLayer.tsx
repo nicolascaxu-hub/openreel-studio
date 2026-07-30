@@ -80,8 +80,6 @@ const GROUP_PADDING_X = 26
 const GROUP_PADDING_Y = 24
 const GROUP_GAP_X = 44
 const GROUP_GAP_Y = 34
-const TOOLBAR_HEIGHT = 34
-
 const NODE_TIER: Record<string, number> = {
   text: 0,
   image: 1,

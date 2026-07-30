@@ -1335,7 +1335,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         canvas_tools,
         config_tools,
         drama_tools,
-        event_tools,
+        event_tools as _event_tools,  # noqa: F401 - import-time registration
         feature_tools,
         file_tools,
         image_operation_tools,
@@ -1346,12 +1346,12 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         node_universal,
         project_tools,
         shot_tools,
-        skill_tools,
-        system_tools,
-        task_tools,
+        skill_tools as _skill_tools,  # noqa: F401 - import-time registration
+        system_tools as _system_tools,  # noqa: F401 - import-time registration
+        task_tools as _task_tools,  # noqa: F401 - import-time registration
         tool_meta_tools,
         vision_tools,
-        workflow_tools,
+        workflow_tools as _workflow_tools,  # noqa: F401 - import-time registration
     )
 
     target_registry = target or registry
@@ -2202,7 +2202,7 @@ def _load_skill_dir(package: str, skill_dir: Path) -> str | None:
         return None
 
     full = f"{package}.{name}"
-    module = importlib.import_module(full)
+    importlib.import_module(full)
 
     # Attach metadata to any tools the module just registered. We match by
     # tool name == metadata.get("tool_name") OR namespace skill.<name>.
@@ -2257,7 +2257,6 @@ def reload_skills(package: str = "app.skills") -> list[str]:
     management wrappers are no longer registered; concrete skill tools are
     reloaded from their packages.
     """
-    import importlib
     import sys
 
     to_remove = [

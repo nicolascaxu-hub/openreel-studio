@@ -9,7 +9,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from app.agent import canvas_workflow_templates
 from app.agent.workflow_audit import ensure_workflow_audit_passes
 from app.agent.workflow_spec import (
     WORKFLOW_SPEC_VERSION,

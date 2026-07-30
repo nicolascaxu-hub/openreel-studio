@@ -14,7 +14,6 @@ import logging
 from typing import Any, AsyncGenerator
 
 from app.api.chat_events import normalize_chat_event
-from app.agent.task_graph import task_graph, Task
 from app.agent.event_stream import event_stream
 from app.mcp_tools.registry import registry
 
