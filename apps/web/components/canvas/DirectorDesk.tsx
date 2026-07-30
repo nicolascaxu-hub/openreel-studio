@@ -30,6 +30,7 @@ import {
 import {
   DIRECTOR_ASPECT_VALUES,
   DIRECTOR_BUILTINS,
+  DIRECTOR_CHARACTER_COLORS,
   DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID,
   DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID,
   MAX_DIRECTOR_CAMERAS,
@@ -81,6 +82,7 @@ import {
   type DirectorMannequinPosePreset,
   type DirectorMannequinProportions,
 } from "@/lib/directorMannequin"
+import { DIRECTOR_UNIVERSAL_MAJOR_JOINTS } from "@/lib/directorUniversalMannequin"
 import { cn } from "@/lib/utils"
 
 
@@ -501,6 +503,7 @@ function directorSupplementalAnimations(asset: DirectorModelAsset): Promise<THRE
 async function cloneDirectorGltf(
   asset: DirectorModelAsset,
   includeSupplementalAnimations = false,
+  mannequinColor = "#e5e7eb",
 ): Promise<GLTF> {
   const template = await directorGltfTemplate(asset)
   const supplementalAnimations = includeSupplementalAnimations
@@ -518,7 +521,7 @@ async function cloneDirectorGltf(
       const sourceMaterials = Array.isArray(child.material) ? child.material : [child.material]
       const whiteMaterials = sourceMaterials.map((source) => {
         const white = new THREE.MeshStandardMaterial({
-          color: 0xe5e7eb,
+          color: new THREE.Color(mannequinColor),
           roughness: 0.82,
           metalness: 0,
           side: THREE.DoubleSide,
@@ -658,9 +661,26 @@ function getDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
 
 function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
   const cacheKey = modelThumbnailCacheKey(asset)
+  const previewRef = useRef<HTMLSpanElement | null>(null)
   const [thumbnail, setThumbnail] = useState<string | null>(() => directorModelThumbnailCache.get(cacheKey) || null)
   const [failed, setFailed] = useState(false)
   const [shouldLoad, setShouldLoad] = useState(() => directorModelThumbnailCache.has(cacheKey))
+
+  useEffect(() => {
+    if (shouldLoad) return
+    const target = previewRef.current
+    if (!target || typeof IntersectionObserver === "undefined") {
+      setShouldLoad(true)
+      return
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      setShouldLoad(true)
+      observer.disconnect()
+    }, { rootMargin: "320px 0px" })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [shouldLoad])
 
   useEffect(() => {
     if (!shouldLoad) return
@@ -683,9 +703,9 @@ function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
 
   return (
     <span
+      ref={previewRef}
       aria-label={`${asset.name} 模型预览`}
       data-model-preview={failed ? "failed" : thumbnail ? "ready" : shouldLoad ? "loading" : "idle"}
-      onPointerEnter={() => setShouldLoad(true)}
       className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.07] bg-[radial-gradient(circle_at_50%_32%,rgba(129,140,248,.2),rgba(15,23,42,.78)_58%,rgba(3,7,18,.96))]"
     >
       {thumbnail ? (
@@ -695,7 +715,7 @@ function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
       ) : shouldLoad ? (
         <span className="h-4 w-4 animate-spin rounded-full border border-violet-200/20 border-t-violet-200/80" />
       ) : (
-        <span className="text-[7px] font-medium tracking-[0.12em] text-zinc-600">悬停预览</span>
+        <span className="text-[7px] font-medium tracking-[0.12em] text-zinc-600">3D 模型</span>
       )}
       <span className="absolute bottom-1 right-1 rounded bg-black/55 px-1 py-0.5 text-[6px] font-semibold tracking-[0.08em] text-cyan-100/75">3D</span>
     </span>
@@ -873,6 +893,46 @@ function resolveCustomRigBones(
   return result
 }
 
+function updateUniversalMannequinColor(root: THREE.Object3D, color: string): void {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return
+    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    for (const material of materials) {
+      if (material instanceof THREE.MeshStandardMaterial) material.color.set(color)
+    }
+  })
+}
+
+function applyRuntimeAnimationJointOffsets(
+  runtime: DirectorRuntime,
+  objectId: string,
+  asset: DirectorModelAsset,
+  rig: DirectorCustomRigState,
+): void {
+  if (rig.mode !== "animation" || !asset.analysis?.humanoid.recognized) return
+  const root = runtime.objectRoots.get(objectId)
+  const gltf = root?.userData.directorGltf as GLTF | undefined
+  if (!root || !gltf) return
+  let rigBones = root.userData.directorRigBones as DirectorRigJointBones | undefined
+  for (const joint of DIRECTOR_MANNEQUIN_JOINTS) {
+    const rotation = rig.joints[joint]
+    if (rotation.every((value) => Math.abs(value) < 0.001)) continue
+    if (!rigBones) {
+      rigBones = resolveCustomRigBones(gltf, asset.analysis.humanoid)
+      root.userData.directorRigBones = rigBones
+    }
+    const bone = rigBones[joint]
+    if (!(bone instanceof THREE.Bone)) continue
+    bone.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(rotation[0]),
+      THREE.MathUtils.degToRad(rotation[1]),
+      THREE.MathUtils.degToRad(rotation[2]),
+      "XYZ",
+    )))
+    bone.updateWorldMatrix(false, true)
+  }
+}
+
 function stopRuntimeMixers(runtime: DirectorRuntime): void {
   for (const mixer of runtime.mixers.values()) {
     mixer.stopAllAction()
@@ -969,6 +1029,28 @@ function applyRuntimeNativeAnimation(
     else runtime.playingMixerIds.delete(objectId)
     mixer!.update(0)
   }
+  applyRuntimeAnimationJointOffsets(runtime, objectId, asset, rig)
+  runtime.requestRender()
+  return true
+}
+
+function applyRuntimeCustomRigState(
+  runtime: DirectorRuntime,
+  objectId: string,
+  asset: DirectorModelAsset,
+  rig: DirectorCustomRigState,
+): boolean {
+  if (rig.mode !== "pose") return applyRuntimeNativeAnimation(runtime, objectId, asset, rig)
+  if (!asset.analysis?.humanoid.recognized) return false
+  const root = runtime.objectRoots.get(objectId)
+  const gltf = root?.userData.directorGltf as GLTF | undefined
+  if (!root || !gltf || root.userData.directorAssetId !== asset.id) return false
+  stopRuntimeMixer(runtime, objectId)
+  restoreDirectorModelBindPose(gltf.scene)
+  const rigBones = (root.userData.directorRigBones as DirectorRigJointBones | undefined)
+    || resolveCustomRigBones(gltf, asset.analysis.humanoid)
+  root.userData.directorRigBones = rigBones
+  applyDirectorRigPose(gltf.scene, rig, rigBones)
   runtime.requestRender()
   return true
 }
@@ -1125,12 +1207,13 @@ export default function DirectorDesk({
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [viewportContextMenu, setViewportContextMenu] = useState<DirectorViewportContextMenu | null>(null)
   const [leftPanelTab, setLeftPanelTab] = useState<"library" | "scene" | "cameras">("library")
-  const [modelCategory, setModelCategory] = useState("家居家具")
+  const [modelCategory, setModelCategory] = useState("全部")
   const [modelQuery, setModelQuery] = useState("")
   const [poseCategory, setPoseCategory] = useState("基础站姿")
   const [poseQuery, setPoseQuery] = useState("")
   const [poseResultLimit, setPoseResultLimit] = useState(DIRECTOR_POSE_RESULT_BATCH_SIZE)
   const [motionQuery, setMotionQuery] = useState("")
+  const [motionCategory, setMotionCategory] = useState("全部")
   const [inspectorTab, setInspectorTab] = useState<"object" | "camera" | "scene">("camera")
   const [objectInspectorTab, setObjectInspectorTab] = useState<"transform" | "rig">("transform")
   const [rigInspectorTab, setRigInspectorTab] = useState<"setup" | "motion" | "joints" | "analysis">("motion")
@@ -1310,7 +1393,7 @@ export default function DirectorDesk({
       return
     }
     setLoadingModels((value) => value + 1)
-    void cloneDirectorGltf(asset, true).then((gltf) => {
+    void cloneDirectorGltf(asset, true, object.color).then((gltf) => {
       if (!isCurrent()) {
         disposeObject(gltf.scene)
         return
@@ -1320,6 +1403,11 @@ export default function DirectorDesk({
       const model = gltf.scene
       const analysis = asset.analysis
       const rig = normalizeDirectorCustomRig(object.rig, asset)
+      if (asset.id === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID) {
+        const latestColor = directorRef.current.scene.objects.find((item) => item.id === object.id)?.color
+          || object.color
+        updateUniversalMannequinColor(model, latestColor)
+      }
       root.userData.directorAssetId = asset.id
       root.userData.directorGltf = gltf
       model.updateMatrixWorld(true)
@@ -1581,7 +1669,21 @@ export default function DirectorDesk({
       if (runtime.disposed || document.hidden) return
       const delta = Math.min(Math.max((frameTime - previousFrameTime) / 1000, 0), 0.1)
       previousFrameTime = frameTime
-      for (const objectId of runtime.playingMixerIds) runtime.mixers.get(objectId)?.update(delta)
+      for (const objectId of runtime.playingMixerIds) {
+        runtime.mixers.get(objectId)?.update(delta)
+        const object = directorRef.current.scene.objects.find((item) => item.id === objectId)
+        const asset = object
+          ? directorModelAssetById(object.asset_id, directorRef.current.model_assets)
+          : undefined
+        if (object && asset) {
+          applyRuntimeAnimationJointOffsets(
+            runtime,
+            objectId,
+            asset,
+            object.rig || defaultDirectorCustomRig(asset),
+          )
+        }
+      }
       renderingFrame = true
       const orbitChanged = orbit.update()
       renderingFrame = false
@@ -2058,7 +2160,10 @@ export default function DirectorDesk({
   useEffect(() => {
     if (selectedObjectId) {
       setInspectorTab("object")
-      setObjectInspectorTab("transform")
+      const object = directorRef.current.scene.objects.find((item) => item.id === selectedObjectId)
+      setObjectInspectorTab(
+        object?.asset_id === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID ? "rig" : "transform",
+      )
     } else if (selectedCameraId) {
       setInspectorTab("camera")
     }
@@ -2112,6 +2217,12 @@ export default function DirectorDesk({
       : null,
     [selectedCustomAsset, selectedObject],
   )
+  const selectedUniversalMannequin = selectedCustomAsset?.id === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID
+  const selectedMajorJoint = DIRECTOR_UNIVERSAL_MAJOR_JOINTS.some((joint) => joint.id === selectedJoint)
+    ? selectedJoint
+    : "spine"
+  const selectedMajorJointInfo = DIRECTOR_UNIVERSAL_MAJOR_JOINTS.find((joint) => joint.id === selectedMajorJoint)
+    || DIRECTOR_UNIVERSAL_MAJOR_JOINTS[0]
   const selectedNativePoseClips = useMemo(
     () => selectedCustomAsset?.analysis?.animations.filter((item) => item.kind === "pose") || [],
     [selectedCustomAsset],
@@ -2130,18 +2241,13 @@ export default function DirectorDesk({
   )
   const filteredContinuousAnimationClips = useMemo(() => {
     const query = motionQuery.trim().toLocaleLowerCase()
-    if (!query) return selectedContinuousAnimationClips
-    const matches = selectedContinuousAnimationClips.filter((item) => (
-      `${directorHumanMotionCategory(item.name)} ${directorHumanMotionLabel(item.name)}`
+    return selectedContinuousAnimationClips.filter((item) => (
+      (!selectedUniversalMannequin || motionCategory === "全部" || directorHumanMotionCategory(item.name) === motionCategory)
+      && (!query || `${directorHumanMotionCategory(item.name)} ${directorHumanMotionLabel(item.name)}`
         .toLocaleLowerCase()
-        .includes(query)
+        .includes(query))
     ))
-    if (
-      selectedNativeClip?.kind === "animation"
-      && !matches.some((item) => item.index === selectedNativeClip.index)
-    ) return [selectedNativeClip, ...matches]
-    return matches
-  }, [motionQuery, selectedContinuousAnimationClips, selectedNativeClip])
+  }, [motionCategory, motionQuery, selectedContinuousAnimationClips, selectedUniversalMannequin])
 
   const addObject = useCallback((assetId: string, defaultName: string) => {
     const scene = cloneDirectorScene(directorRef.current.scene)
@@ -2214,14 +2320,19 @@ export default function DirectorDesk({
       ? directorModelAssetById(nextObject.asset_id, current.model_assets)
       : undefined
     const customRigUpdatedInPlace = customRigOnly && runtime && root && runtimeAsset
-      ? applyRuntimeNativeAnimation(
+      ? applyRuntimeCustomRigState(
         runtime,
         selectedObjectId,
         runtimeAsset,
         normalizeDirectorCustomRig(nextObject.rig, runtimeAsset),
       )
       : false
-    if ((contentChanged && !poseUpdatedInPlace && !customRigUpdatedInPlace) || !runtime || !root) {
+    const universalColorOnly = "color" in patch
+      && Object.keys(patch).every((key) => key === "color")
+      && nextObject.asset_id === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID
+    const colorUpdatedInPlace = Boolean(universalColorOnly && root)
+    if (colorUpdatedInPlace && root) updateUniversalMannequinColor(root, nextObject.color)
+    if ((contentChanged && !poseUpdatedInPlace && !customRigUpdatedInPlace && !colorUpdatedInPlace) || !runtime || !root) {
       rebuildRuntimeObject(selectedObjectId)
     } else {
       root.name = nextObject.name
@@ -2309,25 +2420,39 @@ export default function DirectorDesk({
   const updateCustomRigJoint = useCallback((axis: number, value: number) => {
     if (!Number.isFinite(value)) return
     updateSelectedCustomRig((current) => {
-      const rotation = [...current.joints[selectedJoint]] as [number, number, number]
+      const targetJoint = selectedUniversalMannequin ? selectedMajorJoint : selectedJoint
+      const rotation = [...current.joints[targetJoint]] as [number, number, number]
       rotation[axis] = value
       return {
         ...current,
-        mode: "pose",
+        mode: selectedUniversalMannequin && current.mode === "animation" ? "animation" : "pose",
         pose_preset: "custom",
-        joints: { ...current.joints, [selectedJoint]: rotation },
+        joints: { ...current.joints, [targetJoint]: rotation },
       }
     })
-  }, [selectedJoint, updateSelectedCustomRig])
+  }, [selectedJoint, selectedMajorJoint, selectedUniversalMannequin, updateSelectedCustomRig])
 
   const resetCustomRigJoint = useCallback(() => {
     updateSelectedCustomRig((current) => ({
       ...current,
-      mode: "pose",
+      mode: selectedUniversalMannequin && current.mode === "animation" ? "animation" : "pose",
       pose_preset: "custom",
-      joints: { ...current.joints, [selectedJoint]: [0, 0, 0] },
+      joints: {
+        ...current.joints,
+        [selectedUniversalMannequin ? selectedMajorJoint : selectedJoint]: [0, 0, 0],
+      },
     }))
-  }, [selectedJoint, updateSelectedCustomRig])
+  }, [selectedJoint, selectedMajorJoint, selectedUniversalMannequin, updateSelectedCustomRig])
+
+  const resetUniversalMajorJoints = useCallback(() => {
+    updateSelectedCustomRig((current) => ({
+      ...current,
+      joints: DIRECTOR_UNIVERSAL_MAJOR_JOINTS.reduce((joints, joint) => ({
+        ...joints,
+        [joint.id]: [0, 0, 0] as [number, number, number],
+      }), { ...current.joints }),
+    }))
+  }, [updateSelectedCustomRig])
 
   const changeVectorValue = useCallback((
     field: "position" | "rotation" | "scale",
@@ -3489,7 +3614,7 @@ export default function DirectorDesk({
             <>
             <div className="mb-2 grid grid-cols-2 border-b border-[#303030]">
               <button type="button" onClick={() => setObjectInspectorTab("transform")} className={cn("h-9 border-b-2 text-[9px] font-medium transition", objectInspectorTab === "transform" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}>属性</button>
-              <button type="button" disabled={!selectedMannequin && !selectedCustomAsset} onClick={() => { setObjectInspectorTab("rig"); setRigInspectorTab(selectedMannequin ? "setup" : "motion") }} className={cn("h-9 border-b-2 text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", objectInspectorTab === "rig" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}>姿势与骨骼</button>
+              <button type="button" disabled={!selectedMannequin && !selectedCustomAsset} onClick={() => { setObjectInspectorTab("rig"); setRigInspectorTab(selectedMannequin ? "setup" : "motion") }} className={cn("h-9 border-b-2 text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-25", objectInspectorTab === "rig" ? "border-[#4f8ef7] text-white" : "border-transparent text-zinc-500 hover:text-zinc-200")}>{selectedUniversalMannequin ? "动作与关节" : "姿势与骨骼"}</button>
             </div>
             {objectInspectorTab === "transform" ? (
             <section className="overflow-hidden rounded-2xl border border-white/[0.075] bg-white/[0.018] shadow-[inset_0_1px_rgba(255,255,255,.025)]">
@@ -3623,7 +3748,92 @@ export default function DirectorDesk({
                 </div>
               </section>
             ) : null}
-            {objectInspectorTab === "rig" && selectedCustomAsset && selectedCustomRig ? (
+            {objectInspectorTab === "rig" && selectedUniversalMannequin && selectedCustomAsset && selectedCustomRig ? (
+              <section className="mt-3 overflow-hidden rounded-xl border border-[#3a3a3a] bg-[#202020]">
+                <div className="flex items-center justify-between border-b border-[#363636] px-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-zinc-100">通用白模控制</div>
+                    <div className="mt-0.5 text-[8px] text-zinc-600">项目内置模型 · 66 骨骼 · {selectedContinuousAnimationClips.length} 个动作</div>
+                  </div>
+                  <span className="rounded-md border border-emerald-300/15 bg-emerald-300/[0.06] px-2 py-1 text-[7px] text-emerald-200/75">内置维护</span>
+                </div>
+
+                <div className="space-y-5 p-3">
+                  <div data-director-universal-actions>
+                    <div className="mb-2 flex items-center justify-between">
+                      <div><div className="text-[10px] font-semibold text-zinc-200">动作</div><div className="mt-0.5 text-[7px] text-zinc-600">动作是人物控制的第一入口，点击即可播放</div></div>
+                      <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "bind", animation_playing: false }))} className="h-7 rounded-md border border-white/[0.07] px-2 text-[7px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200">原始站姿</button>
+                    </div>
+
+                    {selectedNativeClip?.kind === "animation" ? (
+                      <div className="mb-2 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.045] p-2">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="min-w-0"><div className="truncate text-[9px] font-medium text-cyan-100">{directorHumanMotionLabel(selectedNativeClip.name)}</div><div className="mt-0.5 text-[7px] text-zinc-600">{directorHumanMotionCategory(selectedNativeClip.name)}</div></div>
+                          <span className="shrink-0 text-[7px] text-cyan-200/55">当前动作</span>
+                        </div>
+                        <div className="grid grid-cols-[1fr_1fr_70px] gap-1.5">
+                          <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_playing: !current.animation_playing }))} className="h-7 rounded-md border border-white/[0.07] bg-black/15 text-[8px] text-zinc-300 transition hover:text-white">{selectedCustomRig.animation_playing ? "暂停" : "播放"}</button>
+                          <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_loop: !current.animation_loop }))} className={cn("h-7 rounded-md border text-[8px] transition", selectedCustomRig.animation_loop ? "border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-100" : "border-white/[0.07] bg-black/15 text-zinc-500")}>循环 {selectedCustomRig.animation_loop ? "开" : "关"}</button>
+                          <select aria-label="白模动作速度" value={selectedCustomRig.animation_speed} onChange={(event) => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_speed: Number(event.target.value) }))} className="h-7 rounded-md border border-white/[0.08] bg-[#151515] px-1 text-[8px] text-zinc-400 outline-none">
+                            {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <input aria-label="搜索白模动作" value={motionQuery} onChange={(event) => setMotionQuery(event.target.value)} placeholder="搜索站立、交谈、行走、格斗…" className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#151515] px-2 text-[8px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-[#4f8ef7]/45" />
+                    <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="白模动作分类">
+                      {["全部", ...DIRECTOR_HUMAN_MOTION_CATEGORIES].map((category) => (
+                        <button key={category} type="button" onClick={() => setMotionCategory(category)} className={cn("h-6 rounded-md border px-2 text-[7px] transition", motionCategory === category ? "border-[#4f8ef7]/50 bg-[#4f8ef7]/15 text-blue-100" : "border-white/[0.06] bg-black/10 text-zinc-600 hover:text-zinc-300")}>{category}</button>
+                      ))}
+                    </div>
+                    <div className="mb-1.5 mt-2 flex items-center justify-between text-[7px] text-zinc-600"><span>直接选择动作</span><span>{filteredContinuousAnimationClips.length} / {selectedContinuousAnimationClips.length}</span></div>
+                    <div className="grid max-h-[420px] grid-cols-2 gap-1.5 overflow-y-auto pr-1" data-director-motion-grid>
+                      {filteredContinuousAnimationClips.map((animation) => (
+                        <button
+                          key={`${animation.index}-${animation.name}`}
+                          type="button"
+                          data-director-motion={animation.name}
+                          title={directorHumanMotionLabel(animation.name)}
+                          onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: animation.index, animation_name: animation.name, animation_playing: true }))}
+                          className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedCustomRig.mode === "animation" && selectedNativeClip?.index === animation.index ? "border-[#4f8ef7]/55 bg-[#4f8ef7]/15 text-blue-50" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.14] hover:text-zinc-200")}
+                        >
+                          <span className="block truncate text-[8px] font-medium">{directorHumanMotionLabel(animation.name)}</span>
+                          <span className="mt-0.5 block text-[6px] text-zinc-700">{directorHumanMotionCategory(animation.name)}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {!filteredContinuousAnimationClips.length ? <div className="mt-2 rounded-lg border border-dashed border-white/[0.07] py-5 text-center text-[8px] text-zinc-700">没有匹配动作</div> : null}
+                  </div>
+
+                  <div className="border-t border-[#343434] pt-4" data-director-universal-color>
+                    <div className="mb-2"><div className="text-[10px] font-semibold text-zinc-200">人物颜色</div><div className="mt-0.5 text-[7px] text-zinc-600">为不同人物设置颜色，方便在场景和截图中区分</div></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {DIRECTOR_CHARACTER_COLORS.map((color) => <button key={color} type="button" aria-label={`人物颜色 ${color}`} onClick={() => updateSelectedObject({ color })} className={cn("h-7 w-7 rounded-full border-2 transition", selectedObject.color.toLowerCase() === color ? "scale-110 border-white" : "border-white/10 hover:border-white/45")} style={{ backgroundColor: color }} />)}
+                      <label className="relative flex h-7 min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/[0.08] bg-black/15 px-2 text-[7px] text-zinc-500"><input aria-label="自定义人物颜色" type="color" value={selectedObject.color} onChange={(event) => updateSelectedObject({ color: event.target.value })} className="h-4 w-5 cursor-pointer border-0 bg-transparent p-0" /><span className="truncate font-mono">{selectedObject.color.toUpperCase()}</span></label>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-[#343434] pt-4" data-director-universal-joints>
+                    <div className="mb-2 flex items-start justify-between gap-2"><div><div className="text-[10px] font-semibold text-zinc-200">主要关节</div><div className="mt-0.5 text-[7px] text-zinc-600">头、身体、手臂、手腕与腿脚；不展示手指细节</div></div><button type="button" onClick={resetUniversalMajorJoints} className="shrink-0 text-[7px] text-zinc-600 transition hover:text-zinc-200">全部归零</button></div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {DIRECTOR_UNIVERSAL_MAJOR_JOINTS.map((joint) => <button key={joint.id} type="button" data-director-major-joint={joint.id} title={joint.group} onClick={() => setSelectedJoint(joint.id)} className={cn("min-h-8 rounded-md border px-1.5 text-[7px] transition", selectedMajorJoint === joint.id ? "border-[#4f8ef7]/55 bg-[#4f8ef7]/15 text-blue-50" : "border-white/[0.06] bg-black/15 text-zinc-600 hover:text-zinc-200")}>{joint.label}</button>)}
+                    </div>
+                    <div className="mt-3 rounded-lg border border-white/[0.065] bg-black/15 p-2.5">
+                      <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-300">{selectedMajorJointInfo.label}</span><button type="button" onClick={resetCustomRigJoint} className="text-[7px] text-zinc-600 transition hover:text-zinc-200">当前归零</button></div>
+                      <div className="space-y-2.5">
+                        {(["X", "Y", "Z"] as const).map((axis, index) => {
+                          const value = selectedCustomRig.joints[selectedMajorJoint][index]
+                          return <label key={axis} className="grid grid-cols-[16px_minmax(0,1fr)_48px] items-center gap-2"><span className={cn("text-[9px] font-semibold", index === 0 ? "text-rose-300/75" : index === 1 ? "text-emerald-300/75" : "text-sky-300/75")}>{axis}</span><input type="range" min={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedMajorJoint][index][0]} max={DIRECTOR_MANNEQUIN_JOINT_LIMITS[selectedMajorJoint][index][1]} step="1" value={value} onChange={(event) => updateCustomRigJoint(index, Number(event.target.value))} className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09] accent-blue-400" /><span className="rounded-md bg-black/25 px-1.5 py-1 text-right text-[8px] tabular-nums text-zinc-400">{Math.round(value)}°</span></label>
+                        })}
+                      </div>
+                      <div className="mt-2 text-[7px] leading-3 text-zinc-700">播放动作时也能叠加关节修正，适合调整头部朝向、手腕和站姿细节。</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+            {objectInspectorTab === "rig" && selectedCustomAsset && selectedCustomRig && !selectedUniversalMannequin ? (
               <section className="mt-3 overflow-hidden rounded-2xl border border-cyan-300/[0.12] bg-[linear-gradient(145deg,rgba(34,211,238,.045),rgba(255,255,255,.012))]">
                 <div className="flex items-center justify-between border-b border-white/[0.065] px-3 py-2.5">
                   <div className="flex min-w-0 items-center gap-2">

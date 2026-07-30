@@ -232,8 +232,9 @@ def test_director_runtime_avoids_idle_redraws_and_duplicate_model_parsing() -> N
     assert 'document.addEventListener("visibilitychange"' in ui_source
     assert "setAnimationLoop" not in ui_source
     assert "preserveDrawingBuffer: true" not in ui_source
-    assert 'onPointerEnter={() => setShouldLoad(true)}' in ui_source
-    assert "IntersectionObserver" not in ui_source
+    assert 'onPointerEnter={() => setShouldLoad(true)}' not in ui_source
+    assert "IntersectionObserver" in ui_source
+    assert 'rootMargin: "320px 0px"' in ui_source
     assert "directorSharedModelGeometry" in model_source
 
 
@@ -256,21 +257,28 @@ def test_default_white_model_uses_same_skeleton_professional_motion_library() ->
     desk_source = (ROOT / "apps/web/lib/directorDesk.ts").read_text(encoding="utf-8")
     bundled_source = (ROOT / "apps/web/lib/directorBundledModels.ts").read_text(encoding="utf-8")
     motion_source = (ROOT / "apps/web/lib/directorHumanMotions.ts").read_text(encoding="utf-8")
+    universal_source = (ROOT / "apps/web/lib/directorUniversalMannequin.ts").read_text(encoding="utf-8")
 
-    assert 'DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID = "bundled:mesh2motion:universal-human-actions"' in desk_source
+    assert "DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID = DIRECTOR_UNIVERSAL_MANNEQUIN.id" in desk_source
+    assert 'id: "bundled:mesh2motion:universal-human-actions"' in universal_source
     assert 'label: "通用动作白模"' in desk_source
-    assert 'mannequinUrl("human-base-animations.glb")' in bundled_source
-    assert 'mannequinUrl("human-addon-animations.glb")' in bundled_source
-    assert 'animation_count: 162' in bundled_source
+    assert 'animationFiles: ["human-base-animations.glb", "human-addon-animations.glb"]' in universal_source
+    assert "DIRECTOR_UNIVERSAL_MANNEQUIN.animationFiles.map(mannequinUrl)" in bundled_source
+    assert "animationCount: DIRECTOR_UNIVERSAL_HUMAN_MOTIONS.length" in universal_source
     assert "BASE_MOTION_NAMES.length + index" in motion_source
     assert "DIRECTOR_HUMAN_MOTION_CATEGORIES" in motion_source
     assert "directorHumanMotionCategory" in ui_source
     assert "directorSupplementalAnimationCache" in ui_source
-    assert "cloneDirectorGltf(asset, true)" in ui_source
+    assert "cloneDirectorGltf(asset, true, object.color)" in ui_source
     assert 'white.name = `${source.name || "Main"} · white mannequin`' in ui_source
     assert "applyRuntimeNativeAnimation" in ui_source
+    assert "applyRuntimeAnimationJointOffsets" in ui_source
     assert "customRigUpdatedInPlace" in ui_source
-    assert 'aria-label="专业动作集"' in ui_source
-    assert "专业动作集" in ui_source
+    assert "data-director-universal-actions" in ui_source
+    assert "data-director-motion={animation.name}" in ui_source
+    assert "DIRECTOR_UNIVERSAL_MAJOR_JOINTS" in universal_source
+    assert "data-director-major-joint={joint.id}" in ui_source
+    assert "data-director-universal-color" in ui_source
+    assert "不展示手指细节" in ui_source
     assert "替换为通用动作白模" in ui_source
     assert "手调姿势库已退出默认流程" in ui_source

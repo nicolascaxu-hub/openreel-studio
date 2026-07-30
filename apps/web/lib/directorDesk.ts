@@ -6,6 +6,7 @@ import {
   type DirectorMannequinPosePreset,
   type DirectorMannequinState,
 } from "@/lib/directorMannequin"
+import { DIRECTOR_UNIVERSAL_MANNEQUIN } from "@/lib/directorUniversalMannequin"
 
 export type DirectorAspectRatio = "16:9" | "9:16" | "1:1" | "4:3"
 export type DirectorTransformMode = "translate" | "rotate" | "scale"
@@ -166,7 +167,7 @@ export const DIRECTOR_ASPECT_VALUES: Record<DirectorAspectRatio, number> = {
 }
 
 export const DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID = "builtin:mannequin"
-export const DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID = "bundled:mesh2motion:universal-human-actions"
+export const DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID = DIRECTOR_UNIVERSAL_MANNEQUIN.id
 export const MAX_DIRECTOR_CAMERAS = 12
 
 export const DIRECTOR_BUILTINS = [
