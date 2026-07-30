@@ -6,6 +6,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { TransformControls } from "three/addons/controls/TransformControls.js"
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js"
+import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js"
 import {
   applyDirectorRigPose,
   createDirectorMannequin,
@@ -104,6 +105,7 @@ interface DirectorRuntime {
   objectRoots: Map<string, THREE.Group>
   cameraRigs: Map<string, DirectorCameraRig>
   mixers: Map<string, THREE.AnimationMixer>
+  playingMixerIds: Set<string>
   objectBuildTokens: Map<string, number>
   resizeObserver: ResizeObserver
   viewport: HTMLDivElement
@@ -112,6 +114,8 @@ interface DirectorRuntime {
   panoramaMesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial> | null
   panoramaTexture: THREE.Texture | null
   panoramaLoadToken: number
+  renderFrame: number | null
+  requestRender: () => void
   disposed: boolean
 }
 
@@ -184,6 +188,7 @@ const DIRECTOR_SHORTCUT_GROUPS = [
     items: [
       ["小键盘 0", "总览 / 当前机位"],
       ["小键盘 1 / 3 / 7", "正面 / 侧面 / 顶视"],
+      ["Ctrl/⌘ 小键盘 1", "背面"],
       ["Home", "显示全部"],
       ["H", "显示 / 隐藏机位线"],
       ["Esc", "返回总览或取消选择"],
@@ -370,13 +375,17 @@ function createBuiltinModel(
 function disposeObject(object: THREE.Object3D): void {
   object.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
-    child.geometry?.dispose()
+    const sharedResources = child.userData.directorSharedModelResources === true
+    const sharedGeometry = child.userData.directorSharedModelGeometry === true
+    if (!sharedResources && !sharedGeometry) child.geometry?.dispose()
     const materials = Array.isArray(child.material) ? child.material : [child.material]
     for (const value of materials) {
-      for (const candidate of Object.values(value)) {
-        if (candidate instanceof THREE.Texture) candidate.dispose()
+      if (!sharedResources) {
+        for (const candidate of Object.values(value)) {
+          if (candidate instanceof THREE.Texture) candidate.dispose()
+        }
+        value.dispose()
       }
-      value.dispose()
     }
   })
 }
@@ -391,6 +400,7 @@ function disposeRuntimePanorama(runtime: DirectorRuntime): void {
   runtime.panoramaTexture?.dispose()
   runtime.panoramaTexture = null
   runtime.ground.visible = true
+  runtime.requestRender()
 }
 
 async function panoramaFileDimensions(file: File): Promise<{ width: number; height: number }> {
@@ -436,6 +446,7 @@ function panoramaUrlFromImport(result: DirectorPanoramaImportResponse): string {
 const DIRECTOR_MODEL_THUMBNAIL_SIZE = 144
 const directorModelThumbnailCache = new Map<string, string>()
 const directorModelThumbnailPending = new Map<string, Promise<string>>()
+const directorGltfTemplateCache = new Map<string, Promise<GLTF>>()
 let directorModelThumbnailQueue: Promise<void> = Promise.resolve()
 let directorModelThumbnailRenderer: THREE.WebGLRenderer | null = null
 
@@ -445,6 +456,41 @@ function modelThumbnailCacheKey(asset: DirectorModelAsset): string {
 
 function directorModelUrl(asset: DirectorModelAsset): string {
   return asset.id.startsWith("bundled:") ? asset.url : resolveMediaUrl(asset.url)
+}
+
+function directorGltfTemplateKey(asset: DirectorModelAsset): string {
+  return `${directorModelUrl(asset)}:${asset.size}:${asset.created_at || ""}`
+}
+
+function directorGltfTemplate(asset: DirectorModelAsset): Promise<GLTF> {
+  const key = directorGltfTemplateKey(asset)
+  const cached = directorGltfTemplateCache.get(key)
+  if (cached) return cached
+  const pending = new GLTFLoader().loadAsync(directorModelUrl(asset))
+  directorGltfTemplateCache.set(key, pending)
+  void pending.catch(() => directorGltfTemplateCache.delete(key))
+  return pending
+}
+
+async function cloneDirectorGltf(asset: DirectorModelAsset): Promise<GLTF> {
+  const template = await directorGltfTemplate(asset)
+  const scene = SkeletonUtils.clone(template.scene) as THREE.Group
+  const sourceObjects: THREE.Object3D[] = []
+  const clonedObjects: THREE.Object3D[] = []
+  const associations = new Map() as typeof template.parser.associations
+  template.scene.traverse((child) => sourceObjects.push(child))
+  scene.traverse((child) => {
+    clonedObjects.push(child)
+    if (child instanceof THREE.Mesh) child.userData.directorSharedModelResources = true
+  })
+  sourceObjects.forEach((source, index) => {
+    const association = template.parser.associations.get(source)
+    const clone = clonedObjects[index]
+    if (association && clone) associations.set(clone, association)
+  })
+  const parser = Object.create(template.parser) as GLTF["parser"]
+  parser.associations = associations
+  return { ...template, scene, parser }
 }
 
 function directorModelAssetById(
@@ -487,7 +533,7 @@ function thumbnailRenderer(): THREE.WebGLRenderer {
 async function renderDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
   const renderer = thumbnailRenderer()
   const sourceModel = createDirectorSourceProp(asset.id)
-  const gltf = sourceModel ? null : await new GLTFLoader().loadAsync(directorModelUrl(asset))
+  const gltf = sourceModel ? null : await cloneDirectorGltf(asset)
   const model = sourceModel || gltf!.scene
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 1000)
@@ -562,26 +608,9 @@ function getDirectorModelThumbnail(asset: DirectorModelAsset): Promise<string> {
 
 function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
   const cacheKey = modelThumbnailCacheKey(asset)
-  const previewRef = useRef<HTMLSpanElement | null>(null)
   const [thumbnail, setThumbnail] = useState<string | null>(() => directorModelThumbnailCache.get(cacheKey) || null)
   const [failed, setFailed] = useState(false)
   const [shouldLoad, setShouldLoad] = useState(() => directorModelThumbnailCache.has(cacheKey))
-
-  useEffect(() => {
-    if (shouldLoad) return
-    const target = previewRef.current
-    if (!target || typeof IntersectionObserver === "undefined") {
-      setShouldLoad(true)
-      return
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return
-      setShouldLoad(true)
-      observer.disconnect()
-    }, { rootMargin: "220px" })
-    observer.observe(target)
-    return () => observer.disconnect()
-  }, [shouldLoad])
 
   useEffect(() => {
     if (!shouldLoad) return
@@ -604,9 +633,9 @@ function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
 
   return (
     <span
-      ref={previewRef}
       aria-label={`${asset.name} 模型预览`}
       data-model-preview={failed ? "failed" : thumbnail ? "ready" : shouldLoad ? "loading" : "idle"}
+      onPointerEnter={() => setShouldLoad(true)}
       className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.07] bg-[radial-gradient(circle_at_50%_32%,rgba(129,140,248,.2),rgba(15,23,42,.78)_58%,rgba(3,7,18,.96))]"
     >
       {thumbnail ? (
@@ -616,7 +645,7 @@ function DirectorModelThumbnail({ asset }: { asset: DirectorModelAsset }) {
       ) : shouldLoad ? (
         <span className="h-4 w-4 animate-spin rounded-full border border-violet-200/20 border-t-violet-200/80" />
       ) : (
-        <span className="h-5 w-5 rounded-lg border border-white/[0.08] bg-white/[0.025]" />
+        <span className="text-[7px] font-medium tracking-[0.12em] text-zinc-600">悬停预览</span>
       )}
       <span className="absolute bottom-1 right-1 rounded bg-black/55 px-1 py-0.5 text-[6px] font-semibold tracking-[0.08em] text-cyan-100/75">3D</span>
     </span>
@@ -705,6 +734,7 @@ function clearDirectorCameraRigs(runtime: DirectorRuntime): void {
     disposeObject(rig.visual)
   }
   runtime.cameraRigs.clear()
+  runtime.requestRender()
 }
 
 function syncDirectorCameraRigs(runtime: DirectorRuntime, scene: DirectorSceneState): void {
@@ -721,6 +751,7 @@ function syncDirectorCameraRigs(runtime: DirectorRuntime, scene: DirectorSceneSt
   })
   runtime.scene.updateMatrixWorld(true)
   for (const rig of runtime.cameraRigs.values()) rig.helper.update()
+  runtime.requestRender()
 }
 
 function setDirectorCameraRigVisibility(runtime: DirectorRuntime, visible: boolean): void {
@@ -729,6 +760,7 @@ function setDirectorCameraRigVisibility(runtime: DirectorRuntime, visible: boole
     rig.direction.visible = visible && runtime.cameraGuidesVisible
     rig.helper.visible = visible && runtime.cameraGuidesVisible
   }
+  runtime.requestRender()
 }
 
 function applyRuntimeCameraView(
@@ -744,6 +776,7 @@ function applyRuntimeCameraView(
   runtime.orbit.target.set(...pose.target)
   runtime.orbit.update()
   setDirectorCameraRigVisibility(runtime, mode === "overview")
+  runtime.requestRender()
 }
 
 function frameRuntimeObjects(runtime: DirectorRuntime, objects: THREE.Object3D[]): boolean {
@@ -760,6 +793,7 @@ function frameRuntimeObjects(runtime: DirectorRuntime, objects: THREE.Object3D[]
   runtime.orbit.target.copy(sphere.center)
   runtime.camera.position.copy(sphere.center).addScaledVector(direction, distance)
   runtime.orbit.update()
+  runtime.requestRender()
   return true
 }
 
@@ -795,6 +829,7 @@ function stopRuntimeMixers(runtime: DirectorRuntime): void {
     mixer.uncacheRoot(mixer.getRoot())
   }
   runtime.mixers.clear()
+  runtime.playingMixerIds.clear()
 }
 
 function stopRuntimeMixer(runtime: DirectorRuntime, objectId: string): void {
@@ -803,6 +838,7 @@ function stopRuntimeMixer(runtime: DirectorRuntime, objectId: string): void {
   mixer.stopAllAction()
   mixer.uncacheRoot(mixer.getRoot())
   runtime.mixers.delete(objectId)
+  runtime.playingMixerIds.delete(objectId)
 }
 
 function removeRuntimeObject(runtime: DirectorRuntime, objectId: string): void {
@@ -814,6 +850,7 @@ function removeRuntimeObject(runtime: DirectorRuntime, objectId: string): void {
   runtime.root.remove(root)
   runtime.objectRoots.delete(objectId)
   disposeObject(root)
+  runtime.requestRender()
 }
 
 function snapshotRuntimeScene(runtime: DirectorRuntime, base: DirectorSceneState): DirectorSceneState {
@@ -893,9 +930,13 @@ function resizeDirectorRuntime(runtime: DirectorRuntime): void {
     height = Math.max(220, rect.height - 30)
     width = height * aspect
   }
+  const deviceRatio = Math.max(1, window.devicePixelRatio || 1)
+  const pixelBudgetRatio = Math.sqrt(2_200_000 / Math.max(1, width * height))
+  runtime.renderer.setPixelRatio(Math.min(deviceRatio, 1.5, Math.max(1, pixelBudgetRatio)))
   runtime.renderer.setSize(Math.floor(width), Math.floor(height), true)
   runtime.camera.aspect = aspect
   runtime.camera.updateProjectionMatrix()
+  runtime.requestRender()
 }
 
 function directorAspect(runtime: DirectorRuntime): DirectorAspectRatio {
@@ -917,6 +958,9 @@ export default function DirectorDesk({
   const runtimeRef = useRef<DirectorRuntime | null>(null)
   const directorRef = useRef<DirectorDeskState>(defaultDirectorDesk())
   const rebuildRuntimeRef = useRef<() => void>(() => undefined)
+  const reconcileRuntimeSceneRef = useRef<(previous: DirectorSceneState, next: DirectorSceneState) => void>(
+    () => undefined,
+  )
   const undoRef = useRef<DirectorSceneState[]>([])
   const redoRef = useRef<DirectorSceneState[]>([])
   const interactionBeforeRef = useRef<DirectorSceneState | null>(null)
@@ -1040,7 +1084,7 @@ export default function DirectorDesk({
     setLocalDirector({ ...current, scene: cloneDirectorScene(scene) })
     setSelectedObjectId(null)
     setSelectedCameraId(scene.active_camera_id)
-    rebuildRuntimeRef.current()
+    reconcileRuntimeSceneRef.current(current.scene, scene)
     void enqueueSceneSave(scene)
   }, [enqueueSceneSave, setLocalDirector])
 
@@ -1064,13 +1108,13 @@ export default function DirectorDesk({
   ) => {
     const token = (runtime.objectBuildTokens.get(object.id) || 0) + 1
     runtime.objectBuildTokens.set(object.id, token)
-    const loader = new GLTFLoader()
     const root = new THREE.Group()
     root.userData.directorObjectId = object.id
     root.name = object.name
     applyObjectTransform(root, object)
     runtime.objectRoots.set(object.id, root)
     runtime.root.add(root)
+    runtime.requestRender()
     const isCurrent = () => (
       !runtime.disposed
       && runtime.objectBuildTokens.get(object.id) === token
@@ -1090,8 +1134,10 @@ export default function DirectorDesk({
         root.remove(placeholder)
         disposeObject(placeholder)
         root.add(content)
+        runtime.requestRender()
       }).catch((loadError) => {
         root.userData.loadError = loadError instanceof Error ? loadError.message : String(loadError)
+        runtime.requestRender()
       }).finally(() => {
         setLoadingModels((value) => Math.max(0, value - 1))
       })
@@ -1100,10 +1146,12 @@ export default function DirectorDesk({
     const sourceProp = createDirectorSourceProp(object.asset_id)
     if (sourceProp) {
       root.add(sourceProp)
+      runtime.requestRender()
       return
     }
     if (object.asset_id.startsWith("builtin:")) {
       root.add(createBuiltinModel(object.asset_id, object.color))
+      runtime.requestRender()
       return
     }
     const placeholder = createBuiltinModel("builtin:cube", "#52525b")
@@ -1111,10 +1159,11 @@ export default function DirectorDesk({
     root.add(placeholder)
     if (!asset) {
       root.userData.loadError = "模型资产不存在"
+      runtime.requestRender()
       return
     }
     setLoadingModels((value) => value + 1)
-    void loader.loadAsync(directorModelUrl(asset)).then((gltf) => {
+    void cloneDirectorGltf(asset).then((gltf) => {
       if (!isCurrent()) {
         disposeObject(gltf.scene)
         return
@@ -1157,6 +1206,15 @@ export default function DirectorDesk({
           mixer.update(0)
         }
         runtime.mixers.set(object.id, mixer)
+        if (!isNativePose && rig.animation_playing) {
+          runtime.playingMixerIds.add(object.id)
+          if (!rig.animation_loop) {
+            mixer.addEventListener("finished", () => {
+              runtime.playingMixerIds.delete(object.id)
+              runtime.requestRender()
+            })
+          }
+        }
       }
       model.updateMatrixWorld(true)
       const box = new THREE.Box3().setFromObject(model)
@@ -1182,8 +1240,10 @@ export default function DirectorDesk({
         }
       })
       root.add(content)
+      runtime.requestRender()
     }).catch((loadError) => {
       root.userData.loadError = loadError instanceof Error ? loadError.message : String(loadError)
+      runtime.requestRender()
     }).finally(() => {
       setLoadingModels((value) => Math.max(0, value - 1))
     })
@@ -1218,6 +1278,44 @@ export default function DirectorDesk({
   }, [buildRuntimeObject])
 
   rebuildRuntimeRef.current = rebuildRuntime
+
+  const reconcileRuntimeScene = useCallback((
+    previousScene: DirectorSceneState,
+    nextScene: DirectorSceneState,
+  ) => {
+    const runtime = runtimeRef.current
+    if (!runtime || runtime.disposed) return
+    const previousById = new Map(previousScene.objects.map((object) => [object.id, object]))
+    const nextIds = new Set(nextScene.objects.map((object) => object.id))
+    for (const objectId of [...runtime.objectRoots.keys()]) {
+      if (!nextIds.has(objectId)) removeRuntimeObject(runtime, objectId)
+    }
+    for (const object of nextScene.objects) {
+      const previous = previousById.get(object.id)
+      const root = runtime.objectRoots.get(object.id)
+      const contentChanged = !previous
+        || previous.asset_id !== object.asset_id
+        || previous.color !== object.color
+        || JSON.stringify(previous.mannequin || null) !== JSON.stringify(object.mannequin || null)
+        || JSON.stringify(previous.rig || null) !== JSON.stringify(object.rig || null)
+      if (!root || contentChanged) {
+        if (root) removeRuntimeObject(runtime, object.id)
+        const asset = directorModelAssetById(object.asset_id, directorRef.current.model_assets)
+        buildRuntimeObject(runtime, object, asset)
+      } else {
+        root.name = object.name
+        applyObjectTransform(root, object)
+      }
+    }
+    runtime.transform.detach()
+    syncDirectorCameraRigs(runtime, nextScene)
+    applyRuntimeCameraView(runtime, nextScene, cameraViewModeRef.current)
+    runtime.root.userData.aspectRatio = nextScene.aspect_ratio
+    resizeDirectorRuntime(runtime)
+    runtime.requestRender()
+  }, [buildRuntimeObject])
+
+  reconcileRuntimeSceneRef.current = reconcileRuntimeScene
 
   useEffect(() => {
     let canceled = false
@@ -1269,11 +1367,11 @@ export default function DirectorDesk({
     scene.background = new THREE.Color(0x090d14)
     scene.fog = new THREE.Fog(0x090d14, 18, 42)
     const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.05, 500)
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" })
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75))
+    renderer.setPixelRatio(1)
     renderer.domElement.className = "absolute left-1/2 top-1/2 block -translate-x-1/2 -translate-y-1/2 rounded-lg shadow-2xl"
     renderer.domElement.tabIndex = 0
     viewport.appendChild(renderer.domElement)
@@ -1282,7 +1380,7 @@ export default function DirectorDesk({
     const key = new THREE.DirectionalLight(0xffffff, 2.6)
     key.position.set(5, 9, 4)
     key.castShadow = true
-    key.shadow.mapSize.set(2048, 2048)
+    key.shadow.mapSize.set(1024, 1024)
     scene.add(key)
     const fill = new THREE.DirectionalLight(0x93c5fd, 0.8)
     fill.position.set(-5, 4, -3)
@@ -1348,6 +1446,7 @@ export default function DirectorDesk({
       objectRoots: new Map(),
       cameraRigs: new Map(),
       mixers: new Map(),
+      playingMixerIds: new Set(),
       objectBuildTokens: new Map(),
       resizeObserver,
       viewport,
@@ -1356,7 +1455,31 @@ export default function DirectorDesk({
       panoramaMesh: null,
       panoramaTexture: null,
       panoramaLoadToken: 0,
+      renderFrame: null,
+      requestRender: () => undefined,
       disposed: false,
+    }
+    let previousFrameTime = performance.now()
+    let renderingFrame = false
+    const renderDirectorFrame = (frameTime: number) => {
+      runtime.renderFrame = null
+      if (runtime.disposed || document.hidden) return
+      const delta = Math.min(Math.max((frameTime - previousFrameTime) / 1000, 0), 0.1)
+      previousFrameTime = frameTime
+      for (const objectId of runtime.playingMixerIds) runtime.mixers.get(objectId)?.update(delta)
+      renderingFrame = true
+      const orbitChanged = orbit.update()
+      renderingFrame = false
+      runtime.scene.updateMatrixWorld(true)
+      if (runtime.cameraViewMode === "overview" && runtime.cameraGuidesVisible) {
+        for (const rig of runtime.cameraRigs.values()) rig.helper.update()
+      }
+      renderer.render(scene, camera)
+      if (runtime.playingMixerIds.size > 0 || orbitChanged) runtime.requestRender()
+    }
+    runtime.requestRender = () => {
+      if (runtime.disposed || document.hidden || runtime.renderFrame !== null) return
+      runtime.renderFrame = window.requestAnimationFrame(renderDirectorFrame)
     }
     runtimeRef.current = runtime
     runtime.root.userData.aspectRatio = directorRef.current.scene.aspect_ratio
@@ -1485,6 +1608,7 @@ export default function DirectorDesk({
         z = Math.round(z / 0.25) * 0.25
       }
       planeDrag.root.position.set(x, planeDrag.y, z)
+      runtime.requestRender()
       planeDrag.moved = planeDrag.moved || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 2
       event.preventDefault()
       event.stopImmediatePropagation()
@@ -1599,6 +1723,14 @@ export default function DirectorDesk({
     const onDraggingChanged = (event: { value?: unknown }) => {
       orbit.enabled = event.value !== true
     }
+    const onVisualChange = () => runtime.requestRender()
+    const onOrbitChange = () => {
+      if (!renderingFrame) runtime.requestRender()
+    }
+    const onVisibilityChange = () => {
+      previousFrameTime = performance.now()
+      if (!document.hidden) runtime.requestRender()
+    }
     const onOrbitStart = () => {
       interactionBeforeRef.current = snapshotRuntimeScene(runtime, directorRef.current.scene)
     }
@@ -1611,22 +1743,17 @@ export default function DirectorDesk({
     transform.addEventListener("mouseDown", onTransformStart)
     transform.addEventListener("mouseUp", onTransformEnd)
     transform.addEventListener("dragging-changed", onDraggingChanged)
+    transform.addEventListener("objectChange", onVisualChange)
     orbit.addEventListener("start", onOrbitStart)
     orbit.addEventListener("end", onOrbitEnd)
-
-    const clock = new THREE.Clock()
-    renderer.setAnimationLoop(() => {
-      const delta = Math.min(clock.getDelta(), 0.1)
-      for (const mixer of runtime.mixers.values()) mixer.update(delta)
-      orbit.update()
-      runtime.scene.updateMatrixWorld(true)
-      for (const rig of runtime.cameraRigs.values()) rig.helper.update()
-      renderer.render(scene, camera)
-    })
+    orbit.addEventListener("change", onOrbitChange)
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    runtime.requestRender()
 
     return () => {
       runtime.disposed = true
-      renderer.setAnimationLoop(null)
+      if (runtime.renderFrame !== null) window.cancelAnimationFrame(runtime.renderFrame)
+      runtime.renderFrame = null
       resizeObserver.disconnect()
       window.removeEventListener("pointerdown", preventViewportBrowserGesture, true)
       window.removeEventListener("pointermove", preventViewportBrowserGesture, true)
@@ -1651,8 +1778,11 @@ export default function DirectorDesk({
       transform.removeEventListener("mouseDown", onTransformStart)
       transform.removeEventListener("mouseUp", onTransformEnd)
       transform.removeEventListener("dragging-changed", onDraggingChanged)
+      transform.removeEventListener("objectChange", onVisualChange)
       orbit.removeEventListener("start", onOrbitStart)
       orbit.removeEventListener("end", onOrbitEnd)
+      orbit.removeEventListener("change", onOrbitChange)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
       transform.detach()
       stopRuntimeMixers(runtime)
       clearDirectorCameraRigs(runtime)
@@ -1710,6 +1840,7 @@ export default function DirectorDesk({
         runtime.scene.add(mesh)
         runtime.ground.visible = false
         setPanoramaStatus("ready")
+        runtime.requestRender()
       },
       undefined,
       () => {
@@ -1729,12 +1860,14 @@ export default function DirectorDesk({
     const mesh = runtimeRef.current?.panoramaMesh
     if (panoramaRotationY === undefined || !mesh) return
     mesh.rotation.y = THREE.MathUtils.degToRad(panoramaRotationY)
+    runtimeRef.current?.requestRender()
   }, [panoramaRotationY])
 
   useEffect(() => {
     const runtime = runtimeRef.current
     if (!runtime) return
     runtime.grid.visible = showGrid
+    runtime.requestRender()
   }, [showGrid])
 
   useEffect(() => {
@@ -1933,6 +2066,7 @@ export default function DirectorDesk({
     } else {
       root.name = nextObject.name
       applyObjectTransform(root, nextObject)
+      runtime.requestRender()
     }
     void enqueueSceneSave(scene)
     setSelectedObjectId(selectedObjectId)
@@ -2169,7 +2303,7 @@ export default function DirectorDesk({
     })
   }, [updateSelectedCamera])
 
-  const applyOverviewPreset = useCallback((preset: "front" | "right" | "top") => {
+  const applyOverviewPreset = useCallback((preset: "front" | "back" | "right" | "top") => {
     const runtime = runtimeRef.current
     if (!runtime) return
     const scene = snapshotRuntimeScene(runtime, directorRef.current.scene)
@@ -2179,6 +2313,8 @@ export default function DirectorDesk({
       target,
       position: preset === "front"
         ? [target[0], target[1], target[2] + distance]
+        : preset === "back"
+          ? [target[0], target[1], target[2] - distance]
         : preset === "right"
           ? [target[0] + distance, target[1], target[2]]
           : [target[0] + 0.001, target[1] + distance, target[2] + 0.001],
@@ -2336,6 +2472,7 @@ export default function DirectorDesk({
     runtime.renderer.setSize(Math.floor(displayWidth), Math.floor(displayHeight), true)
     runtime.camera.aspect = aspect
     runtime.camera.updateProjectionMatrix()
+    runtime.requestRender()
     return dataUrl
   }, [showCaptureLegend])
 
@@ -2540,6 +2677,8 @@ export default function DirectorDesk({
         })
       } else if (modifier && event.altKey && event.code === "Numpad0") {
         if (!event.repeat) run(alignActiveCameraToView)
+      } else if (modifier && !event.altKey && !event.shiftKey && event.code === "Numpad1") {
+        run(() => applyOverviewPreset("back"))
       } else if (modifier && event.key === "Enter") {
         if (!event.repeat) run(() => { void createCapture() })
       } else if (modifier && key === "z") {

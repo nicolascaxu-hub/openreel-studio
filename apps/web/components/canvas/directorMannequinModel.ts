@@ -125,7 +125,10 @@ function prepareClone(template: THREE.Object3D, color: string): THREE.Object3D {
   const model = SkeletonUtils.clone(template)
   model.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
-    child.geometry = child.geometry.clone()
+    // Geometry is immutable and shared with the cached GLB template. Pose
+    // switches only need fresh bones and materials, so cloning every vertex
+    // buffer here made each preset change needlessly expensive.
+    child.userData.directorSharedModelGeometry = true
     child.material = mannequinMaterial(color)
     child.castShadow = true
     child.receiveShadow = true

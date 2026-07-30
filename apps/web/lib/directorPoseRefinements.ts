@@ -111,6 +111,32 @@ function orientationQuaternion(
   return new THREE.Quaternion().setFromAxisAngle(targetPrimary, signedAngle).multiply(swing)
 }
 
+function stableLimbFacing(
+  direction: DirectorPoseDirection,
+  preferred: DirectorPoseDirection = [0, 0, 1],
+): DirectorPoseDirection {
+  const primary = new THREE.Vector3(...direction).normalize()
+  const facing = new THREE.Vector3(...preferred)
+    .addScaledVector(primary, -new THREE.Vector3(...preferred).dot(primary))
+  if (facing.lengthSq() < 0.000001) {
+    facing.set(0, 1, 0).addScaledVector(primary, -primary.y)
+  }
+  if (facing.lengthSq() < 0.000001) {
+    facing.set(1, 0, 0).addScaledVector(primary, -primary.x)
+  }
+  return facing.normalize().toArray() as DirectorPoseDirection
+}
+
+/**
+ * A bone direction alone leaves its roll around the bone axis undefined.
+ * Preserve the body's forward-facing plane as the secondary axis so the
+ * shoulder surface, elbow crease and kneecap do not corkscrew in side/rear
+ * views while keeping the authored joint positions unchanged.
+ */
+function stableLimbQuaternion(direction: DirectorPoseDirection): THREE.Quaternion {
+  return orientationQuaternion(direction, stableLimbFacing(direction), [0, 0, 1])
+}
+
 function rotationFromQuaternion(quaternion: THREE.Quaternion): DirectorPoseRotation {
   const euler = new THREE.Euler().setFromQuaternion(quaternion.normalize(), "XYZ")
   return [euler.x, euler.y, euler.z].map((value) =>
@@ -131,8 +157,8 @@ export function directorArmChain(
   hand: DirectorPoseDirection = forearm,
   palmFacing?: DirectorPoseDirection,
 ): DirectorPoseJointValues {
-  const shoulderWorld = directionQuaternion(upperArm)
-  const elbowWorld = directionQuaternion(forearm)
+  const shoulderWorld = stableLimbQuaternion(upperArm)
+  const elbowWorld = stableLimbQuaternion(forearm)
   const handWorld = palmFacing
     ? orientationQuaternion(hand, palmFacing, [side === "left" ? 1 : -1, 0, 0])
     : directionQuaternion(hand)
@@ -148,6 +174,14 @@ export function directorArmChain(
 
 function mirror(direction: DirectorPoseDirection): DirectorPoseDirection {
   return [-direction[0], direction[1], direction[2]]
+}
+
+function offsetDepth(
+  direction: DirectorPoseDirection,
+  amount: number,
+): DirectorPoseDirection {
+  const value = new THREE.Vector3(direction[0], direction[1], direction[2] + amount).normalize()
+  return value.toArray() as DirectorPoseDirection
 }
 
 export function directorSymmetricArms(
@@ -168,14 +202,45 @@ export function directorSymmetricArms(
   }
 }
 
+/**
+ * Give non-contact bilateral gestures a small front/back stagger. Perfectly
+ * twinned limbs collapse into one silhouette from the side and can occupy the
+ * same skin volume around the ribs; this keeps both chains readable without
+ * changing the action's front-facing composition.
+ */
+export function directorReadableSymmetricArms(
+  leftUpperArm: DirectorPoseDirection,
+  leftForearm: DirectorPoseDirection,
+  leftHand: DirectorPoseDirection = leftForearm,
+  leftPalmFacing?: DirectorPoseDirection,
+  depthSeparation = .055,
+): DirectorPoseJointValues {
+  return {
+    ...directorArmChain(
+      "left",
+      offsetDepth(leftUpperArm, depthSeparation),
+      offsetDepth(leftForearm, depthSeparation),
+      offsetDepth(leftHand, depthSeparation),
+      leftPalmFacing,
+    ),
+    ...directorArmChain(
+      "right",
+      offsetDepth(mirror(leftUpperArm), -depthSeparation),
+      offsetDepth(mirror(leftForearm), -depthSeparation),
+      offsetDepth(mirror(leftHand), -depthSeparation),
+      leftPalmFacing ? mirror(leftPalmFacing) : undefined,
+    ),
+  }
+}
+
 export function directorLegChain(
   side: "left" | "right",
   thigh: DirectorPoseDirection,
   calf: DirectorPoseDirection,
   foot: DirectorPoseRotation = [0, 0, 0],
 ): DirectorPoseJointValues {
-  const hipWorld = directionQuaternion(thigh)
-  const kneeWorld = directionQuaternion(calf)
+  const hipWorld = stableLimbQuaternion(thigh)
+  const kneeWorld = stableLimbQuaternion(calf)
   const kneeLocal = hipWorld.clone().invert().multiply(kneeWorld)
   return {
     [`${side}Hip`]: rotationFromQuaternion(hipWorld),
@@ -257,8 +322,8 @@ function plantedLeg(side: "left" | "right"): DirectorPoseJointValues {
   )
 }
 
-const relaxedArms = () => directorSymmetricArms([-.10, -.99, .06], [-.03, -1, .02])
-const attentionArms = () => directorSymmetricArms([-.025, -1, .015], [-.015, -1, .01])
+const relaxedArms = () => directorReadableSymmetricArms([-.10, -.99, .06], [-.03, -1, .02])
+const attentionArms = () => directorReadableSymmetricArms([-.025, -1, .015], [-.015, -1, .01])
 const standingLegs = () => ({ ...plantedLeg("left"), ...plantedLeg("right") })
 const handsFront = () => directorSymmetricArms(
   [-.30, -.62, .72], [.58, .08, .81], [.05, -.20, .98], [1, 0, 0],
@@ -272,10 +337,10 @@ const handsHips = () => directorSymmetricArms(
 const handsBack = () => directorSymmetricArms(
   [-.36, -.72, -.59], [.76, -.30, -.58], [.05, -.82, -.57], [0, 0, -1],
 )
-const openArms = () => directorSymmetricArms(
+const openArms = () => directorReadableSymmetricArms(
   [-.78, -.16, .61], [-.84, -.10, .53], [-.62, .42, .66], [0, .78, .62],
 )
-const shrugArms = () => directorSymmetricArms(
+const shrugArms = () => directorReadableSymmetricArms(
   [-.62, -.28, .73], [-.78, .25, .57], [-.80, .18, .57], [0, 1, 0],
 )
 const hugArms = () => directorSymmetricArms(
@@ -287,13 +352,13 @@ const carryArms = () => directorSymmetricArms(
 const faceArms = () => directorSymmetricArms(
   [-.64, -.30, .71], [.84, .42, .34], [1, .04, 0], [0, 0, -1],
 )
-const guardArms = () => directorSymmetricArms(
+const guardArms = () => directorReadableSymmetricArms(
   [-.58, .08, .81], [.58, .72, .38], [0, 1, .10], [0, 0, 1],
 )
-const raisedArms = () => directorSymmetricArms(
+const raisedArms = () => directorReadableSymmetricArms(
   [-.58, .69, .43], [-.14, .98, .12], [0, 1, .04], [0, 0, 1],
 )
-const victoryArms = () => directorSymmetricArms(
+const victoryArms = () => directorReadableSymmetricArms(
   [-.52, .78, .34], [-.46, .82, .34], [-.08, .99, .08], [0, 0, 1],
 )
 const seatedLegs = () => directorSymmetricLegs([-.06, -.08, 1], [-.03, -.98, -.20])

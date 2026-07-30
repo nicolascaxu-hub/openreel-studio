@@ -137,6 +137,19 @@ def test_pose_solver_constrains_palm_roll_and_grounded_lunges() -> None:
     assert "unconstrained 180° roll" in model_source
 
 
+def test_pose_solver_stabilizes_side_and_rear_limb_planes() -> None:
+    refinement_source = REFINEMENT_SOURCE.read_text(encoding="utf-8")
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+
+    assert "stableLimbFacing" in refinement_source
+    assert "stableLimbQuaternion" in refinement_source
+    assert "shoulder surface, elbow crease and kneecap" in refinement_source
+    assert "directorReadableSymmetricArms" in refinement_source
+    assert "Perfectly\n * twinned limbs collapse into one silhouette" in refinement_source
+    assert 'applyOverviewPreset("back")' in ui_source
+    assert '["Ctrl/⌘ 小键盘 1", "背面"]' in ui_source
+
+
 def test_one_leg_actions_use_anatomical_role_modules_and_one_knee_anchor() -> None:
     refinement_source = REFINEMENT_SOURCE.read_text(encoding="utf-8")
     pose_source = _pose_source()
@@ -203,3 +216,22 @@ def test_director_ui_maps_canvas_panorama_nodes_into_spatial_environment() -> No
     assert "截图角色图例" in ui_source
     assert "isDirectorPanoramaNode" in canvas_source
     assert "panoramaImages={directorPanoramaImages}" in canvas_source
+
+
+def test_director_runtime_avoids_idle_redraws_and_duplicate_model_parsing() -> None:
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+    model_source = MANNEQUIN_MODEL_SOURCE.read_text(encoding="utf-8")
+
+    assert "directorGltfTemplateCache" in ui_source
+    assert "cloneDirectorGltf" in ui_source
+    assert "SkeletonUtils.clone" in ui_source
+    assert "directorSharedModelResources" in ui_source
+    assert "reconcileRuntimeSceneRef" in ui_source
+    assert "playingMixerIds" in ui_source
+    assert "requestAnimationFrame(renderDirectorFrame)" in ui_source
+    assert 'document.addEventListener("visibilitychange"' in ui_source
+    assert "setAnimationLoop" not in ui_source
+    assert "preserveDrawingBuffer: true" not in ui_source
+    assert 'onPointerEnter={() => setShouldLoad(true)}' in ui_source
+    assert "IntersectionObserver" not in ui_source
+    assert "directorSharedModelGeometry" in model_source
