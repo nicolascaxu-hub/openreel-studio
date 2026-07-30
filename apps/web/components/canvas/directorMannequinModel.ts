@@ -90,6 +90,45 @@ export type DirectorRigJointBones = Partial<
 
 const templateCache = new Map<DirectorMannequinState["anatomy"], Promise<THREE.Object3D>>()
 
+interface DirectorMannequinRuntimeState {
+  model: THREE.Object3D
+  structureKey: string
+  displayScale: THREE.Vector3
+  restBoneQuaternions: Array<[THREE.Bone, THREE.Quaternion]>
+}
+
+const mannequinRuntimeCache = new WeakMap<THREE.Object3D, DirectorMannequinRuntimeState>()
+
+function mannequinStructureKey(state: DirectorMannequinState): string {
+  const proportions = state.proportions
+  return [
+    state.anatomy,
+    proportions.height,
+    proportions.build,
+    proportions.shoulder_width,
+    proportions.hip_width,
+    proportions.torso_length,
+    proportions.arm_length,
+    proportions.leg_length,
+    proportions.head_scale,
+  ].join(":")
+}
+
+function mannequinRuntime(root: THREE.Object3D): {
+  group: THREE.Object3D
+  state: DirectorMannequinRuntimeState
+} | null {
+  const direct = mannequinRuntimeCache.get(root)
+  if (direct) return { group: root, state: direct }
+  let resolved: { group: THREE.Object3D; state: DirectorMannequinRuntimeState } | null = null
+  root.traverse((child) => {
+    if (resolved) return
+    const state = mannequinRuntimeCache.get(child)
+    if (state) resolved = { group: child, state }
+  })
+  return resolved
+}
+
 function modelUrl(anatomy: DirectorMannequinState["anatomy"]): string {
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "")
   return `${basePath}/director/mannequins/${MODEL_FILES[anatomy]}`
@@ -642,9 +681,44 @@ export async function createDirectorMannequin(
   applyProportions(model, state)
   addFootSoles(model, color)
   const scale = modelScale(model, state)
+  mannequinRuntimeCache.set(group, {
+    model,
+    structureKey: mannequinStructureKey(state),
+    displayScale: scale.clone(),
+    restBoneQuaternions: (() => {
+      const values: Array<[THREE.Bone, THREE.Quaternion]> = []
+      model.traverse((child) => {
+        if (child instanceof THREE.Bone) values.push([child, child.quaternion.clone()])
+      })
+      return values
+    })(),
+  })
   applyPose(model, state, JOINT_BONES)
   group.scale.copy(scale)
   group.updateMatrixWorld(true)
   groundMannequin(group, model, state)
   return group
+}
+
+/** Update a loaded standard mannequin without cloning its GLB and materials. */
+export function updateDirectorMannequinPose(
+  root: THREE.Object3D,
+  rawState: DirectorMannequinState | undefined,
+): boolean {
+  const runtime = mannequinRuntime(root)
+  if (!runtime) return false
+  const state = normalizeDirectorMannequin(rawState)
+  if (mannequinStructureKey(state) !== runtime.state.structureKey) return false
+
+  runtime.group.position.set(0, 0, 0)
+  runtime.group.scale.set(1, 1, 1)
+  for (const [target, quaternion] of runtime.state.restBoneQuaternions) {
+    target.quaternion.copy(quaternion)
+  }
+  runtime.state.model.updateMatrixWorld(true)
+  applyPose(runtime.state.model, state, JOINT_BONES)
+  runtime.group.scale.copy(runtime.state.displayScale)
+  runtime.group.updateMatrixWorld(true)
+  groundMannequin(runtime.group as THREE.Group, runtime.state.model, state)
+  return true
 }

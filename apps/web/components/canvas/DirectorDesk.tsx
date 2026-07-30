@@ -11,6 +11,7 @@ import {
   applyDirectorRigPose,
   createDirectorMannequin,
   directorRigGroundAnchor,
+  updateDirectorMannequinPose,
   type DirectorRigJointBones,
 } from "./directorMannequinModel"
 import {
@@ -444,6 +445,7 @@ function panoramaUrlFromImport(result: DirectorPanoramaImportResponse): string {
 }
 
 const DIRECTOR_MODEL_THUMBNAIL_SIZE = 144
+const DIRECTOR_POSE_RESULT_BATCH_SIZE = 24
 const directorModelThumbnailCache = new Map<string, string>()
 const directorModelThumbnailPending = new Map<string, Promise<string>>()
 const directorGltfTemplateCache = new Map<string, Promise<GLTF>>()
@@ -997,6 +999,7 @@ export default function DirectorDesk({
   const [modelQuery, setModelQuery] = useState("")
   const [poseCategory, setPoseCategory] = useState("基础站姿")
   const [poseQuery, setPoseQuery] = useState("")
+  const [poseResultLimit, setPoseResultLimit] = useState(DIRECTOR_POSE_RESULT_BATCH_SIZE)
   const [inspectorTab, setInspectorTab] = useState<"object" | "camera" | "scene">("camera")
   const [objectInspectorTab, setObjectInspectorTab] = useState<"transform" | "rig">("transform")
   const [rigInspectorTab, setRigInspectorTab] = useState<"setup" | "motion" | "joints" | "analysis">("motion")
@@ -1024,6 +1027,15 @@ export default function DirectorDesk({
       return [preset.label, preset.category, preset.description, ...preset.keywords]
         .some((value) => value.toLocaleLowerCase().includes(query))
     })
+  }, [poseCategory, poseQuery])
+
+  const visiblePosePresets = useMemo(
+    () => filteredPosePresets.slice(0, poseResultLimit),
+    [filteredPosePresets, poseResultLimit],
+  )
+
+  useEffect(() => {
+    setPoseResultLimit(DIRECTOR_POSE_RESULT_BATCH_SIZE)
   }, [poseCategory, poseQuery])
 
   const filteredJointInfo = useMemo(() => {
@@ -1125,6 +1137,7 @@ export default function DirectorDesk({
       placeholder.name = "人体模型加载中"
       placeholder.scale.set(0.34, 1.28, 0.34)
       root.add(placeholder)
+      root.userData.directorMannequinLoading = true
       setLoadingModels((value) => value + 1)
       void createDirectorMannequin(object.mannequin, object.color).then((content) => {
         if (!isCurrent()) {
@@ -1133,12 +1146,15 @@ export default function DirectorDesk({
         }
         root.remove(placeholder)
         disposeObject(placeholder)
+        const latestObject = directorRef.current.scene.objects.find((item) => item.id === object.id)
+        updateDirectorMannequinPose(content, latestObject?.mannequin)
         root.add(content)
         runtime.requestRender()
       }).catch((loadError) => {
         root.userData.loadError = loadError instanceof Error ? loadError.message : String(loadError)
         runtime.requestRender()
       }).finally(() => {
+        if (runtime.objectRoots.get(object.id) === root) root.userData.directorMannequinLoading = false
         setLoadingModels((value) => Math.max(0, value - 1))
       })
       return
@@ -2061,7 +2077,23 @@ export default function DirectorDesk({
     const contentChanged = ["asset_id", "color", "mannequin", "rig"].some((key) => key in patch)
     const runtime = runtimeRef.current
     const root = runtime?.objectRoots.get(selectedObjectId)
-    if (contentChanged || !runtime || !root) {
+    const previousMannequin = previousObject.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
+      ? normalizeDirectorMannequin(previousObject.mannequin)
+      : null
+    const nextMannequin = nextObject.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
+      ? normalizeDirectorMannequin(nextObject.mannequin)
+      : null
+    const mannequinPoseOnly = "mannequin" in patch
+      && Object.keys(patch).every((key) => key === "mannequin")
+      && previousMannequin !== null
+      && nextMannequin !== null
+      && previousMannequin.anatomy === nextMannequin.anatomy
+      && JSON.stringify(previousMannequin.proportions) === JSON.stringify(nextMannequin.proportions)
+    const poseUpdatedInPlace = mannequinPoseOnly && root
+      ? updateDirectorMannequinPose(root, nextMannequin)
+        || root.userData.directorMannequinLoading === true
+      : false
+    if ((contentChanged && !poseUpdatedInPlace) || !runtime || !root) {
       rebuildRuntimeObject(selectedObjectId)
     } else {
       root.name = nextObject.name
@@ -3428,12 +3460,13 @@ export default function DirectorDesk({
                         {DIRECTOR_MANNEQUIN_POSE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
                       </select>
                     </div>
-                    <div className="mb-1.5 text-right text-[7px] text-zinc-700">{filteredPosePresets.length} 个结果 · 单帧定格动作</div>
+                    <div className="mb-1.5 text-right text-[7px] text-zinc-700">已显示 {visiblePosePresets.length} / {filteredPosePresets.length} · 单帧定格动作</div>
                     <div className="grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
-                      {filteredPosePresets.map((preset) => (
+                      {visiblePosePresets.map((preset) => (
                         <button data-director-pose={preset.id} key={preset.id} type="button" title={preset.description} onClick={() => applyPosePreset(preset.id)} className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedMannequin.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}><span className="block text-[8px] font-medium">{preset.label}</span><span className="mt-0.5 block truncate text-[6px] opacity-55">{preset.category}</span></button>
                       ))}
                     </div>
+                    {visiblePosePresets.length < filteredPosePresets.length ? <button data-director-pose-more type="button" onClick={() => setPoseResultLimit((value) => Math.min(filteredPosePresets.length, value + DIRECTOR_POSE_RESULT_BATCH_SIZE))} className="mt-2 h-8 w-full rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-500 transition hover:border-white/[0.13] hover:text-zinc-200">显示更多姿势 · 还有 {filteredPosePresets.length - visiblePosePresets.length} 个</button> : null}
                     {!filteredPosePresets.length ? <div className="rounded-lg border border-dashed border-white/[0.07] py-5 text-center text-[8px] text-zinc-700">没有匹配动作</div> : null}
                   </div>
                   ) : null}
@@ -3565,10 +3598,11 @@ export default function DirectorDesk({
                             <input aria-label="搜索人物动作" value={poseQuery} onChange={(event) => setPoseQuery(event.target.value)} placeholder="搜索动作…" className="h-8 min-w-0 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[8px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-300/35" />
                             <select aria-label="动作分类" value={poseCategory} onChange={(event) => setPoseCategory(event.target.value)} className="h-8 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-1 text-[8px] text-zinc-400 outline-none focus:border-cyan-300/35"><option value="全部">全部分类</option>{DIRECTOR_MANNEQUIN_POSE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select>
                           </div>
-                          <div className="mb-1.5 text-right text-[7px] text-zinc-700">{filteredPosePresets.length} 个结果 · 单帧定格动作</div>
+                          <div className="mb-1.5 text-right text-[7px] text-zinc-700">已显示 {visiblePosePresets.length} / {filteredPosePresets.length} · 单帧定格动作</div>
                           <div className="grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
-                            {filteredPosePresets.map((preset) => <button data-director-pose={preset.id} key={preset.id} type="button" title={preset.description} onClick={() => applyCustomPosePreset(preset.id)} className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedCustomRig.mode === "pose" && selectedCustomRig.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}><span className="block text-[8px] font-medium">{preset.label}</span><span className="mt-0.5 block truncate text-[6px] opacity-55">{preset.category}</span></button>)}
+                            {visiblePosePresets.map((preset) => <button data-director-pose={preset.id} key={preset.id} type="button" title={preset.description} onClick={() => applyCustomPosePreset(preset.id)} className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedCustomRig.mode === "pose" && selectedCustomRig.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}><span className="block text-[8px] font-medium">{preset.label}</span><span className="mt-0.5 block truncate text-[6px] opacity-55">{preset.category}</span></button>)}
                           </div>
+                          {visiblePosePresets.length < filteredPosePresets.length ? <button data-director-pose-more type="button" onClick={() => setPoseResultLimit((value) => Math.min(filteredPosePresets.length, value + DIRECTOR_POSE_RESULT_BATCH_SIZE))} className="mt-2 h-8 w-full rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-500 transition hover:border-white/[0.13] hover:text-zinc-200">显示更多姿势 · 还有 {filteredPosePresets.length - visiblePosePresets.length} 个</button> : null}
                           {!filteredPosePresets.length ? <div className="rounded-lg border border-dashed border-white/[0.07] py-5 text-center text-[8px] text-zinc-700">没有匹配动作</div> : null}
                         </div>
                     ) : null}

@@ -235,3 +235,17 @@ def test_director_runtime_avoids_idle_redraws_and_duplicate_model_parsing() -> N
     assert 'onPointerEnter={() => setShouldLoad(true)}' in ui_source
     assert "IntersectionObserver" not in ui_source
     assert "directorSharedModelGeometry" in model_source
+
+
+def test_all_pose_filter_is_batched_and_standard_pose_updates_reuse_the_loaded_rig() -> None:
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+    model_source = MANNEQUIN_MODEL_SOURCE.read_text(encoding="utf-8")
+
+    assert "DIRECTOR_POSE_RESULT_BATCH_SIZE = 24" in ui_source
+    assert "filteredPosePresets.slice(0, poseResultLimit)" in ui_source
+    assert "data-director-pose-more" in ui_source
+    assert "updateDirectorMannequinPose(root, nextMannequin)" in ui_source
+    assert "directorMannequinLoading" in ui_source
+    assert "mannequinRuntimeCache" in model_source
+    assert "restBoneQuaternions" in model_source
+    assert "export function updateDirectorMannequinPose" in model_source
