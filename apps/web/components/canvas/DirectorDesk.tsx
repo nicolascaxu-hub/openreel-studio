@@ -958,6 +958,7 @@ function stopRuntimeMixer(runtime: DirectorRuntime, objectId: string): void {
   if (root) {
     delete root.userData.directorAnimationAction
     delete root.userData.directorAnimationIndex
+    delete root.userData.directorAnimationPlaying
   }
 }
 
@@ -994,6 +995,7 @@ function applyRuntimeNativeAnimation(
   const clipKey = clipDescriptor?.index ?? rig.animation_index ?? clip.name
   let mixer = runtime.mixers.get(objectId)
   let action = root.userData.directorAnimationAction as THREE.AnimationAction | undefined
+  const wasPlaying = root.userData.directorAnimationPlaying === true
   const sameClip = Boolean(
     mixer
     && action
@@ -1013,26 +1015,30 @@ function applyRuntimeNativeAnimation(
     mixer.addEventListener("finished", () => {
       if (runtime.mixers.get(objectId) !== activeMixer) return
       runtime.playingMixerIds.delete(objectId)
+      root.userData.directorAnimationPlaying = false
       runtime.requestRender()
     })
   }
 
-  action!.timeScale = isNativePose ? 1 : rig.animation_speed
-  action!.clampWhenFinished = Boolean(isNativePose || !rig.animation_loop)
-  action!.setLoop(
-    isNativePose || !rig.animation_loop ? THREE.LoopOnce : THREE.LoopRepeat,
-    isNativePose || !rig.animation_loop ? 1 : Infinity,
-  )
-  if (isNativePose) {
+  const shouldPreviewEnd = isNativePose || !rig.animation_playing
+  if (shouldPreviewEnd) {
+    action!.timeScale = 1
+    action!.clampWhenFinished = true
+    action!.setLoop(THREE.LoopOnce, 1)
+    action!.reset().play()
     mixer!.setTime(Math.max(0, clip.duration))
     action!.paused = true
     runtime.playingMixerIds.delete(objectId)
   } else {
-    action!.paused = !rig.animation_playing
-    if (rig.animation_playing) runtime.playingMixerIds.add(objectId)
-    else runtime.playingMixerIds.delete(objectId)
+    action!.timeScale = rig.animation_speed
+    action!.clampWhenFinished = !rig.animation_loop
+    action!.setLoop(rig.animation_loop ? THREE.LoopRepeat : THREE.LoopOnce, rig.animation_loop ? Infinity : 1)
+    if (!sameClip || !wasPlaying) action!.reset().play()
+    action!.paused = false
+    runtime.playingMixerIds.add(objectId)
     mixer!.update(0)
   }
+  root.userData.directorAnimationPlaying = !shouldPreviewEnd
   applyRuntimeAnimationJointOffsets(runtime, objectId, asset, rig)
   runtime.requestRender()
   return true
@@ -3768,7 +3774,7 @@ export default function DirectorDesk({
                 <div className="space-y-5 p-3">
                   <div data-director-universal-actions>
                     <div className="mb-2 flex items-center justify-between">
-                      <div><div className="text-[10px] font-semibold text-zinc-200">动作</div><div className="mt-0.5 text-[7px] text-zinc-600">动作是人物控制的第一入口，点击即可播放</div></div>
+                      <div><div className="text-[10px] font-semibold text-zinc-200">动作</div><div className="mt-0.5 text-[7px] text-zinc-600">点击动作先定格结尾帧，需要时再开启播放</div></div>
                       <button type="button" onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "bind", animation_playing: false }))} className="h-7 rounded-md border border-white/[0.07] px-2 text-[7px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200">原始站姿</button>
                     </div>
 
@@ -3802,7 +3808,7 @@ export default function DirectorDesk({
                           type="button"
                           data-director-motion={animation.name}
                           title={directorHumanMotionLabel(animation.name)}
-                          onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: animation.index, animation_name: animation.name, animation_playing: true }))}
+                          onClick={() => updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: animation.index, animation_name: animation.name, animation_playing: false }))}
                           className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedCustomRig.mode === "animation" && selectedNativeClip?.index === animation.index ? "border-[#4f8ef7]/55 bg-[#4f8ef7]/15 text-blue-50" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.14] hover:text-zinc-200")}
                         >
                           <span className="block truncate text-[8px] font-medium">{directorHumanMotionLabel(animation.name)}</span>

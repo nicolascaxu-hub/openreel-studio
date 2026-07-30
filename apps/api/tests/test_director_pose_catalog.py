@@ -295,3 +295,8 @@ def test_universal_mannequin_starts_paused_with_zero_animation_offsets() -> None
     assert "animation_playing: false" in desk_source
     assert "animation_playing: raw.animation_playing === true" in desk_source
     assert "rig: { ...object.rig, animation_playing: false }" in ui_source
+    assert "const shouldPreviewEnd = isNativePose || !rig.animation_playing" in ui_source
+    assert "action!.reset().play()" in ui_source
+    assert "mixer!.setTime(Math.max(0, clip.duration))" in ui_source
+    assert "点击动作先定格结尾帧，需要时再开启播放" in ui_source
+    assert 'animation_name: animation.name, animation_playing: false' in ui_source
