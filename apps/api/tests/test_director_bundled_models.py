@@ -10,6 +10,7 @@ from app.services.director_glb import analyze_glb_file, read_glb_document
 
 
 MODEL_DIR = Path(__file__).resolve().parents[3] / "apps/web/public/director/models"
+MANNEQUIN_DIR = Path(__file__).resolve().parents[3] / "apps/web/public/director/mannequins"
 COMMON_CATALOG = Path(__file__).resolve().parents[3] / "apps/web/lib/directorCommonModels.json"
 
 
@@ -43,6 +44,68 @@ def test_bundled_director_models_include_upstream_license_notices() -> None:
     notice = (MODEL_DIR / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
     for file_name in ("Fox.glb", "RiggedFigure.glb", "BoxAnimated.glb", "ToyCar.glb"):
         assert f"## {file_name}" in notice
+
+
+@pytest.mark.parametrize(
+    ("file_name", "sha256", "animation_count"),
+    [
+        (
+            "human-base-animations.glb",
+            "406eb0a8dc4ab366e623b79b6e3005a4951392e1bda78ae39c1099d31147733c",
+            87,
+        ),
+        (
+            "human-addon-animations.glb",
+            "a0d64d555e0d492026b72d58bf8e16c5e86779295f9093e376dcc001915c2c95",
+            75,
+        ),
+    ],
+)
+def test_universal_human_motion_bundle_matches_upstream_and_white_model_skeleton(
+    file_name: str,
+    sha256: str,
+    animation_count: int,
+) -> None:
+    target = MANNEQUIN_DIR / file_name
+    assert target.is_file()
+    assert hashlib.sha256(target.read_bytes()).hexdigest() == sha256
+
+    analysis = analyze_glb_file(target)
+    assert analysis["bone_count"] == 66
+    assert analysis["animation_count"] == animation_count
+    assert analysis["humanoid"]["recognized"] is True
+
+    white_model = read_glb_document(MANNEQUIN_DIR / "human-base.glb")
+    white_model_nodes = {
+        node.get("name")
+        for node in white_model.get("nodes", [])
+        if isinstance(node, dict) and isinstance(node.get("name"), str)
+    }
+    motion_document = read_glb_document(target)
+    motion_nodes = motion_document.get("nodes", [])
+    target_names = {
+        motion_nodes[target_node].get("name")
+        for animation in motion_document.get("animations", [])
+        if isinstance(animation, dict)
+        for channel in animation.get("channels", [])
+        if isinstance(channel, dict)
+        for channel_target in [channel.get("target")]
+        if isinstance(channel_target, dict)
+        for target_node in [channel_target.get("node")]
+        if isinstance(target_node, int)
+        and 0 <= target_node < len(motion_nodes)
+        and isinstance(motion_nodes[target_node], dict)
+    }
+    assert 66 <= len(target_names) <= 67
+    assert target_names <= white_model_nodes
+
+
+def test_universal_human_motion_library_bundles_cc0_notice() -> None:
+    notice = (MANNEQUIN_DIR / "LICENSE.md").read_text(encoding="utf-8")
+    assert "human-base-animations.glb" in notice
+    assert "human-addon-animations.glb" in notice
+    assert "162" in notice
+    assert "CC0" in notice
 
 
 def test_common_director_catalog_is_complete_and_unique() -> None:

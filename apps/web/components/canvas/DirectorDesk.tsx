@@ -31,9 +31,11 @@ import {
   DIRECTOR_ASPECT_VALUES,
   DIRECTOR_BUILTINS,
   DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID,
+  DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID,
   MAX_DIRECTOR_CAMERAS,
   cloneDirectorScene,
   createDirectorId,
+  defaultDirectorCustomRig,
   defaultDirectorDesk,
   newDirectorCamera,
   newDirectorObject,
@@ -53,6 +55,11 @@ import {
   type DirectorSceneState,
   type DirectorTransformMode,
 } from "@/lib/directorDesk"
+import {
+  DIRECTOR_HUMAN_MOTION_CATEGORIES,
+  directorHumanMotionCategory,
+  directorHumanMotionLabel,
+} from "@/lib/directorHumanMotions"
 import {
   DIRECTOR_BUNDLED_MODEL_ASSETS,
   DIRECTOR_BUNDLED_MODEL_BY_ID,
@@ -303,7 +310,10 @@ function DirectorIcon({ name, className = "h-4 w-4" }: { name: DirectorIconName;
 }
 
 function BuiltinGlyph({ assetId }: { assetId: string }) {
-  if (assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID) {
+  if (
+    assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
+    || assetId === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID
+  ) {
     return <svg viewBox="0 0 48 48" className="h-9 w-9" aria-hidden="true"><circle cx="24" cy="10" r="5" fill="currentColor" /><path d="M18 17c0-2 2-4 6-4s6 2 6 4l2 12-4 2-1 11h-6l-1-11-4-2 2-12Z" fill="currentColor" opacity=".82" /><path d="m18 19-6 11m18-11 6 11" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
   }
   if (assetId === "builtin:table") {
@@ -449,6 +459,7 @@ const DIRECTOR_POSE_RESULT_BATCH_SIZE = 24
 const directorModelThumbnailCache = new Map<string, string>()
 const directorModelThumbnailPending = new Map<string, Promise<string>>()
 const directorGltfTemplateCache = new Map<string, Promise<GLTF>>()
+const directorSupplementalAnimationCache = new Map<string, Promise<THREE.AnimationClip[]>>()
 let directorModelThumbnailQueue: Promise<void> = Promise.resolve()
 let directorModelThumbnailRenderer: THREE.WebGLRenderer | null = null
 
@@ -474,8 +485,27 @@ function directorGltfTemplate(asset: DirectorModelAsset): Promise<GLTF> {
   return pending
 }
 
-async function cloneDirectorGltf(asset: DirectorModelAsset): Promise<GLTF> {
+function directorSupplementalAnimations(asset: DirectorModelAsset): Promise<THREE.AnimationClip[]> {
+  const urls = DIRECTOR_BUNDLED_MODEL_BY_ID.get(asset.id)?.animation_urls || []
+  if (!urls.length) return Promise.resolve([])
+  return Promise.all(urls.map((url) => {
+    const cached = directorSupplementalAnimationCache.get(url)
+    if (cached) return cached
+    const pending = new GLTFLoader().loadAsync(url).then((gltf) => gltf.animations)
+    directorSupplementalAnimationCache.set(url, pending)
+    void pending.catch(() => directorSupplementalAnimationCache.delete(url))
+    return pending
+  })).then((groups) => groups.flat())
+}
+
+async function cloneDirectorGltf(
+  asset: DirectorModelAsset,
+  includeSupplementalAnimations = false,
+): Promise<GLTF> {
   const template = await directorGltfTemplate(asset)
+  const supplementalAnimations = includeSupplementalAnimations
+    ? await directorSupplementalAnimations(asset)
+    : []
   const scene = SkeletonUtils.clone(template.scene) as THREE.Group
   const sourceObjects: THREE.Object3D[] = []
   const clonedObjects: THREE.Object3D[] = []
@@ -483,7 +513,25 @@ async function cloneDirectorGltf(asset: DirectorModelAsset): Promise<GLTF> {
   template.scene.traverse((child) => sourceObjects.push(child))
   scene.traverse((child) => {
     clonedObjects.push(child)
-    if (child instanceof THREE.Mesh) child.userData.directorSharedModelResources = true
+    if (!(child instanceof THREE.Mesh)) return
+    if (asset.id === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID) {
+      const sourceMaterials = Array.isArray(child.material) ? child.material : [child.material]
+      const whiteMaterials = sourceMaterials.map((source) => {
+        const white = new THREE.MeshStandardMaterial({
+          color: 0xe5e7eb,
+          roughness: 0.82,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        })
+        white.name = `${source.name || "Main"} · white mannequin`
+        return white
+      })
+      child.material = Array.isArray(child.material) ? whiteMaterials : whiteMaterials[0]
+      child.userData.directorSharedModelGeometry = true
+      child.userData.directorSharedModelResources = false
+    } else {
+      child.userData.directorSharedModelResources = true
+    }
   })
   sourceObjects.forEach((source, index) => {
     const association = template.parser.associations.get(source)
@@ -492,7 +540,7 @@ async function cloneDirectorGltf(asset: DirectorModelAsset): Promise<GLTF> {
   })
   const parser = Object.create(template.parser) as GLTF["parser"]
   parser.associations = associations
-  return { ...template, scene, parser }
+  return { ...template, scene, parser, animations: [...template.animations, ...supplementalAnimations] }
 }
 
 function directorModelAssetById(
@@ -836,11 +884,93 @@ function stopRuntimeMixers(runtime: DirectorRuntime): void {
 
 function stopRuntimeMixer(runtime: DirectorRuntime, objectId: string): void {
   const mixer = runtime.mixers.get(objectId)
-  if (!mixer) return
-  mixer.stopAllAction()
-  mixer.uncacheRoot(mixer.getRoot())
+  if (mixer) {
+    mixer.stopAllAction()
+    mixer.uncacheRoot(mixer.getRoot())
+  }
   runtime.mixers.delete(objectId)
   runtime.playingMixerIds.delete(objectId)
+  const root = runtime.objectRoots.get(objectId)
+  if (root) {
+    delete root.userData.directorAnimationAction
+    delete root.userData.directorAnimationIndex
+  }
+}
+
+function restoreDirectorModelBindPose(model: THREE.Object3D): void {
+  model.traverse((child) => {
+    if (child instanceof THREE.SkinnedMesh) child.skeleton.pose()
+  })
+  model.updateMatrixWorld(true)
+}
+
+function applyRuntimeNativeAnimation(
+  runtime: DirectorRuntime,
+  objectId: string,
+  asset: DirectorModelAsset,
+  rig: DirectorCustomRigState,
+): boolean {
+  const root = runtime.objectRoots.get(objectId)
+  const gltf = root?.userData.directorGltf as GLTF | undefined
+  if (!root || !gltf || root.userData.directorAssetId !== asset.id) return false
+  if (rig.mode === "bind") {
+    stopRuntimeMixer(runtime, objectId)
+    restoreDirectorModelBindPose(gltf.scene)
+    runtime.requestRender()
+    return true
+  }
+  if (rig.mode !== "animation" || gltf.animations.length === 0) return false
+
+  const clip = (rig.animation_index === null ? undefined : gltf.animations[rig.animation_index])
+    || gltf.animations.find((item) => item.name === rig.animation_name)
+    || gltf.animations[0]
+  const clipDescriptor = asset.analysis?.animations.find((item) => item.index === rig.animation_index)
+    || asset.analysis?.animations.find((item) => item.name === clip.name)
+  const isNativePose = clipDescriptor?.kind === "pose"
+  const clipKey = clipDescriptor?.index ?? rig.animation_index ?? clip.name
+  let mixer = runtime.mixers.get(objectId)
+  let action = root.userData.directorAnimationAction as THREE.AnimationAction | undefined
+  const sameClip = Boolean(
+    mixer
+    && action
+    && root.userData.directorAnimationIndex === clipKey,
+  )
+  if (!sameClip) {
+    stopRuntimeMixer(runtime, objectId)
+    restoreDirectorModelBindPose(gltf.scene)
+    mixer = new THREE.AnimationMixer(gltf.scene)
+    action = mixer.clipAction(clip)
+    action.enabled = true
+    action.play()
+    runtime.mixers.set(objectId, mixer)
+    root.userData.directorAnimationAction = action
+    root.userData.directorAnimationIndex = clipKey
+    const activeMixer = mixer
+    mixer.addEventListener("finished", () => {
+      if (runtime.mixers.get(objectId) !== activeMixer) return
+      runtime.playingMixerIds.delete(objectId)
+      runtime.requestRender()
+    })
+  }
+
+  action!.timeScale = isNativePose ? 1 : rig.animation_speed
+  action!.clampWhenFinished = Boolean(isNativePose || !rig.animation_loop)
+  action!.setLoop(
+    isNativePose || !rig.animation_loop ? THREE.LoopOnce : THREE.LoopRepeat,
+    isNativePose || !rig.animation_loop ? 1 : Infinity,
+  )
+  if (isNativePose) {
+    mixer!.setTime(Math.max(0, clip.duration))
+    action!.paused = true
+    runtime.playingMixerIds.delete(objectId)
+  } else {
+    action!.paused = !rig.animation_playing
+    if (rig.animation_playing) runtime.playingMixerIds.add(objectId)
+    else runtime.playingMixerIds.delete(objectId)
+    mixer!.update(0)
+  }
+  runtime.requestRender()
+  return true
 }
 
 function removeRuntimeObject(runtime: DirectorRuntime, objectId: string): void {
@@ -1000,6 +1130,7 @@ export default function DirectorDesk({
   const [poseCategory, setPoseCategory] = useState("基础站姿")
   const [poseQuery, setPoseQuery] = useState("")
   const [poseResultLimit, setPoseResultLimit] = useState(DIRECTOR_POSE_RESULT_BATCH_SIZE)
+  const [motionQuery, setMotionQuery] = useState("")
   const [inspectorTab, setInspectorTab] = useState<"object" | "camera" | "scene">("camera")
   const [objectInspectorTab, setObjectInspectorTab] = useState<"transform" | "rig">("transform")
   const [rigInspectorTab, setRigInspectorTab] = useState<"setup" | "motion" | "joints" | "analysis">("motion")
@@ -1179,7 +1310,7 @@ export default function DirectorDesk({
       return
     }
     setLoadingModels((value) => value + 1)
-    void cloneDirectorGltf(asset).then((gltf) => {
+    void cloneDirectorGltf(asset, true).then((gltf) => {
       if (!isCurrent()) {
         disposeObject(gltf.scene)
         return
@@ -1189,6 +1320,8 @@ export default function DirectorDesk({
       const model = gltf.scene
       const analysis = asset.analysis
       const rig = normalizeDirectorCustomRig(object.rig, asset)
+      root.userData.directorAssetId = asset.id
+      root.userData.directorGltf = gltf
       model.updateMatrixWorld(true)
       const restBox = new THREE.Box3().setFromObject(model)
       const restSize = restBox.getSize(new THREE.Vector3())
@@ -1197,41 +1330,7 @@ export default function DirectorDesk({
         const rigBones = resolveCustomRigBones(gltf, analysis.humanoid)
         applyDirectorRigPose(model, rig, rigBones)
         poseGroundAnchor = directorRigGroundAnchor(model, rig, rigBones)
-      } else if (rig.mode === "animation" && gltf.animations.length > 0) {
-        const clip = (rig.animation_index === null ? undefined : gltf.animations[rig.animation_index])
-          || gltf.animations.find((item) => item.name === rig.animation_name)
-          || gltf.animations[0]
-        const clipDescriptor = analysis?.animations.find((item) => item.index === rig.animation_index)
-          || analysis?.animations.find((item) => item.name === clip.name)
-        const isNativePose = clipDescriptor?.kind === "pose"
-        const mixer = new THREE.AnimationMixer(model)
-        const action = mixer.clipAction(clip)
-        action.enabled = true
-        action.timeScale = isNativePose ? 1 : rig.animation_speed
-        action.clampWhenFinished = isNativePose || !rig.animation_loop
-        action.setLoop(
-          isNativePose || !rig.animation_loop ? THREE.LoopOnce : THREE.LoopRepeat,
-          isNativePose || !rig.animation_loop ? 1 : Infinity,
-        )
-        action.play()
-        if (isNativePose) {
-          mixer.setTime(Math.max(0, clip.duration))
-          action.paused = true
-        } else {
-          action.paused = !rig.animation_playing
-          mixer.update(0)
-        }
-        runtime.mixers.set(object.id, mixer)
-        if (!isNativePose && rig.animation_playing) {
-          runtime.playingMixerIds.add(object.id)
-          if (!rig.animation_loop) {
-            mixer.addEventListener("finished", () => {
-              runtime.playingMixerIds.delete(object.id)
-              runtime.requestRender()
-            })
-          }
-        }
-      }
+      } else if (rig.mode === "animation") applyRuntimeNativeAnimation(runtime, object.id, asset, rig)
       model.updateMatrixWorld(true)
       const box = new THREE.Box3().setFromObject(model)
       const center = box.getCenter(new THREE.Vector3())
@@ -2029,6 +2128,20 @@ export default function DirectorDesk({
       : null,
     [selectedCustomAsset, selectedCustomRig],
   )
+  const filteredContinuousAnimationClips = useMemo(() => {
+    const query = motionQuery.trim().toLocaleLowerCase()
+    if (!query) return selectedContinuousAnimationClips
+    const matches = selectedContinuousAnimationClips.filter((item) => (
+      `${directorHumanMotionCategory(item.name)} ${directorHumanMotionLabel(item.name)}`
+        .toLocaleLowerCase()
+        .includes(query)
+    ))
+    if (
+      selectedNativeClip?.kind === "animation"
+      && !matches.some((item) => item.index === selectedNativeClip.index)
+    ) return [selectedNativeClip, ...matches]
+    return matches
+  }, [motionQuery, selectedContinuousAnimationClips, selectedNativeClip])
 
   const addObject = useCallback((assetId: string, defaultName: string) => {
     const scene = cloneDirectorScene(directorRef.current.scene)
@@ -2093,7 +2206,22 @@ export default function DirectorDesk({
       ? updateDirectorMannequinPose(root, nextMannequin)
         || root.userData.directorMannequinLoading === true
       : false
-    if ((contentChanged && !poseUpdatedInPlace) || !runtime || !root) {
+    const customRigOnly = "rig" in patch
+      && Object.keys(patch).every((key) => key === "rig")
+      && previousObject.asset_id === nextObject.asset_id
+      && !nextObject.asset_id.startsWith("builtin:")
+    const runtimeAsset = customRigOnly
+      ? directorModelAssetById(nextObject.asset_id, current.model_assets)
+      : undefined
+    const customRigUpdatedInPlace = customRigOnly && runtime && root && runtimeAsset
+      ? applyRuntimeNativeAnimation(
+        runtime,
+        selectedObjectId,
+        runtimeAsset,
+        normalizeDirectorCustomRig(nextObject.rig, runtimeAsset),
+      )
+      : false
+    if ((contentChanged && !poseUpdatedInPlace && !customRigUpdatedInPlace) || !runtime || !root) {
       rebuildRuntimeObject(selectedObjectId)
     } else {
       root.name = nextObject.name
@@ -2111,6 +2239,17 @@ export default function DirectorDesk({
     const current = normalizeDirectorMannequin(selectedObject.mannequin)
     updateSelectedObject({ mannequin: normalizeDirectorMannequin(updater(current)) })
   }, [selectedObject, updateSelectedObject])
+
+  const replaceSelectedWithUniversalActions = useCallback(() => {
+    const asset = DIRECTOR_BUNDLED_MODEL_BY_ID.get(DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID)
+    if (!asset) return
+    updateSelectedObject({
+      asset_id: asset.id,
+      mannequin: undefined,
+      rig: defaultDirectorCustomRig(asset),
+    })
+    setRigInspectorTab("motion")
+  }, [updateSelectedObject])
 
   const applyBodyPreset = useCallback((presetId: Exclude<DirectorMannequinBodyPreset, "custom">) => {
     updateSelectedMannequin((current) => applyDirectorMannequinBodyPreset(current, presetId))
@@ -3451,23 +3590,10 @@ export default function DirectorDesk({
                   ) : null}
 
                   {rigInspectorTab === "motion" ? (
-                  <div>
-                    <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">姿势预设</span><span className="text-[8px] text-zinc-700">{DIRECTOR_MANNEQUIN_POSE_PRESETS.length} 组定格动作</span></div>
-                    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_88px] gap-1.5">
-                      <input aria-label="搜索人物动作" value={poseQuery} onChange={(event) => setPoseQuery(event.target.value)} placeholder="搜索动作…" className="h-8 min-w-0 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[8px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-300/35" />
-                      <select aria-label="动作分类" value={poseCategory} onChange={(event) => setPoseCategory(event.target.value)} className="h-8 rounded-lg border border-white/[0.08] bg-[#0b0e16] px-1 text-[8px] text-zinc-400 outline-none focus:border-cyan-300/35">
-                        <option value="全部">全部分类</option>
-                        {DIRECTOR_MANNEQUIN_POSE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
-                      </select>
-                    </div>
-                    <div className="mb-1.5 text-right text-[7px] text-zinc-700">已显示 {visiblePosePresets.length} / {filteredPosePresets.length} · 单帧定格动作</div>
-                    <div className="grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
-                      {visiblePosePresets.map((preset) => (
-                        <button data-director-pose={preset.id} key={preset.id} type="button" title={preset.description} onClick={() => applyPosePreset(preset.id)} className={cn("min-h-10 rounded-lg border px-2 py-1.5 text-left transition", selectedMannequin.pose_preset === preset.id ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-white/[0.06] bg-black/15 text-zinc-500 hover:border-white/[0.13] hover:text-zinc-200")}><span className="block text-[8px] font-medium">{preset.label}</span><span className="mt-0.5 block truncate text-[6px] opacity-55">{preset.category}</span></button>
-                      ))}
-                    </div>
-                    {visiblePosePresets.length < filteredPosePresets.length ? <button data-director-pose-more type="button" onClick={() => setPoseResultLimit((value) => Math.min(filteredPosePresets.length, value + DIRECTOR_POSE_RESULT_BATCH_SIZE))} className="mt-2 h-8 w-full rounded-lg border border-white/[0.07] bg-black/15 text-[8px] text-zinc-500 transition hover:border-white/[0.13] hover:text-zinc-200">显示更多姿势 · 还有 {filteredPosePresets.length - visiblePosePresets.length} 个</button> : null}
-                    {!filteredPosePresets.length ? <div className="rounded-lg border border-dashed border-white/[0.07] py-5 text-center text-[8px] text-zinc-700">没有匹配动作</div> : null}
+                  <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.05] p-3">
+                    <div className="text-[10px] font-medium text-cyan-100">手调姿势库已退出默认流程</div>
+                    <p className="mt-1.5 text-[8px] leading-4 text-zinc-500">这个旧白模只保留外形比例和关节微调。专业动作请切换到同骨架的通用动作白模，内置 162 个 CC0 动作，不再计算手写关节姿势。</p>
+                    <button type="button" onClick={replaceSelectedWithUniversalActions} className="mt-3 h-9 w-full rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-[9px] font-medium text-cyan-100 transition hover:bg-cyan-300/15">替换为通用动作白模</button>
                   </div>
                   ) : null}
 
@@ -3569,15 +3695,19 @@ export default function DirectorDesk({
 
                     {rigInspectorTab === "motion" && selectedContinuousAnimationClips.length > 0 ? (
                       <div>
-                        <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">模型内置连续动画</span><span className="text-[8px] text-zinc-700">GLB 原始时间序列 · 可播放和循环</span></div>
-                        <select value={selectedNativeClip?.kind === "animation" ? selectedNativeClip.index : ""} onChange={(event) => {
+                        <div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-medium text-zinc-400">专业动作集</span><span className="text-[8px] text-zinc-700">{selectedContinuousAnimationClips.length} 个动作 · 可播放和循环</span></div>
+                        {selectedContinuousAnimationClips.length > 24 ? <input aria-label="搜索模型动作" value={motionQuery} onChange={(event) => setMotionQuery(event.target.value)} placeholder="搜索站立、交谈、行走、格斗…" className="mb-2 h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[8px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-300/35" /> : null}
+                        <select aria-label="专业动作集" value={selectedNativeClip?.kind === "animation" ? selectedNativeClip.index : ""} onChange={(event) => {
                           const animationIndex = Number(event.target.value)
                           const animation = selectedContinuousAnimationClips.find((item) => item.index === animationIndex)
                           if (!animation) return
                           updateSelectedCustomRig((current) => ({ ...current, mode: "animation", animation_index: animationIndex, animation_name: animation.name, animation_playing: true }))
                         }} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0b0e16] px-2 text-[9px] text-zinc-300 outline-none focus:border-cyan-300/35">
                           <option value="" disabled>选择连续动画</option>
-                          {selectedContinuousAnimationClips.map((animation) => <option key={`${animation.index}-${animation.name}`} value={animation.index}>#{animation.index + 1} {animation.name}{animation.duration !== null ? ` · ${animation.duration.toFixed(2)}s` : ""}</option>)}
+                          {DIRECTOR_HUMAN_MOTION_CATEGORIES.map((category) => {
+                            const animations = filteredContinuousAnimationClips.filter((item) => directorHumanMotionCategory(item.name) === category)
+                            return animations.length ? <optgroup key={category} label={`${category} · ${animations.length}`}>{animations.map((animation) => <option key={`${animation.index}-${animation.name}`} value={animation.index}>{directorHumanMotionLabel(animation.name)}{animation.duration !== null ? ` · ${animation.duration.toFixed(2)}s` : ""}</option>)}</optgroup> : null
+                          })}
                         </select>
                         {selectedNativeClip?.kind === "animation" ? (
                           <div className="mt-2 grid grid-cols-[1fr_1fr_76px] gap-1.5">

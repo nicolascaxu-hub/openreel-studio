@@ -166,10 +166,11 @@ export const DIRECTOR_ASPECT_VALUES: Record<DirectorAspectRatio, number> = {
 }
 
 export const DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID = "builtin:mannequin"
+export const DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID = "bundled:mesh2motion:universal-human-actions"
 export const MAX_DIRECTOR_CAMERAS = 12
 
 export const DIRECTOR_BUILTINS = [
-  { id: DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID, label: "标准人物", defaultName: "人物" },
+  { id: DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID, label: "通用动作白模", defaultName: "动作人物" },
   { id: "builtin:cube", label: "立方体", defaultName: "方块" },
   { id: "builtin:cylinder", label: "圆柱体", defaultName: "圆柱" },
   { id: "builtin:table", label: "桌子", defaultName: "桌子" },

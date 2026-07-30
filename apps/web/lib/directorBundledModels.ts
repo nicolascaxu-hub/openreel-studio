@@ -1,4 +1,9 @@
-import type { DirectorModelAnalysis, DirectorModelAsset } from "@/lib/directorDesk"
+import {
+  DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID,
+  type DirectorModelAnalysis,
+  type DirectorModelAsset,
+} from "@/lib/directorDesk"
+import { DIRECTOR_UNIVERSAL_HUMAN_MOTIONS } from "@/lib/directorHumanMotions"
 import { DIRECTOR_MANNEQUIN_JOINTS, type DirectorMannequinJoint } from "@/lib/directorMannequin"
 import commonModelCatalog from "@/lib/directorCommonModels.json"
 import { DIRECTOR_SOURCE_PROP_ASSETS } from "@/lib/directorSourceProps"
@@ -19,12 +24,17 @@ export interface DirectorBundledModelAsset extends DirectorModelAsset {
   source_kind: "glb" | "source"
   display_size: number
   stats: DirectorBundledModelStats
+  animation_urls?: string[]
 }
 
 const modelBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "")
 
 function modelUrl(fileName: string): string {
   return `${modelBasePath}/director/models/${fileName}`
+}
+
+function mannequinUrl(fileName: string): string {
+  return `${modelBasePath}/director/mannequins/${fileName}`
 }
 
 function genericHumanoid(): DirectorModelAnalysis["humanoid"] {
@@ -85,6 +95,51 @@ const riggedFigureJointNodeMap: Partial<Record<DirectorMannequinJoint, number>> 
 }
 
 const DIRECTOR_FEATURED_MODEL_ASSETS: DirectorBundledModelAsset[] = [
+  {
+    id: DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID,
+    name: "通用动作白模",
+    file_name: "human-base.glb",
+    url: mannequinUrl("human-base.glb"),
+    animation_urls: [
+      mannequinUrl("human-base-animations.glb"),
+      mannequinUrl("human-addon-animations.glb"),
+    ],
+    size: 11_483_456,
+    summary: "66 骨骼通用人物白模，内置 162 组 CC0 专业动作",
+    license: "CC0 1.0 · Mesh2Motion / Quaternius",
+    category: "角色动作",
+    keywords: ["人物", "白模", "动作", "交谈", "坐姿", "走路", "跑步", "格斗", "human", "animation"],
+    source_kind: "glb",
+    display_size: 1.8,
+    stats: { node_count: 68, mesh_count: 1, material_count: 1, bone_count: 66, animation_count: 162 },
+    analysis: {
+      analysis_version: 2,
+      format: "glb2",
+      generator: "Khronos glTF Blender I/O v4.5.3",
+      node_count: 68,
+      mesh_count: 1,
+      material_count: 1,
+      skin_count: 1,
+      skins: [{ index: 0, name: "Human", joint_count: 66, skeleton_node: 1 }],
+      bone_count: 66,
+      bones: [],
+      animation_count: DIRECTOR_UNIVERSAL_HUMAN_MOTIONS.length,
+      animations: DIRECTOR_UNIVERSAL_HUMAN_MOTIONS.map((motion) => ({
+        index: motion.index,
+        name: motion.name,
+        duration: null,
+        keyframe_count: 0,
+        kind: "animation" as const,
+        channel_count: 67,
+        target_node_count: 67,
+        properties: ["rotation", "translation"],
+      })),
+      // The bundled clips already target this exact skeleton. Keeping manual
+      // humanoid remapping disabled prevents the retired hand-authored poses
+      // from being offered on the motion-library mannequin.
+      humanoid: genericHumanoid(),
+    },
+  },
   {
     id: "bundled:fox",
     name: "动画狐狸",

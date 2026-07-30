@@ -249,3 +249,28 @@ def test_all_pose_filter_is_batched_and_standard_pose_updates_reuse_the_loaded_r
     assert "mannequinRuntimeCache" in model_source
     assert "restBoneQuaternions" in model_source
     assert "export function updateDirectorMannequinPose" in model_source
+
+
+def test_default_white_model_uses_same_skeleton_professional_motion_library() -> None:
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+    desk_source = (ROOT / "apps/web/lib/directorDesk.ts").read_text(encoding="utf-8")
+    bundled_source = (ROOT / "apps/web/lib/directorBundledModels.ts").read_text(encoding="utf-8")
+    motion_source = (ROOT / "apps/web/lib/directorHumanMotions.ts").read_text(encoding="utf-8")
+
+    assert 'DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID = "bundled:mesh2motion:universal-human-actions"' in desk_source
+    assert 'label: "通用动作白模"' in desk_source
+    assert 'mannequinUrl("human-base-animations.glb")' in bundled_source
+    assert 'mannequinUrl("human-addon-animations.glb")' in bundled_source
+    assert 'animation_count: 162' in bundled_source
+    assert "BASE_MOTION_NAMES.length + index" in motion_source
+    assert "DIRECTOR_HUMAN_MOTION_CATEGORIES" in motion_source
+    assert "directorHumanMotionCategory" in ui_source
+    assert "directorSupplementalAnimationCache" in ui_source
+    assert "cloneDirectorGltf(asset, true)" in ui_source
+    assert 'white.name = `${source.name || "Main"} · white mannequin`' in ui_source
+    assert "applyRuntimeNativeAnimation" in ui_source
+    assert "customRigUpdatedInPlace" in ui_source
+    assert 'aria-label="专业动作集"' in ui_source
+    assert "专业动作集" in ui_source
+    assert "替换为通用动作白模" in ui_source
+    assert "手调姿势库已退出默认流程" in ui_source
