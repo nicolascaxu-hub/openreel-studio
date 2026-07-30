@@ -157,6 +157,12 @@ export interface DirectorDeskState {
   captures: DirectorCapture[]
 }
 
+function neutralDirectorRigJoints(): Record<DirectorMannequinJoint, [number, number, number]> {
+  return Object.fromEntries(
+    DIRECTOR_MANNEQUIN_JOINTS.map((joint) => [joint, [0, 0, 0]]),
+  ) as Record<DirectorMannequinJoint, [number, number, number]>
+}
+
 const ASPECT_RATIOS = new Set<DirectorAspectRatio>(["16:9", "9:16", "1:1", "4:3"])
 
 export const DIRECTOR_ASPECT_VALUES: Record<DirectorAspectRatio, number> = {
@@ -364,10 +370,10 @@ export function defaultDirectorCustomRig(asset?: DirectorModelAsset): DirectorCu
   return {
     mode: firstAnimation ? "animation" : asset?.analysis?.humanoid.recognized ? "pose" : "bind",
     pose_preset: mannequin.pose_preset,
-    joints: mannequin.joints,
+    joints: firstAnimation ? neutralDirectorRigJoints() : mannequin.joints,
     animation_name: firstAnimation,
     animation_index: firstAnimationIndex,
-    animation_playing: continuousAnimation,
+    animation_playing: false,
     animation_loop: continuousAnimation,
     animation_speed: 1,
   }
@@ -387,16 +393,19 @@ export function normalizeDirectorCustomRig(
   const mode = raw.mode === "pose" || raw.mode === "animation" || raw.mode === "bind"
     ? raw.mode
     : fallback.mode
+  const joints = mode === "animation" && raw.pose_preset !== "custom"
+    ? neutralDirectorRigJoints()
+    : mannequin.joints
   const speed = Math.min(4, Math.max(0.05, finiteNumber(raw.animation_speed, 1)))
   return {
     mode,
     pose_preset: mannequin.pose_preset,
-    joints: mannequin.joints,
+    joints,
     animation_name: typeof raw.animation_name === "string" && raw.animation_name
       ? raw.animation_name
       : fallback.animation_name,
     animation_index: nullableIndex(raw.animation_index) ?? fallback.animation_index,
-    animation_playing: raw.animation_playing !== false,
+    animation_playing: raw.animation_playing === true,
     animation_loop: raw.animation_loop !== false,
     animation_speed: speed,
   }
@@ -604,12 +613,17 @@ export function newDirectorObject(
   asset?: DirectorModelAsset,
 ): DirectorObjectState {
   const sameAssetCount = existing.filter((item) => item.asset_id === assetId).length
-  const mannequinCount = existing.filter((item) => item.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID).length
+  const mannequinCount = existing.filter((item) => (
+    item.asset_id === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
+    || item.asset_id === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID
+  )).length
+  const isMannequin = assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
+    || assetId === DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID
   return {
     id: createDirectorId("object"),
     asset_id: assetId,
     name: `${defaultName} ${sameAssetCount + 1}`,
-    color: assetId === DIRECTOR_STANDARD_MANNEQUIN_ASSET_ID
+    color: isMannequin
       ? DIRECTOR_CHARACTER_COLORS[mannequinCount % DIRECTOR_CHARACTER_COLORS.length]
       : "#a1a1aa",
     position: nextDirectorObjectPosition(existing),

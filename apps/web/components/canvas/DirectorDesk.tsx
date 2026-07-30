@@ -909,7 +909,11 @@ function applyRuntimeAnimationJointOffsets(
   asset: DirectorModelAsset,
   rig: DirectorCustomRigState,
 ): void {
-  if (rig.mode !== "animation" || !asset.analysis?.humanoid.recognized) return
+  if (
+    asset.id !== DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID
+    || rig.mode !== "animation"
+    || !asset.analysis?.humanoid.recognized
+  ) return
   const root = runtime.objectRoots.get(objectId)
   const gltf = root?.userData.directorGltf as GLTF | undefined
   if (!root || !gltf) return
@@ -1527,6 +1531,9 @@ export default function DirectorDesk({
     void getProjectDirector<DirectorApiResponse>(projectId).then((response) => {
       if (canceled) return
       const next = normalizeDirectorDesk(response.director)
+      next.scene.objects = next.scene.objects.map((object) => object.rig
+        ? { ...object, rig: { ...object.rig, animation_playing: false } }
+        : object)
       setLocalDirector(next)
       setSelectedCameraId(null)
       setSelectedCaptureId(next.captures[0]?.id || null)

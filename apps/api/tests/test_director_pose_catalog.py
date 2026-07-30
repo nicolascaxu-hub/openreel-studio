@@ -273,6 +273,7 @@ def test_default_white_model_uses_same_skeleton_professional_motion_library() ->
     assert 'white.name = `${source.name || "Main"} · white mannequin`' in ui_source
     assert "applyRuntimeNativeAnimation" in ui_source
     assert "applyRuntimeAnimationJointOffsets" in ui_source
+    assert "asset.id !== DIRECTOR_UNIVERSAL_ACTION_MANNEQUIN_ASSET_ID" in ui_source
     assert "customRigUpdatedInPlace" in ui_source
     assert "data-director-universal-actions" in ui_source
     assert "data-director-motion={animation.name}" in ui_source
@@ -282,3 +283,15 @@ def test_default_white_model_uses_same_skeleton_professional_motion_library() ->
     assert "不展示手指细节" in ui_source
     assert "替换为通用动作白模" in ui_source
     assert "手调姿势库已退出默认流程" in ui_source
+
+
+def test_universal_mannequin_starts_paused_with_zero_animation_offsets() -> None:
+    ui_source = DIRECTOR_UI_SOURCE.read_text(encoding="utf-8")
+    desk_source = (ROOT / "apps/web/lib/directorDesk.ts").read_text(encoding="utf-8")
+
+    assert "function neutralDirectorRigJoints()" in desk_source
+    assert "joints: firstAnimation ? neutralDirectorRigJoints() : mannequin.joints" in desk_source
+    assert 'mode === "animation" && raw.pose_preset !== "custom"' in desk_source
+    assert "animation_playing: false" in desk_source
+    assert "animation_playing: raw.animation_playing === true" in desk_source
+    assert "rig: { ...object.rig, animation_playing: false }" in ui_source
