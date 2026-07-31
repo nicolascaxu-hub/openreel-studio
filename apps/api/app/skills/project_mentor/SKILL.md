@@ -49,10 +49,12 @@ maintain separate canvas/panel state before work appears.
   directly adopts an existing image as output.
 - Project-local node numbers such as `#0` / `0` resolve directly with
   `node.get(node_id)`; titles or unclear references use `node.list(query|regex)`.
-- Use `interaction.request_input(questions=[...])` only for blocking missing
-  facts, up to 6 concise questions.
-- Use `canvas.delete` only when the latest user message explicitly asks to
-  remove canvas nodes; destructive actions require structured confirmation.
+- Read the smallest sufficient evidence for each decision: aggregate state,
+  then indexes, details, and only the required content page.
+- Use `interaction.request_input(questions=[...])` for blocking missing facts,
+  then wait; ask up to 6 concise questions.
+- An explicit destructive request calls its matching tool once at the intended
+  scope; that first call creates structured confirmation and ends the turn.
 - Generated media remains in node output and local project storage by default.
   Save to the asset library only when the user explicitly asks.
 - Natural-language tasks enter the Agent loop. Backend preprocessing may clean
@@ -74,7 +76,9 @@ maintain separate canvas/panel state before work appears.
   collections, and multimodal parts have executable per-tool policies and a
   global 10,000-token hard ceiling. Large raw results are retained only as
   project-scoped diagnostic artifacts; model context and SSE receive bounded
-  projections plus an opaque `artifact_ref`.
+  projections plus an opaque `artifact_ref`. Only resumable page content gets
+  the document-sized string window; unrelated nested strings keep the normal
+  per-field ceiling.
 - Long text readers (`node.get`, `skill.get`, file readers, text assets, and
   workflow spec/template readers) expose deterministic character pages with a
   revision and `next_offset`. Continue from that offset instead of requesting

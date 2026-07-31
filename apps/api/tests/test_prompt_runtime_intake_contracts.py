@@ -64,7 +64,7 @@ def test_workflow_build_prompt_loads_only_in_workflow_build_mode() -> None:
     assert "workflow_build_mode" in workflow_triggers
     assert "Workflow Build Mode" not in default_result.system
     assert "Workflow Build Mode" in workflow_result.system
-    assert "Read `workflow.protocol_info` before writing" in workflow_result.system
+    assert "Read `workflow.protocol_info` for the complete current schema" in workflow_result.system
     assert "foreach.until" in workflow_result.system
     assert "{{ previous }}" in workflow_result.system
     assert workflow_result.tool_profile == "workflow_build"
@@ -102,7 +102,7 @@ def test_workflow_build_prompt_uses_dedicated_cached_prefix() -> None:
     assert "frontend supplies media runtime settings" in result.system
     assert "Put media settings in `fields`" not in result.system
     assert "Specs describe structure and settings" not in result.system
-    assert "After a repairable failure, continue from the returned `repair_ref`" in result.system
+    assert "after repairable failures, patch the same candidate from `base.repair_ref`" in result.system
     assert "Ready means saved and inspected with `workflow.canvas.inspect`" in result.system
     assert "Patch again when visible outputs, loops, dependencies, or final outputs are missing" in result.system
     assert result.history == ""
@@ -147,8 +147,7 @@ def test_always_prompt_models_shared_canvas_collaboration() -> None:
     assert "co-author one" in text
     assert "Canvas is creative truth" in text
     assert "user and Agent nodes have equal authority" in text
-    assert "Existing/draft nodes are work containers" in text
-    assert "update matching nodes before new ones" in text
+    assert "Update matching nodes before creating" in text
 
 def test_runtime_context_does_not_duplicate_latest_user_goal() -> None:
     text = runtime_context.build(
@@ -233,17 +232,64 @@ def test_always_prompt_sections_are_contracts_not_manuals() -> None:
         assert not any(marker in text for marker in manual_markers), stat.name
 
 def test_working_loop_stays_domain_neutral_with_core_prompt() -> None:
-    assert "Latest user" in working_loop.PROMPT
-    assert "canvas state" in working_loop.PROMPT
-    assert "existing workflow templates" in working_loop.PROMPT
+    assert "latest request" in working_loop.PROMPT
+    assert "evidence" in working_loop.PROMPT
+    assert "agent.run(workflow_spec)" in working_loop.PROMPT
     assert "Workflow Build Mode" not in working_loop.PROMPT
-    assert "Tools mutate state" in working_loop.PROMPT
+    assert "tools mutate state" in working_loop.PROMPT
     assert "prompt rules" in working_loop.PROMPT
     assert "Before tools, write one progress sentence" in working_loop.PROMPT
     assert "finalize_tree_draft" not in working_loop.PROMPT
     assert "agent.review" not in working_loop.PROMPT
     assert "workflow_spec returns" not in working_loop.PROMPT
     assert "workflow.run_*" not in working_loop.PROMPT
+
+
+def test_default_prompt_has_one_general_decision_contract_per_concern() -> None:
+    result = assemble_split_result(PromptContext(
+        project_id="decision-contract",
+        user_message="继续",
+        state={},
+    ))
+    text = "\n".join([result.system, result.history])
+
+    assert text.count("With explicit scope/inputs, call the action tool") == 1
+    assert text.count("summary > index > detail") == 1
+    assert text.count("interaction.request_input") == 1
+    assert text.count("structured confirmation") == 1
+    assert "Call its tool once with the intended scope" in text
+    assert "not a separate question" in text
+
+
+def test_mode_prompts_keep_input_and_attachment_rules_unambiguous() -> None:
+    attachments = [{"kind": "text", "rel_path": "uploads/brief.txt"}]
+    default_result = assemble_split_result(PromptContext(
+        project_id="default-attachment",
+        user_message="看看附件",
+        state={},
+        attachments=attachments,
+    ))
+    plan_result = assemble_split_result(PromptContext(
+        project_id="plan-attachment",
+        user_message="先规划",
+        state={},
+        attachments=attachments,
+        collaboration_mode="plan",
+    ))
+    workflow_result = assemble_split_result(PromptContext(
+        project_id="workflow-attachment",
+        user_message="搭建工作流",
+        state={},
+        attachments=attachments,
+        collaboration_mode="workflow_build",
+    ))
+
+    assert "attachment_rule" in [section.name for section in default_result.sections]
+    assert "attachment_rule" not in [section.name for section in plan_result.sections]
+    assert "attachment_rule" not in [section.name for section in workflow_result.sections]
+    assert "interaction.request_input" in plan_result.system
+    assert "interaction.request_input" in workflow_result.system
+    assert "Do not create, update, run, delete, reset, approve, or generate" in plan_result.system
 
 def test_state_prompt_sections_are_runtime_principles_not_manuals() -> None:
     sections = {

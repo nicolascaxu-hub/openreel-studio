@@ -593,7 +593,7 @@ def test_interaction_request_input_description_is_generic_card_contract() -> Non
     description = spec.description or ""
     schema_props = (spec.schema or {}).get("properties") or {}
 
-    assert "questions" in description
+    assert "问题卡" in description
     assert "questions" in schema_props
     assert schema_props["questions"]["maxItems"] == 6
     item_required = schema_props["questions"]["items"]["required"]
@@ -604,6 +604,29 @@ def test_interaction_request_input_description_is_generic_card_contract() -> Non
     assert "15秒以内默认不分段" not in description
     assert "purpose='video_intake'" not in description
     assert "批准" in description
+
+
+def test_core_read_and_confirmation_descriptions_support_minimal_decisions() -> None:
+    state = registry.get("project.get_state")
+    nodes = registry.get("node.list")
+    details = registry.get("node.get")
+    delete = registry.get("canvas.delete")
+
+    assert state is not None
+    assert nodes is not None
+    assert details is not None
+    assert delete is not None
+    assert "依赖现状" in (state.description or "")
+    assert "参数已完整时不做前置读取" in (state.description or "")
+    assert "画布摘要" in (state.description or "")
+    assert "有界节点索引页" in (nodes.description or "")
+    assert "content_page" in (details.description or "")
+    assert "首次调用创建结构化确认并结束当前轮" in (delete.description or "")
+
+    delete_props = (delete.schema or {}).get("properties") or {}
+    assert delete_props["scope"]["enum"] == ["selected", "all"]
+    assert delete_props["node_ids"]["items"] == {"type": "string"}
+    assert delete_props["node_ids"]["maxItems"] == 100
 
 
 def test_node_read_tools_support_index_then_batch_detail_contract() -> None:
@@ -688,7 +711,7 @@ def test_single_image_prompt_documents_reference_image_to_image_path() -> None:
     assert "source_image" in prompt_text
     assert "node.list" in prompt_text
     assert "node.list(limit=0)" in prompt_text
-    assert "active skill" in prompt_text
+    assert "Skills supply prompt rules" in prompt_text
     assert "prompt rules" in prompt_text
     assert "旧规划" not in prompt_text
 

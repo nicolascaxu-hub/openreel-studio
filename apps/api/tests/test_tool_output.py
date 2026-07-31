@@ -69,6 +69,43 @@ def test_document_policy_keeps_one_8000_character_cjk_page_complete(tmp_path, mo
     assert envelope["model_visible"]["tokens"] <= GLOBAL_MODEL_ITEM_MAX_TOKENS
 
 
+def test_document_policy_reserves_large_string_budget_for_resumable_pages(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    _isolate_artifacts(tmp_path, monkeypatch)
+    nested_text = "非分页正文" * 10_000
+    result = {
+        "id": "0",
+        "type": "text",
+        "content_page": {
+            "content": "",
+            "offset": 0,
+            "limit": 8_000,
+            "returned_chars": 0,
+            "total_chars": 0,
+            "next_offset": None,
+        },
+        "input": {"fields": {"content": nested_text}},
+    }
+
+    envelope = build_tool_output_envelope(
+        result,
+        project_id="project",
+        run_id="run",
+        iteration=1,
+        tool_name="node.get",
+    )
+
+    observation = json.loads(envelope["model_visible"]["content"])
+    visible_nested = observation["result"]["input"]["fields"]["content"]
+    assert visible_nested != nested_text
+    assert "tokens omitted" in visible_nested
+    assert envelope["raw_artifact"] is not None
+    assert envelope["model_visible"]["tokens"] < 1_000
+    assert envelope["model_visible"]["tokens"] <= GLOBAL_MODEL_ITEM_MAX_TOKENS
+
+
 def test_large_result_uses_opaque_artifact_ref_and_bounded_ui(tmp_path, monkeypatch) -> None:
     _isolate_artifacts(tmp_path, monkeypatch)
     result = {"ok": True, "items": ["x" * 1_000 for _ in range(100)]}

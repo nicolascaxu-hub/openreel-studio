@@ -683,7 +683,7 @@ _STANDARD_DESCRIPTION_BASES: dict[str, str] = {
     "image.grid_split": "把图片节点切换为宫格编辑态并生成内部裁剪 cell",
     "image.place_grid_cell": "把图片引用放入 image_grid 的指定 cell",
     "image.inpaint_region": "对图片或宫格 cell 的局部 mask 区域发起重绘",
-    "interaction.request_input": "用通用问题卡向用户提出最多 6 个短问题并等待提交",
+    "interaction.request_input": "用通用问题卡请求 1-6 个简短回答",
     "media.cancel_image_generation": "取消当前项目正在进行或排队的图片生成步骤",
     "media.get_presets": "从图片协议 catalog 读取 provider 推荐参数预设",
     "media.list_providers": "读取已配置的媒体 provider 列表",
@@ -695,10 +695,10 @@ _STANDARD_DESCRIPTION_BASES: dict[str, str] = {
     "memory.save_user_fact": "保存跨项目用户偏好或稳定工作习惯",
     "node.create": "创建一个或少量 text/image/video/audio 创作节点",
     "node.get": "读取一个或多个节点详情",
-    "node.list": "列出节点索引页",
+    "node.list": "列出有界节点索引页",
     "node.run": "执行指定节点并由后端按节点类型派发 runner、落库状态和产物",
     "node.update": "局部更新一个或少量指定节点的允许字段",
-    "project.get_state": "读取项目 state、节点摘要、待确认输入、安全确认、任务和运行状态",
+    "project.get_state": "读取项目运行状态和画布摘要",
     "project.reset": "按 scope 清理失败节点或执行已确认的全量项目重置",
     "skill.get": "读取 skill 摘要或正文页",
     "skill.project_mentor": "查询项目架构、规则、文档入口和排障顺序",
@@ -761,16 +761,16 @@ _STANDARD_CANNOT_BY_NAMESPACE: dict[str, str] = {
 }
 
 _STANDARD_USAGE_BY_NAME: dict[str, str] = {
-    "interaction.request_input": "questions 提交后本轮停止，等待用户回复。",
+    "interaction.request_input": "只问阻塞项；提交后等待用户回复。",
     "agent.review": "阶段产出后调用；传目标、需求、摘要和证据；只修有证据的问题。",
     "agent.run": "workflow_spec 只选择已有 workflow 模板；node_producer 处理指定节点；image_editor 处理像素编辑。",
-    "canvas.delete": "scope='selected' 配 node_ids；scope='all' 清空当前项目画布。",
+    "canvas.delete": "按用户明确范围调用；首次调用创建结构化确认并结束当前轮。",
     "node.create": (
         "单个或少量批量创建；长正文保存用 fields.generation 后 node.run；"
         "搭框架/低风险可用 nodes，复杂媒体 prompt 或大量节点分批。"
     ),
     "node.get": (
-        "正文默认 8000 字符，按 content_page.next_offset 分页；node_ids 每次最多 20 个。"
+        "设置最小 content_limit；正文按 content_page.next_offset 分页，node_ids 每次最多 20 个。"
     ),
     "node.list": "默认返回 20 个；按 next_offset 分页，单页最多 100。",
     "node.run": (
@@ -778,7 +778,7 @@ _STANDARD_USAGE_BY_NAME: dict[str, str] = {
         "fields.generation 成功即已原子保存，无需 node.get 验证；失败读 error_kind/hint/model_feedback。"
     ),
     "node.update": "input_json 与旧 input 局部合并；不同改动用 updates，同一 patch 可配 node_ids；复杂/高风险分批。",
-    "project.get_state": "开始、继续、排障或回答状态问题前读取真实项目状态。",
+    "project.get_state": "依赖现状时读取；参数已完整时不做前置读取。",
     "skill.search": "指定 category；按 next_offset 分页。",
     "skill.get": "workflow 默认摘要；正文按 content_page.next_offset 分页。",
     "task.create": "复杂多步用 subject 或 items 建 checklist；简单任务跳过。",
@@ -797,7 +797,7 @@ _STANDARD_LIMIT_BY_NAME: dict[str, str] = {
     "interaction.request_input": "只请求用户输入，不创建、修改、删除、运行、重置或批准项目内容",
     "agent.review": "只读审查，不创建、修改、运行、删除、批准、重置或直接向用户提交",
     "node.create": "只创建节点，不运行节点",
-    "canvas.delete": "破坏性删除，必须来自当前用户明确请求并走确认",
+    "canvas.delete": "不清任务、项目 state 或标题",
     "node.get": "只读取节点",
     "node.list": "只读取节点列表",
     "node.run": "只运行现有节点，不绕过依赖或 readiness 错误",
@@ -1090,9 +1090,9 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "interaction.request_input",
         interaction_tools.request_input,
       tags=["interaction", "control"],
-      	      description=(
-	        "Request user input with one generic card for up to six short questions and wait for submission.\n"
-	        "This tool cannot create, modify, delete, reset, run, or approve project content."
+      description=(
+          "Ask one generic card with one to six short blocking questions, then wait for submission. "
+          "This interaction cannot approve or change project content."
       ),
       schema={
           "type": "object",
@@ -1648,7 +1648,10 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "project.get_state",
         project_tools.project_get_state,
         tags=["project", "read"],
-        description="读取项目运行状态和画布计数摘要；节点索引与详情分别用 node.list/node.get。",
+        description=(
+            "读取项目运行状态和画布聚合计数。仅在当前回答或操作依赖项目现状时使用；"
+            "节点索引与详情分别用 node.list/node.get。"
+        ),
     )
 
     R("drama.parse_uploaded_script", drama_tools.parse_uploaded_script, tags=["drama", "ingest"])
@@ -1693,9 +1696,28 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         tags=["canvas", "destructive"],
       description=(
         "删除指定画布节点或清空画布,并清理这些节点的本地生成产物。"
+        "首次调用只创建结构化确认并结束当前轮，确认后后端按原参数执行。"
         "scope='selected' 时传 node_ids；scope='all' 时清空当前项目画布。"
         "它不清 project state、任务或标题；用户说重置项目才用 project.reset。"
         ),
+      schema={
+          "type": "object",
+          "properties": {
+              "project_id": {"type": "string"},
+              "scope": {
+                  "type": "string",
+                  "enum": ["selected", "all"],
+                  "default": "selected",
+                  "description": "selected 删除 node_ids；all 清空当前画布。",
+              },
+              "node_ids": {
+                  "type": "array",
+                  "items": {"type": "string"},
+                  "maxItems": 100,
+                  "description": "scope=selected 时要删除的节点编号。",
+              },
+          },
+      },
     )
 
     R(

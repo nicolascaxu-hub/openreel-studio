@@ -62,7 +62,8 @@ _GUIDANCE = {
         "Keep the Agent loop small. Core production tools are project.get_state, "
         "interaction.request_input, skill.search and skill.get, task.create/list/"
         "update/complete, agent.review, node.list/get/create/update/run, canvas.delete, "
-        "and tool.search/describe/execute for deferred capabilities. Natural-language "
+        "and tool.search/describe/execute for deferred capabilities. Read the smallest "
+        "sufficient state, index, detail, or content page for each decision. Natural-language "
         "tasks enter the Agent loop; backend preprocessing may clean input and "
         "stale state but must not decide business actions for the model."
     ),

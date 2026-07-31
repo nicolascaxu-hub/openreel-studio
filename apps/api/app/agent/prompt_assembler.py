@@ -123,19 +123,21 @@ _BASELINE_NS = [
 _WORKFLOW_BUILD_NS = ["project", "interaction", "skill", "workflow"]
 _DEFAULT_TOOL_PROFILE = "default"
 _WORKFLOW_BUILD_TOOL_PROFILE = "workflow_build"
-_WORKFLOW_BUILD_SUPPRESSED_ALWAYS_SECTIONS = {
+_WORKFLOW_BUILD_SUPPRESSED_SECTIONS = {
     "working_loop",
     "task_loop",
     "core_rules",
     "delete_rule",
     "memory_write",
+    "attachment_rule",
 }
-_PLAN_SUPPRESSED_ALWAYS_SECTIONS = {
+_PLAN_SUPPRESSED_SECTIONS = {
     "working_loop",
     "task_loop",
     "core_rules",
     "delete_rule",
     "memory_write",
+    "attachment_rule",
 }
 _SUPPORTED_TRIGGERS = {"always", "factory", "plan_mode", "workflow_build_mode", "attachments"}
 _RUNTIME_STATE_CACHE_KEYS = (
@@ -220,14 +222,12 @@ def assemble_split_result(ctx: PromptContext) -> PromptAssemblyResult:
             continue
         if (
             ctx.collaboration_mode == "workflow_build"
-            and sec.trigger == "always"
-            and sec.name in _WORKFLOW_BUILD_SUPPRESSED_ALWAYS_SECTIONS
+            and sec.name in _WORKFLOW_BUILD_SUPPRESSED_SECTIONS
         ):
             continue
         if (
             ctx.collaboration_mode == "plan"
-            and sec.trigger == "always"
-            and sec.name in _PLAN_SUPPRESSED_ALWAYS_SECTIONS
+            and sec.name in _PLAN_SUPPRESSED_SECTIONS
         ):
             continue
         if not trigger_matches(sec.trigger, ctx):

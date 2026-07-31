@@ -42,6 +42,16 @@ _PRIORITY_KEYS = (
     "result",
 )
 
+_RESUMABLE_PAGE_KEYS = {
+    "content",
+    "offset",
+    "limit",
+    "returned_chars",
+    "total_chars",
+    "next_offset",
+}
+_NORMAL_DOCUMENT_STRING_MAX_TOKENS = 600
+
 
 def truncate_text_middle(text: str, max_tokens: int) -> str:
     value = str(text or "")
@@ -86,13 +96,19 @@ def bounded_json_value(value: Any, *, policy: ToolOutputPolicy, budget_tokens: i
 
     max_items = max(1, policy.max_items)
     if policy.profile == "document":
-        max_string_tokens = max(64, int(budget_tokens * 0.88))
+        max_string_tokens = max(
+            64,
+            min(_NORMAL_DOCUMENT_STRING_MAX_TOKENS, budget_tokens // 3),
+        )
+        max_page_string_tokens = max(64, int(budget_tokens * 0.88))
     else:
         max_string_tokens = max(48, min(600, budget_tokens // 3))
+        max_page_string_tokens = max_string_tokens
 
     projected = _project(
         value,
         max_string_tokens=max_string_tokens,
+        max_page_string_tokens=max_page_string_tokens,
         max_items=max_items,
         depth=0,
         max_depth=7,
@@ -102,10 +118,12 @@ def bounded_json_value(value: Any, *, policy: ToolOutputPolicy, budget_tokens: i
         if estimate_text_tokens(rendered) <= budget_tokens:
             return projected
         max_string_tokens = max(16, max_string_tokens // 2)
+        max_page_string_tokens = max(16, max_page_string_tokens // 2)
         max_items = max(1, max_items // 2)
         projected = _project(
             value,
             max_string_tokens=max_string_tokens,
+            max_page_string_tokens=max_page_string_tokens,
             max_items=max_items,
             depth=0,
             max_depth=6,
@@ -122,6 +140,7 @@ def _project(
     value: Any,
     *,
     max_string_tokens: int,
+    max_page_string_tokens: int,
     max_items: int,
     depth: int,
     max_depth: int,
@@ -136,10 +155,16 @@ def _project(
         ordered_keys = [key for key in _PRIORITY_KEYS if key in value]
         ordered_keys.extend(key for key in value if key not in ordered_keys)
         selected = ordered_keys[:max_items]
+        resumable_page = _RESUMABLE_PAGE_KEYS.issubset(value)
         projected = {
             str(key): _project(
                 value[key],
-                max_string_tokens=max_string_tokens,
+                max_string_tokens=(
+                    max_page_string_tokens
+                    if resumable_page and key == "content"
+                    else max_string_tokens
+                ),
+                max_page_string_tokens=max_page_string_tokens,
                 max_items=max_items,
                 depth=depth + 1,
                 max_depth=max_depth,
@@ -157,6 +182,7 @@ def _project(
             _project(
                 item,
                 max_string_tokens=max_string_tokens,
+                max_page_string_tokens=max_page_string_tokens,
                 max_items=max_items,
                 depth=depth + 1,
                 max_depth=max_depth,

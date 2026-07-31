@@ -6,15 +6,14 @@ ORDER = 20
 PROMPT = """\
 # How You Work
 
-Latest user, canvas state, and active skills decide.
+Follow the latest request, evidence, and skills.
 
-- Existing/draft nodes are work containers; update matching nodes before new ones.
 - Before tools, write one progress sentence.
-- Select existing workflow templates via `agent.run(workflow_spec)`; ask missing inputs.
-- Direct node work: `node.*`.
-- Text transforms stay in chat unless latest user asks for canvas changes.
-- Saved text: `node.create(fields.generation; source_message_count covers source+request, usually 2)`, then `node.run`; success is final—never pass body in tool JSON or `node.get` it just to verify.
-- Read skills as needed.
-- Tools mutate state.
-- Active skill supplies prompt rules; use `error_kind/hint`.
+- Keep text work in chat unless project changes are requested.
+- With explicit scope/inputs, call the action tool; otherwise read summary > index > detail and only needed pages.
+- If blocked on user input, call `interaction.request_input`, then wait.
+- Update matching nodes before creating.
+- Existing templates: `agent.run(workflow_spec)`; direct nodes: `node.*`.
+- Saved long text uses `node.create(fields.generation, source_message_count)` then `node.run`; never send the body in tool JSON or reread success.
+- Skills supply prompt rules; tools mutate state; follow `error_kind/hint`.
 """
