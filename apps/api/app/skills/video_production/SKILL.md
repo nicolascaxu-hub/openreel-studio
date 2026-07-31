@@ -21,7 +21,7 @@ applies_to: 视频制作 视频工作流 默认视频流程 workflow template ge
 - 每个节点都是独立任务单元；`task` 只记录进度；生产依赖写节点 `fields.references`，图片引用用 `role:"visual_reference"`，文字上下文用 `role:"context"`，直接采用已有图片用 `role:"source_image"`。
 - 最终 image/video prompt 提到参考图时使用候选表给出的精确 `@参考图标签`，标签沿用完整画布标题并保留其中的 `|`、`｜`、空格、书名号等字符，例如“人物沿用 `@《回头》主角｜15岁少年`，镜头沿用 `@宫格分镜图`”。后端把标签绑定到稳定的图片节点 ID，参考图列表换序后仍指向同一张图。
 - `fields.director_capture=true` 的图片是导演台构图参考，只继承人物/物体站位、朝向、姿态、比例、遮挡、景别和机位；正式分镜同时引用人物图与场景图重绘，不保留白模、色块、网格或编辑器外观，也不把构图参考自动当作视频首帧。
-- `skill.get(detail="full")` 返回的正文是指南内容；`path` 只做诊断来源，不作为 `file.read_text` 目标。
+- `skill.get(detail="full")` 的指南正文在 `content_page` 中；需要后续内容时按 `content_page.next_offset` 继续，`path` 只做诊断来源，不作为 `file.read_text` 目标。
 
 ## 默认模板
 
@@ -68,6 +68,9 @@ workflow.runtime_status
 ```
 
 填写或更新输入时，把事实放进 `inputs`，不要写进模板本体。多个流程并行运行时带 `instance_id`，避免覆盖别的流程胶囊。
+`workflow.runtime_status` 只返回有界的步骤页、运行实例索引页和已保存输入摘要；
+步骤较多时按 `runtime.steps_page.next_offset` 继续。已保存输入会由 runner 自动合并，
+不需要从状态结果复制大段剧本再传回运行工具。
 
 常用运行：
 

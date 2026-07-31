@@ -543,15 +543,15 @@ async def test_image_edit_preview_returns_candidate_without_mutating_node(monkey
     )
     current = await canvas_tools.get_node(node["id"])
 
-    assert result["ok"] is True
-    assert result["action"] == "preview"
-    assert result["candidate_ref"].startswith("/api/media/project-grid/image_ops/edit-preview")
-    assert result["image"]["width"] == 60
-    assert result["image"]["height"] == 40
-    assert result["_model_content_type"] == "image_edit_result"
-    assert result["_model_content_refs"] == [result["candidate_ref"]]
-    assert result["_model_content"][0]["type"] == "text"
-    assert result["_model_content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert result.value["ok"] is True
+    assert result.value["action"] == "preview"
+    assert result.value["candidate_ref"].startswith("/api/media/project-grid/image_ops/edit-preview")
+    assert result.value["image"]["width"] == 60
+    assert result.value["image"]["height"] == 40
+    assert result.content_refs == (result.value["candidate_ref"],)
+    assert result.content_parts[0].type == "text"
+    assert result.content_parts[1].type == "image_url"
+    assert result.content_parts[1].url.startswith("data:image/jpeg;base64,")
     assert current["output"]["local_url"] == "/api/media/project-grid/source.png"
 
 
@@ -583,12 +583,12 @@ async def test_image_edit_source_ref_accepts_public_node_id(monkeypatch, tmp_pat
         source_ref="0",
     )
 
-    assert result["ok"] is True
-    assert result["action"] == "preview"
-    assert result["node_id"] == "0"
-    assert result["source_ref"] == "0"
-    assert result["image"]["width"] == 60
-    assert result["image"]["height"] == 40
+    assert result.value["ok"] is True
+    assert result.value["action"] == "preview"
+    assert result.value["node_id"] == "0"
+    assert result.value["source_ref"] == "0"
+    assert result.value["image"]["width"] == 60
+    assert result.value["image"]["height"] == 40
 
 
 @pytest.mark.asyncio
@@ -616,12 +616,13 @@ async def test_image_edit_commit_updates_node_and_archives_previous_output(monke
         [{"type": "fill", "unit": "normalized", "shape": "rect", "rect": {"x": 0, "y": 0, "width": 0.5, "height": 0.5}, "style": {"type": "solid", "color": "#0000ff", "opacity": 1}}],
         action="preview",
     )
-    preview_path = Path(preview["image"]["local_path"])
+    preview_value = preview.value
+    preview_path = Path(preview_value["image"]["local_path"])
     assert preview_path.exists()
     curve_preview = await image_operations.preview_curve_image_node(
         "project-grid",
         "0",
-        source_ref=preview["candidate_ref"],
+        source_ref=preview_value["candidate_ref"],
     )
     curve_preview_path = Path(curve_preview["image"]["local_path"])
     assert curve_preview_path.exists()
@@ -632,20 +633,21 @@ async def test_image_edit_commit_updates_node_and_archives_previous_output(monke
         action="commit",
         candidate_ref=curve_preview["candidate_ref"],
     )
+    committed_value = committed.value
     updated = await canvas_tools.get_node(node["id"])
-    final_path = Path(committed["image"]["local_path"])
+    final_path = Path(committed_value["image"]["local_path"])
 
-    assert committed["ok"] is True
-    assert committed["action"] == "commit"
-    assert committed["node_id"] == "0"
+    assert committed_value["ok"] is True
+    assert committed_value["action"] == "commit"
+    assert committed_value["node_id"] == "0"
     assert updated["output"]["operation"] == "image_edit"
     assert updated["output"]["local_url"].startswith("/api/media/project-grid/image_ops/edit-final")
     assert updated["output"]["history"][0]["output"]["local_url"] == "/api/media/project-grid/source.png"
     assert final_path.exists()
     assert not preview_path.exists()
     assert not curve_preview_path.exists()
-    assert str(preview_path) in committed["cleaned_temp_files"]
-    assert str(curve_preview_path) in committed["cleaned_temp_files"]
+    assert str(preview_path) in committed_value["cleaned_temp_files"]
+    assert str(curve_preview_path) in committed_value["cleaned_temp_files"]
 
 
 @pytest.mark.asyncio

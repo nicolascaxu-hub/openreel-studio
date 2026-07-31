@@ -64,7 +64,8 @@ STALE_RUNNING_SECONDS = max(
     IMAGE_RENDER_TIMEOUT_SECONDS,
 ) + 60
 NODE_LIST_DEFAULT_LIMIT = 20
-NODE_LIST_MAX_LIMIT = 800
+NODE_LIST_MAX_LIMIT = 100
+NODE_GET_MAX_IDS = 20
 WORKFLOW_LLM_MAX_TEXT_CHARS = _env_int(
     "DRAMA_WORKFLOW_LLM_MAX_TEXT_CHARS",
     50_000,
@@ -2274,6 +2275,15 @@ async def node_get(
             "error_kind": "missing_node_id",
             "hint": "先用 node.list(query=... 或 regex=...) 获取候选节点编号；需要多个详情时一次传 node_ids。",
         }
+    if len(ids) > NODE_GET_MAX_IDS:
+        return {
+            "ok": False,
+            "error": f"node.get accepts at most {NODE_GET_MAX_IDS} node ids per call",
+            "error_kind": "too_many_node_ids",
+            "requested": len(ids),
+            "max_node_ids": NODE_GET_MAX_IDS,
+            "hint": "Split node_ids into bounded batches; use node.list filters before reading details.",
+        }
     if node_ids is None and len(ids) == 1:
         result = await _node_get_one(
             ids[0],
@@ -2374,12 +2384,10 @@ async def _node_query_candidates(
             matches.append((node, match))
 
     parsed_limit = _parse_node_list_limit(limit)
-    limit_int: int | None = None
-    if parsed_limit > 0:
-        limit_int = min(parsed_limit, NODE_LIST_MAX_LIMIT)
+    limit_int = min(parsed_limit, NODE_GET_MAX_IDS)
 
     total = len(matches)
-    limited = matches[:limit_int] if limit_int is not None else matches
+    limited = matches[:limit_int]
     return {
         "ok": True,
         "project_id": project_id,
@@ -2397,7 +2405,7 @@ async def _node_query_candidates(
             "pattern": pattern,
             "case_sensitive": case_sensitive,
             "limit": limit_int,
-            "unlimited": limit_int is None,
+            "unlimited": False,
         },
     }
 
@@ -2887,11 +2895,9 @@ def _node_list_index_item(
 
 def _parse_node_list_limit(limit: int | str | None) -> int:
     try:
-        if limit in (0, "0"):
-            return 0
         if limit in (None, ""):
             return NODE_LIST_DEFAULT_LIMIT
-        return int(limit)
+        return max(1, int(limit))
     except (TypeError, ValueError):
         return NODE_LIST_DEFAULT_LIMIT
 
@@ -2905,9 +2911,10 @@ async def node_list(
     regex: str | list[str] | None = None,
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
+    offset: int = 0,
     limit: int | None = NODE_LIST_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
-    """列出项目节点索引；默认截断，可用 limit=0 明确读取全部。
+    """列出一个有界的项目节点索引页。
 
     query/regex 用于用户说“那张图/某标题/某描述”时先找候选节点，不能把
     查询文本当 node_id 直接传给 node.get/node.run。
@@ -2942,13 +2949,13 @@ async def node_list(
             if node_key:
                 match_by_id[node_key] = match
         nodes = filtered
-    limit_int: int | None = None
-    parsed_limit = _parse_node_list_limit(limit)
-    if parsed_limit > 0:
-        limit_int = min(parsed_limit, NODE_LIST_MAX_LIMIT)
+    limit_int = min(_parse_node_list_limit(limit), NODE_LIST_MAX_LIMIT)
+    try:
+        offset_int = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset_int = 0
     total = len(nodes)
-    if limit_int is not None:
-        nodes = nodes[:limit_int]
+    nodes = nodes[offset_int:offset_int + limit_int]
     has_query = bool(query or regex or pattern)
     index_nodes = [
         _node_list_index_item(
@@ -2964,10 +2971,12 @@ async def node_list(
         "nodes": index_nodes,
         "total": total,
         "returned": len(index_nodes),
-        "truncated": len(index_nodes) < total,
+        "offset": offset_int,
+        "next_offset": offset_int + len(index_nodes) if offset_int + len(index_nodes) < total else None,
+        "truncated": bool(offset_int > 0 or offset_int + len(index_nodes) < total),
         "next_action": (
-            "节点列表已截断；需要完整索引时调用 node.list(limit=0)，需要详情时批量调用 node.get(node_ids=[...])。"
-            if len(index_nodes) < total
+            "节点列表还有后续页；传 offset=next_offset 继续，需要详情时批量调用 node.get(node_ids=[...])。"
+            if offset_int + len(index_nodes) < total
             else "需要节点详情时批量调用 node.get(node_ids=[...])。"
         ),
         "filters": {
@@ -2979,7 +2988,8 @@ async def node_list(
             "pattern": pattern,
             "case_sensitive": case_sensitive,
             "limit": limit_int,
-            "unlimited": limit_int is None,
+            "offset": offset_int,
+            "unlimited": False,
         },
     }
 

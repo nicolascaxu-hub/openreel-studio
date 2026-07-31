@@ -581,7 +581,7 @@ def test_image_editor_subagent_keeps_original_and_recent_two_images_in_visual_ta
     visual_tail: list[dict] = []
 
     for index in range(5):
-        agent_tools._append_subagent_model_content(
+        agent_tools._append_subagent_visual_context(
             visual_tail,
             [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{index}"}}],
             role="image_editor",
@@ -590,7 +590,7 @@ def test_image_editor_subagent_keeps_original_and_recent_two_images_in_visual_ta
     image_messages = [
         message
         for message in visual_tail
-        if message.get("_subagent_model_content")
+        if message.get("_subagent_visual_context")
         and any(part.get("type") == "image_url" for part in message["content"])
     ]
     urls = [message["content"][0]["image_url"]["url"] for message in image_messages]
@@ -604,25 +604,11 @@ def test_image_editor_subagent_keeps_original_and_recent_two_images_in_visual_ta
     ]
 
 
-def test_subagent_model_content_parts_keeps_tool_images_for_worker_context() -> None:
-    parts = agent_tools._subagent_model_content_parts({
-        "_model_content": [
-            {"type": "text", "text": "候选图"},
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc", "detail": "high"}},
-        ]
-    })
-
-    assert parts == [
-        {"type": "text", "text": "候选图"},
-        {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc", "detail": "high"}},
-    ]
-
-
-def test_subagent_model_content_refs_are_stored_and_can_be_dropped_from_visual_tail() -> None:
+def test_subagent_visual_context_refs_are_stored_and_can_be_dropped_from_visual_tail() -> None:
     stable_transcript = [{"role": "user", "content": "开始编辑"}]
     visual_tail: list[dict] = []
 
-    agent_tools._append_subagent_model_content(
+    agent_tools._append_subagent_visual_context(
         visual_tail,
         [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}],
         role="image_editor",
@@ -638,7 +624,7 @@ def test_subagent_model_content_refs_are_stored_and_can_be_dropped_from_visual_t
     )
 
     assert removed == 1
-    assert not any(message.get("_subagent_model_content") for message in visual_tail)
+    assert not any(message.get("_subagent_visual_context") for message in visual_tail)
     assert stable_transcript == [{"role": "user", "content": "开始编辑"}]
 
 
@@ -652,7 +638,7 @@ def test_subagent_messages_for_call_places_visual_tail_after_stable_prefix() -> 
         {
             "role": "user",
             "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}],
-            "_subagent_model_content": True,
+            "_subagent_visual_context": True,
         }
     ]
 
@@ -661,23 +647,6 @@ def test_subagent_messages_for_call_places_visual_tail_after_stable_prefix() -> 
     assert messages[:3] == stable_transcript
     assert messages[3:] == visual_tail
     assert stable_transcript[-1]["role"] == "tool"
-
-
-def test_subagent_tool_result_text_omits_model_content_bytes() -> None:
-    rendered = agent_tools._render_subagent_tool_result(
-        "image.edit",
-        {
-            "ok": True,
-            "candidate_ref": "/api/media/project/image_ops/edit-preview-1.png",
-            "_model_content": [
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "a" * 100}},
-            ],
-        },
-    )
-
-    assert "candidate_ref" in rendered
-    assert "_model_content" not in rendered
-    assert "data:image/png" not in rendered
 
 
 @pytest.mark.asyncio
@@ -747,34 +716,6 @@ def test_review_system_accepts_custom_checklist_and_skill() -> None:
     assert "不得新增分镜没有的角色" in task_message
     assert "自定义审查 skill 是本轮主要检查标准" in task_message
     assert "禁止调用任何写入、执行、生成、删除、批准、重置或配置变更工具" in system
-
-
-def test_subagent_node_get_render_keeps_media_output_before_long_prompt() -> None:
-    rendered = agent_tools._render_subagent_tool_result(
-        "node.get",
-        {
-            "id": "image-1",
-            "type": "image",
-            "status": "completed",
-                "input": {
-                    "prompt": "长提示词" * 800,
-                    "references": [{"ref": "script-1", "role": "context"}],
-            },
-            "output": {
-                "stages": [
-                    {
-                        "status": "completed",
-                        "url": "/api/media/project/image.png",
-                    }
-                ]
-            },
-        },
-    )
-
-    assert len(rendered) < agent_tools.TOOL_RESULT_TRUNCATE
-    assert "/api/media/project/image.png" in rendered
-    assert rendered.index('"output"') < rendered.index('"input"')
-    assert "script-1" in rendered
 
 
 def test_review_skill_key_loads_from_root_skill_review_dir(tmp_path, monkeypatch) -> None:

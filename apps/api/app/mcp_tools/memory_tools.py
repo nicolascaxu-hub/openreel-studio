@@ -100,24 +100,39 @@ async def memory_save_fact(
 async def memory_recall(
     project_id: str,
     kind: str | None = None,
+    offset: int = 0,
     limit: int = 50,
-) -> list[dict]:
+) -> dict[str, object]:
     try:
-        limit = int(limit)
+        parsed_offset = max(0, int(offset or 0))
     except (TypeError, ValueError):
-        limit = 50
+        parsed_offset = 0
+    try:
+        parsed_limit = max(1, min(int(limit or 50), 100))
+    except (TypeError, ValueError):
+        parsed_limit = 50
     async with session_scope() as session:
         project = await session.get(Project, project_id)
         if not project:
-            return []
+            return {"items": [], "total": 0, "returned": 0, "next_offset": None}
         state = json.loads(project.state_json or "{}")
         facts = state.get("memory", {}).get("facts", [])
         if kind:
             facts = [f for f in facts if f.get("kind") == kind]
-        # Pinned first, then most recent. Pinned never trimmed.
+        # Pinned facts sort first, but the result page is always bounded.
         pinned = [f for f in facts if f.get("pinned")]
         unpinned = [f for f in facts if not f.get("pinned")]
-        return pinned + unpinned[-max(0, limit - len(pinned)) :]
+        ordered = pinned + list(reversed(unpinned))
+        items = ordered[parsed_offset : parsed_offset + parsed_limit]
+        next_offset = parsed_offset + len(items) if parsed_offset + len(items) < len(ordered) else None
+        return {
+            "items": items,
+            "total": len(ordered),
+            "returned": len(items),
+            "offset": parsed_offset,
+            "limit": parsed_limit,
+            "next_offset": next_offset,
+        }
 
 
 async def memory_summarize_conversation(
@@ -353,16 +368,33 @@ async def memory_save_user_fact(
 
 async def memory_recall_user(
     kind: str | None = None,
+    offset: int = 0,
     limit: int = 30,
-) -> list[dict]:
+) -> dict[str, object]:
     """List user-level memories, most-recently-used first."""
+    try:
+        parsed_offset = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        parsed_offset = 0
+    try:
+        parsed_limit = max(1, min(int(limit or 30), 100))
+    except (TypeError, ValueError):
+        parsed_limit = 30
     async with session_scope() as session:
         stmt = select(UserMemory)
         if kind:
             stmt = stmt.where(UserMemory.kind == kind)
         stmt = stmt.order_by(
             UserMemory.last_used_at.desc().nullslast(), UserMemory.created_at.desc()
-        ).limit(limit)
+        ).offset(parsed_offset).limit(parsed_limit + 1)
         result = await session.exec(stmt)
         items = list(result.all())
-        return [i.model_dump() for i in items]
+        has_more = len(items) > parsed_limit
+        items = items[:parsed_limit]
+        return {
+            "items": [i.model_dump() for i in items],
+            "returned": len(items),
+            "offset": parsed_offset,
+            "limit": parsed_limit,
+            "next_offset": parsed_offset + len(items) if has_more else None,
+        }

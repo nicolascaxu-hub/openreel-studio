@@ -30,7 +30,12 @@ from app.agent.workflow_repeat_scope import (
     workflow_scopes_conflict,
 )
 from app.db.session import session_scope
-from app.mcp_tools import canvas_tools
+from app.agent.model_context.policy import (
+    COLLECTION_OUTPUT_POLICY,
+    DOCUMENT_OUTPUT_POLICY,
+    LARGE_COLLECTION_OUTPUT_POLICY,
+)
+from app.mcp_tools import canvas_tools, file_tools
 from app.mcp_tools.registry import register
 from app.agent.workflow_condition_eval import (
     workflow_step_condition_skipped as _workflow_step_condition_skipped,
@@ -1861,6 +1866,7 @@ def _active_workflow_public_summary(project_id: str, state: dict[str, Any] | Non
     "workflow.runtime_status",
     description="读取当前项目的工作流选择、运行态和已保存输入值。",
     tags=["workflow", "read"],
+    output_policy=LARGE_COLLECTION_OUTPUT_POLICY,
     is_read_only=True,
     is_concurrency_safe=True,
     search_hint=(
@@ -1878,6 +1884,10 @@ def _active_workflow_public_summary(project_id: str, state: dict[str, Any] | Non
             "project_id": {"type": "string"},
             "template_id": {"type": "string"},
             "instance_id": {"type": "string"},
+            "step_offset": {"type": "integer", "minimum": 0},
+            "step_limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            "runtime_offset": {"type": "integer", "minimum": 0},
+            "runtime_limit": {"type": "integer", "minimum": 1, "maximum": 20},
         },
     },
 )
@@ -1885,6 +1895,10 @@ async def workflow_runtime_status(
     project_id: str,
     template_id: str = "",
     instance_id: str = "",
+    step_offset: int = 0,
+    step_limit: int = 50,
+    runtime_offset: int = 0,
+    runtime_limit: int = 10,
 ) -> dict[str, Any]:
     if not project_id:
         return {"ok": False, "error": "project_id is required", "error_kind": "missing_project_id"}
@@ -1901,6 +1915,11 @@ async def workflow_runtime_status(
         template_id=resolved_template_id,
         instance_id=instance_id,
     )
+    runtime_payload = _workflow_runtime_status_step_page(
+        runtime_payload,
+        offset=step_offset,
+        limit=step_limit,
+    )
     if not resolved_template_id:
         resolved_template_id = str(runtime_payload.get("template_id") or "").strip()
     selected_instance_id = str(instance_id or runtime_payload.get("instance_id") or "").strip()
@@ -1909,6 +1928,7 @@ async def workflow_runtime_status(
         workflow_id=resolved_template_id,
         instance_id=selected_instance_id,
     )
+    runtime_payload.pop("input_values", None)
     progress = runtime_payload.get("progress") if isinstance(runtime_payload.get("progress"), dict) else {}
     if progress.get("running"):
         next_action = "等待当前步骤结束，或稍后再查 workflow.runtime_status。"
@@ -1925,11 +1945,106 @@ async def workflow_runtime_status(
         "instance_id": selected_instance_id,
         "active_workflow": active_workflow,
         "runtime": runtime_payload,
-        "runtimes": workflow_runtime_public_payloads(state, template_id=resolved_template_id),
-        "workflow_input_values": workflow_input_values,
-        "stored_inputs": workflow_input_values,
+        "runtimes": _workflow_runtime_status_index_page(
+            state,
+            template_id=resolved_template_id,
+            offset=runtime_offset,
+            limit=runtime_limit,
+        ),
+        "workflow_input_values": _workflow_input_value_summary(workflow_input_values),
+        "stored_inputs_available": bool(workflow_input_values),
         "next_action": next_action,
     }
+
+
+def _workflow_runtime_status_step_page(
+    runtime_payload: dict[str, Any],
+    *,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    payload = deepcopy(runtime_payload)
+    steps = payload.get("steps") if isinstance(payload.get("steps"), list) else []
+    start = max(0, _coerce_page_int(offset, 0))
+    size = max(1, min(_coerce_page_int(limit, 50), 100))
+    page = steps[start : start + size]
+    payload["steps"] = page
+    payload["steps_page"] = {
+        "total": len(steps),
+        "returned": len(page),
+        "offset": start,
+        "limit": size,
+        "next_offset": start + len(page) if start + len(page) < len(steps) else None,
+    }
+    return payload
+
+
+def _workflow_runtime_status_index_page(
+    state: dict[str, Any],
+    *,
+    template_id: str,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    runtime = _workflow_runtime_state(state)
+    instances = runtime.get("instances") if isinstance(runtime.get("instances"), dict) else {}
+    candidates = [
+        (str(candidate_id or ""), instance)
+        for candidate_id, instance in reversed(list(instances.items()))
+        if isinstance(instance, dict)
+        and (not template_id or str(instance.get("template_id") or "") == template_id)
+    ]
+    start = max(0, _coerce_page_int(offset, 0))
+    size = max(1, min(_coerce_page_int(limit, 10), 20))
+    selected = candidates[start : start + size]
+    items = []
+    for candidate_id, instance in selected:
+        steps = instance.get("steps") if isinstance(instance.get("steps"), dict) else {}
+        status_counts: dict[str, int] = {}
+        for step in steps.values():
+            if not isinstance(step, dict):
+                continue
+            status = str(step.get("status") or "idle")
+            status_counts[status] = status_counts.get(status, 0) + 1
+        items.append({
+            "instance_id": candidate_id,
+            "template_id": instance.get("template_id") or "",
+            "template_name": instance.get("template_name") or "",
+            "status": instance.get("status") or "",
+            "step_count": len(steps),
+            "steps_by_status": status_counts,
+            "updated_at": instance.get("updated_at") or "",
+        })
+    return {
+        "items": items,
+        "total": len(candidates),
+        "returned": len(items),
+        "offset": start,
+        "limit": size,
+        "next_offset": start + len(items) if start + len(items) < len(candidates) else None,
+    }
+
+
+def _workflow_input_value_summary(values: dict[str, Any]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for key, value in values.items():
+        item: dict[str, Any] = {"key": str(key), "type": type(value).__name__}
+        if isinstance(value, str):
+            item["chars"] = len(value)
+            item["preview"] = value[:240]
+        elif isinstance(value, (list, tuple, dict)):
+            item["items"] = len(value)
+        else:
+            item["value"] = value
+        items.append(item)
+    return {"count": len(items), "items": items[:100], "omitted": max(0, len(items) - 100)}
+
+
+def _coerce_page_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 async def workflow_runtime_delete_instance(project_id: str, instance_id: str) -> dict[str, Any]:
@@ -7224,6 +7339,7 @@ async def _emit_canvas_action(project_id: str, action: str, payload: dict[str, A
     "workflow.protocol_info",
     description="查看当前 Workflow Spec v2 合同、引用角色、执行模式和可用插件。",
     tags=["workflow", "read", "meta"],
+    output_policy=DOCUMENT_OUTPUT_POLICY,
     search_hint=(
         "workflow spec protocol capabilities extensions custom nodes import "
         "工作流 协议 能力 扩展 自定义节点 导入"
@@ -7491,6 +7607,7 @@ async def _materialize_template(
     "workflow.list_templates",
     description="列出可实例化到画布的轻量 workflow 模板目录。",
     tags=["workflow", "read"],
+    output_policy=COLLECTION_OUTPUT_POLICY,
     search_hint=(
         "canvas workflow templates scaffold graph nodes dependencies reusable short video "
         "画布 工作流 模板 骨架 节点 依赖 短剧 短视频"
@@ -7646,15 +7763,16 @@ async def workflow_template_resolve(
 
 @register(
     "workflow.template.read",
-    description="读取内置或用户 workflow 模板的 preview 或完整 workflow。",
+    description="读取内置或用户 workflow 模板的 preview；完整 workflow 按稳定 JSON 字符页返回。",
     tags=["workflow", "artifact", "read"],
+    output_policy=DOCUMENT_OUTPUT_POLICY,
     search_hint=(
         "read builtin user reusable workflow template preview full workflow semantic match "
         "读取 内置 用户 自定义 可复用 工作流 模板 预览 完整"
     ),
     usage_hints=[
         "detail='preview' 返回轻量摘要；detail='workflow' 返回完整模板结构。",
-        "detail='workflow' 返回完整结构，适合隔离上下文做语义匹配。",
+        "detail='workflow' 返回 workflow_page；按 workflow_page.next_offset 继续读取。",
     ],
     is_read_only=True,
     is_concurrency_safe=True,
@@ -7665,6 +7783,8 @@ async def workflow_template_resolve(
             "template_id": {"type": "string"},
             "version_id": {"type": "string"},
             "detail": {"type": "string", "enum": ["preview", "workflow"]},
+            "content_offset": {"type": "integer", "minimum": 0},
+            "content_limit": {"type": "integer", "minimum": 0, "maximum": 8000},
         },
         "required": ["template_id"],
     },
@@ -7674,6 +7794,8 @@ async def workflow_template_read(
     template_id: str = "",
     version_id: str = "",
     detail: str = "preview",
+    content_offset: int = 0,
+    content_limit: int | None = None,
 ) -> dict[str, Any]:
     try:
         loaded = workflow_template_store.load_user_template(template_id, version_id)
@@ -7695,7 +7817,12 @@ async def workflow_template_read(
             "self_check": {},
         }
         if str(detail or "").strip() == "workflow":
-            payload["workflow"] = deepcopy(template.get("public_spec") or {})
+            payload["workflow_page"] = file_tools.json_content_page(
+                deepcopy(template.get("public_spec") or {}),
+                offset=content_offset,
+                limit=content_limit,
+                source=f"workflow-template:{summary.get('id') or template_id}",
+            )
             payload["source"] = {"source": template.get("source") or "builtin_template"}
         return payload
     payload: dict[str, Any] = {
@@ -7710,7 +7837,12 @@ async def workflow_template_read(
         "self_check": loaded.get("self_check") or {},
     }
     if str(detail or "").strip() == "workflow":
-        payload["workflow"] = loaded.get("workflow") or {}
+        payload["workflow_page"] = file_tools.json_content_page(
+            loaded.get("workflow") or {},
+            offset=content_offset,
+            limit=content_limit,
+            source=f"workflow-template:{payload.get('template_id') or template_id}",
+        )
         payload["source"] = loaded.get("source") or {}
     return payload
 

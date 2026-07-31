@@ -70,8 +70,9 @@ from app.agent.context_compact import (
     build_compact_summary_prompt,
     compact_messages,
     compact_preserved_tail,
-    list_run_tool_result_artifacts,
 )
+from app.agent.model_context.artifact_store import list_run_tool_result_artifacts
+from app.agent.model_context.types import coerce_tool_output
 from app.agent.tool_errors import normalize_tool_result
 from app.agent.tool_output import (
     build_tool_output_envelope,
@@ -2462,7 +2463,6 @@ class AgentOrchestrator:
                 if round_progress_event.get("source") == "model"
                 else ""
             )
-            model_feedback_after_tool = False
             round_tool_context_messages: list[dict[str, Any]] = []
 
             def _append_tool_result_messages(tool_call_id: str, tool_output: dict[str, Any]) -> None:
@@ -2797,6 +2797,13 @@ class AgentOrchestrator:
 
                 # Execute tool
                 raw_result: Any = None
+                runtime_output = None
+
+                def _runtime_value_for_context(value: Any) -> Any:
+                    if runtime_output is None:
+                        return value
+                    return runtime_output.with_value(value)
+
                 try:
                     call_kwargs = self._filter_kwargs(spec.handler, tool_args)
                     _destructive = "destructive" in (spec.tags or [])
@@ -2815,7 +2822,10 @@ class AgentOrchestrator:
                     else:
                         if _destructive:
                             await self._drop_session_cache(node)
-                        raw_result = await registry.call(tool_name, **call_kwargs)
+                        runtime_output = coerce_tool_output(
+                            await registry.call(tool_name, **call_kwargs)
+                        )
+                        raw_result = runtime_output.value
                         if _destructive:
                             await self._drop_session_cache(None)
                         subagent_usage_records = _subagent_usage_records(raw_result)
@@ -2938,7 +2948,7 @@ class AgentOrchestrator:
                         # 自己改参数 / 补依赖 / 换工具,而不是后端死循环报错。
                         result = raw_result
                         tool_output = build_tool_output_envelope(
-                            result,
+                            _runtime_value_for_context(result),
                             project_id=project_id,
                             run_id=run_id,
                             iteration=iteration,
@@ -3060,7 +3070,7 @@ class AgentOrchestrator:
                                 logger.exception("interaction state patch failed")
 
                         tool_output = build_tool_output_envelope(
-                            result,
+                            _runtime_value_for_context(result),
                             project_id=project_id,
                             run_id=run_id,
                             iteration=iteration,
@@ -3224,7 +3234,7 @@ class AgentOrchestrator:
                         step_index += 1
 
                 tool_output = build_tool_output_envelope(
-                    result,
+                    _runtime_value_for_context(result),
                     project_id=project_id,
                     run_id=run_id,
                     iteration=iteration,
@@ -3463,8 +3473,6 @@ class AgentOrchestrator:
                 # Feed result back to LLM
                 _append_tool_result_messages(tool_call.id, tool_output)
 
-                if model_feedback_after_tool:
-                    break
                 if stop_after_tool:
                     break
 
@@ -3477,7 +3485,6 @@ class AgentOrchestrator:
                 iteration=iteration,
                 transition_reason="tool_round_completed",
                 stop_after_tool=stop_after_tool,
-                model_feedback_after_tool=model_feedback_after_tool,
             )
 
             # Refresh state after tool execution

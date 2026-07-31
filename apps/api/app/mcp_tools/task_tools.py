@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.task_graph import task_graph
+from app.agent.model_context.policy import COLLECTION_OUTPUT_POLICY
 from app.mcp_tools.query_match import invalid_regex_response, match_text, search_blob
 from app.mcp_tools.registry import register
 
@@ -154,6 +155,7 @@ async def task_create(
         "用于执行前检查是否已有同类任务，或在失败/残留任务影响判断时读取列表；支持 query/regex 找候选任务。"
     ),
     tags=["task", "read"],
+    output_policy=COLLECTION_OUTPUT_POLICY,
 )
 async def task_list(
     project_id: str = "",
@@ -162,7 +164,8 @@ async def task_list(
     regex: str | list[str] | None = None,
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
-    limit: int = 0,
+    offset: int = 0,
+    limit: int = 50,
 ) -> dict[str, Any]:
     invalid = invalid_regex_response(regex=regex, pattern=pattern)
     if invalid is not None:
@@ -194,14 +197,20 @@ async def task_list(
         tasks = [task for task, _ in filtered]
     else:
         task_dict_by_id = {}
+    filtered_tasks = tasks
+    filtered_total = len(filtered_tasks)
     try:
-        parsed_limit = int(limit or 0)
+        parsed_offset = max(0, int(offset or 0))
     except (TypeError, ValueError):
-        parsed_limit = 0
-    if parsed_limit > 0:
-        tasks = tasks[: min(parsed_limit, 200)]
-    ready = [t for t in tasks if t.status == "pending" and not t.is_blocked]
-    blocked = [t for t in tasks if t.status == "pending" and t.is_blocked]
+        parsed_offset = 0
+    try:
+        parsed_limit = max(1, min(int(limit or 50), 100))
+    except (TypeError, ValueError):
+        parsed_limit = 50
+    tasks = filtered_tasks[parsed_offset : parsed_offset + parsed_limit]
+    next_offset = parsed_offset + len(tasks) if parsed_offset + len(tasks) < filtered_total else None
+    ready = [t for t in filtered_tasks if t.status == "pending" and not t.is_blocked]
+    blocked = [t for t in filtered_tasks if t.status == "pending" and t.is_blocked]
     failed_tasks = [
         {
             "id": t.id,
@@ -212,23 +221,27 @@ async def task_list(
             "retry_count": t.retry_count,
             "max_retries": t.max_retries,
             "blocked_dependents": [
-                dep.id for dep in tasks if t.id in dep.blocked_by and dep.status == "pending"
+                dep.id for dep in filtered_tasks if t.id in dep.blocked_by and dep.status == "pending"
             ][:8],
         }
-        for t in tasks
+        for t in filtered_tasks
         if t.status == "failed"
     ]
     return {
         "tasks": [task_dict_by_id.get(t.id) or _task_dict_with_client_id(t) for t in tasks],
-        "total": len(tasks),
+        "total": filtered_total,
         "total_unfiltered": total_unfiltered,
-        "pending": sum(1 for t in tasks if t.status == "pending"),
+        "returned": len(tasks),
+        "offset": parsed_offset,
+        "limit": parsed_limit,
+        "next_offset": next_offset,
+        "pending": sum(1 for t in filtered_tasks if t.status == "pending"),
         "ready": len(ready),
         "blocked": len(blocked),
-        "in_progress": sum(1 for t in tasks if t.status == "in_progress"),
-        "completed": sum(1 for t in tasks if t.status == "completed"),
-        "skipped": sum(1 for t in tasks if t.status == "skipped"),
-        "failed": sum(1 for t in tasks if t.status == "failed"),
+        "in_progress": sum(1 for t in filtered_tasks if t.status == "in_progress"),
+        "completed": sum(1 for t in filtered_tasks if t.status == "completed"),
+        "skipped": sum(1 for t in filtered_tasks if t.status == "skipped"),
+        "failed": sum(1 for t in filtered_tasks if t.status == "failed"),
         "failed_tasks": failed_tasks[:12],
         "suggested_next": (
             "read_failed_task_and_repair_or_report"
@@ -242,6 +255,7 @@ async def task_list(
             "regex": regex,
             "pattern": pattern,
             "case_sensitive": case_sensitive,
+            "offset": parsed_offset,
             "limit": parsed_limit,
         },
     }

@@ -18,6 +18,7 @@ from app.agent.vision_context import (
     source_to_image_url,
     vision_metadata_payload,
 )
+from app.agent.model_context.types import ToolContentPart, ToolOutput
 from app.db.models import WorkflowNode
 from app.db.session import session_scope
 from app.services.node_public_ids import public_node_id_from_model, resolve_internal_node_id
@@ -146,7 +147,7 @@ async def view_image(
     sources: list[Any] | None = None,
     detail: str | None = None,
     max_images: int | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | ToolOutput:
     """Attach existing project images to the model context for inspection."""
     node_id = str(node_id or "").strip()
     source = str(source or "").strip()
@@ -257,12 +258,7 @@ async def view_image(
     model_text = _model_text(images, omitted_count=omitted_count, errors=errors)
     first = images[0]
     refs_payload = vision_metadata_payload(context, source="vision.view_image", tool_name="vision.view_image")
-    model_content = [{"type": "text", "text": model_text}]
-    model_content.extend(
-        {"type": "image_url", "image_url": {"url": image.image_url}}
-        for image in images
-    )
-    return {
+    payload = {
         "ok": True,
         "status": "image_attached",
         "image_count": len(images),
@@ -294,6 +290,16 @@ async def view_image(
         "message": "图片已附加给模型上下文；工具本身没有生成图片摘要。",
         "_vision_context_refs": refs_payload.get("images", []) if refs_payload else [],
         "_vision_context": refs_payload,
-        "_model_content_type": "vision_image",
-        "_model_content": model_content,
     }
+    content_parts = [ToolContentPart.text_part(model_text)]
+    content_parts.extend(ToolContentPart.image_part(image.image_url, detail="high") for image in images)
+    return ToolOutput(
+        value=payload,
+        content_parts=tuple(content_parts),
+        content_refs=tuple(
+            str(item.get("source") or "")
+            for item in (refs_payload.get("images") or [])
+            if isinstance(item, dict) and str(item.get("source") or "")
+        ),
+        contains_external_context=True,
+    )

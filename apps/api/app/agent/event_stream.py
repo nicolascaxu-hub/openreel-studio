@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -68,33 +69,74 @@ class EventStream:
         project_id: str | None = None,
         event_type: str | None = None,
         since: float | None = None,
+        offset: int = 0,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Read events from the log, newest first."""
+        start = max(0, int(offset or 0))
+        size = max(1, min(int(limit or 50), 100))
+        events: list[dict[str, Any]] = []
+        for index, event in enumerate(
+            self.iter_newest(project_id=project_id, event_type=event_type, since=since)
+        ):
+            if index < start:
+                continue
+            events.append(event)
+            if len(events) >= size:
+                break
+        return events
+
+    def iter_newest(
+        self,
+        project_id: str | None = None,
+        event_type: str | None = None,
+        since: float | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Stream matching events newest-first without loading the whole log."""
+
         path = self._file(project_id)
         if not path.exists():
-            return []
-
-        events = []
-        for line in path.read_text(encoding="utf-8").strip().splitlines():
-            if not line:
-                continue
+            return
+        for line in self._iter_lines_newest(path):
             try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
+                event = json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
-            if event_type and ev.get("type") != event_type:
+            if not isinstance(event, dict):
                 continue
-            if since and ev.get("ts", 0) < since:
+            if event_type and event.get("type") != event_type:
                 continue
-            events.append(ev)
+            if since and event.get("ts", 0) < since:
+                continue
+            yield event
 
-        events.reverse()
-        return events[:limit]
+    @staticmethod
+    def _iter_lines_newest(path: Path, block_bytes: int = 64 * 1024) -> Iterator[str]:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            position = handle.tell()
+            remainder = b""
+            while position > 0:
+                read_size = min(block_bytes, position)
+                position -= read_size
+                handle.seek(position)
+                chunk = handle.read(read_size)
+                parts = (chunk + remainder).split(b"\n")
+                remainder = parts[0]
+                for raw in reversed(parts[1:]):
+                    if raw:
+                        yield raw.decode("utf-8", errors="replace")
+            if remainder:
+                yield remainder.decode("utf-8", errors="replace")
 
-    def tail(self, project_id: str | None = None, n: int = 20) -> list[dict[str, Any]]:
+    def tail(
+        self,
+        project_id: str | None = None,
+        n: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         """Get the last N events."""
-        return self.query(project_id=project_id, limit=n)
+        return self.query(project_id=project_id, offset=offset, limit=n)
 
 
 # Global singleton

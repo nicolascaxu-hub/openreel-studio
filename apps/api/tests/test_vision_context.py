@@ -321,14 +321,13 @@ async def test_vision_view_image_returns_multimodal_tool_context(tmp_path, monke
         source="uploads/frame.png",
     )
 
-    assert result["ok"] is True
-    assert result["status"] == "image_attached"
-    assert result["image_count"] == 1
-    assert result["_vision_context_refs"][0]["source"] == "uploads/frame.png"
-    model_content = result["_model_content"]
-    assert model_content[0]["type"] == "text"
-    assert model_content[1]["type"] == "image_url"
-    assert model_content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert result.value["ok"] is True
+    assert result.value["status"] == "image_attached"
+    assert result.value["image_count"] == 1
+    assert result.value["_vision_context_refs"][0]["source"] == "uploads/frame.png"
+    assert result.content_parts[0].type == "text"
+    assert result.content_parts[1].type == "image_url"
+    assert result.content_parts[1].url.startswith("data:image/jpeg;base64,")
 
     envelope = build_tool_output_envelope(
         result,
@@ -371,13 +370,13 @@ async def test_vision_view_image_supports_batch_sources(tmp_path, monkeypatch) -
         max_images=2,
     )
 
-    assert result["ok"] is True
-    assert result["image_count"] == 2
-    assert result["omitted_count"] == 1
-    image_parts = [part for part in result["_model_content"] if part.get("type") == "image_url"]
+    assert result.value["ok"] is True
+    assert result.value["image_count"] == 2
+    assert result.value["omitted_count"] == 1
+    image_parts = [part for part in result.content_parts if part.type == "image_url"]
     assert len(image_parts) == 2
-    assert len(result["_vision_context_refs"]) == 2
-    assert "data:image/" not in json.dumps(result["_vision_context_refs"], ensure_ascii=False)
+    assert len(result.value["_vision_context_refs"]) == 2
+    assert "data:image/" not in json.dumps(result.value["_vision_context_refs"], ensure_ascii=False)
 
 
 @pytest.mark.asyncio
@@ -417,7 +416,7 @@ async def test_vision_view_image_loads_completed_image_node(tmp_path, monkeypatc
         node_id="image-node-1",
     )
 
-    assert result["ok"] is True
-    assert result["node_id"] == "image-node-1"
-    assert result["title"] == "分镜图"
-    assert result["_model_content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert result.value["ok"] is True
+    assert result.value["node_id"] == "image-node-1"
+    assert result.value["title"] == "分镜图"
+    assert result.content_parts[1].url.startswith("data:image/jpeg;base64,")

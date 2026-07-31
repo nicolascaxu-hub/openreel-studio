@@ -17,7 +17,7 @@ from app.agent.workflow_spec import (
     workflow_spec_payload,
 )
 
-from app.agent.context_compact import tool_results_dir
+from app.agent.model_context import artifact_store
 
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -46,6 +46,12 @@ _STRUCTURAL_PREVIEW_KEYS = {
     "can_run",
     "recommended_use",
 }
+
+
+def tool_results_dir() -> Path:
+    """Resolve the shared artifact root lazily so tests and runtime overrides stay coherent."""
+
+    return artifact_store.tool_results_dir()
 
 
 def _safe_project_id(project_id: str) -> str:

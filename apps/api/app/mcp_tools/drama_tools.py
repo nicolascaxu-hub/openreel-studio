@@ -94,10 +94,24 @@ async def parse_uploaded_script(
     if not text and upload_rel_path:
         from app.mcp_tools.file_tools import extract_text_from_upload
 
-        extracted = await extract_text_from_upload(project_id, upload_rel_path)
-        if extracted.get("error"):
-            return {"error": f"无法读取附件 {upload_rel_path}: {extracted['error']}"}
-        text = extracted.get("text", "")
+        pages: list[str] = []
+        next_offset: int | None = 0
+        while next_offset is not None and sum(len(page) for page in pages) < 12_000:
+            extracted = await extract_text_from_upload(
+                project_id,
+                upload_rel_path,
+                offset=next_offset,
+                limit=min(8_000, 12_000 - sum(len(page) for page in pages)),
+            )
+            if extracted.get("error"):
+                return {"error": f"无法读取附件 {upload_rel_path}: {extracted['error']}"}
+            content_page = extracted.get("content_page")
+            if not isinstance(content_page, dict):
+                break
+            pages.append(str(content_page.get("content") or ""))
+            raw_next = content_page.get("next_offset")
+            next_offset = int(raw_next) if raw_next is not None else None
+        text = "".join(pages)
     if not text:
         return {"error": "需要 text 或 upload_rel_path 之一"}
 

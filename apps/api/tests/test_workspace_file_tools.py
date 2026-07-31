@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -32,9 +33,9 @@ async def test_workspace_file_tools_cover_read_search_write_patch_delete(monkeyp
     assert regex_found["matches"][0]["path"] == "apps/api/example.py"
     assert regex_found["matches"][0]["match"]["matched_patterns"] == [r"Agent.*chestrator"]
 
-    read = await file_tools.workspace_read(path="apps/api/example.py", offset=1, limit=1)
+    read = await file_tools.workspace_read(path="apps/api/example.py", offset=0, limit=24)
     assert read["ok"] is True
-    assert read["content"] == "class AgentOrchestrator:"
+    assert read["content_page"]["content"] == "class AgentOrchestrator:"
 
     written = await file_tools.workspace_write(path="tmp/notes.txt", content="old value\n")
     assert written["ok"] is True
@@ -54,28 +55,29 @@ async def test_workspace_file_tools_cover_read_search_write_patch_delete(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_workspace_read_pages_large_text_even_when_full_read_limit_is_small(monkeypatch, tmp_path: Path) -> None:
+async def test_workspace_read_pages_large_text_by_exact_character_offset(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(file_tools.settings, "PROJECT_ROOT", str(tmp_path))
     source = tmp_path / "large.txt"
     source.write_text("\n".join(f"line-{idx}" for idx in range(1, 306)), encoding="utf-8")
 
-    first = await file_tools.workspace_read(path="large.txt", max_bytes=20)
+    first = await file_tools.workspace_read(path="large.txt", limit=37)
 
     assert first["ok"] is True
-    assert first["start_line"] == 1
-    assert first["end_line"] == 200
-    assert first["total_lines"] == 305
-    assert first["truncated"] is True
-    assert first["next_offset"] == 201
-    assert first["content"].splitlines()[0] == "line-1"
+    first_page = first["content_page"]
+    assert first_page["offset"] == 0
+    assert first_page["returned_chars"] == 37
+    assert first_page["total_chars"] > 37
+    assert first_page["next_offset"] == 37
+    assert first_page["content"].startswith("line-1\n")
 
-    second = await file_tools.workspace_read(path="large.txt", max_bytes=20, offset=first["next_offset"], limit=3)
+    second = await file_tools.workspace_read(path="large.txt", offset=first_page["next_offset"], limit=19)
 
     assert second["ok"] is True
-    assert second["content"] == "line-201\nline-202\nline-203"
-    assert second["start_line"] == 201
-    assert second["end_line"] == 203
-    assert second["next_offset"] == 204
+    second_page = second["content_page"]
+    full_text = source.read_text(encoding="utf-8")
+    assert second_page["content"] == full_text[37:56]
+    assert second_page["offset"] == 37
+    assert second_page["next_offset"] == 56
 
 
 def test_text_content_window_uses_bounded_character_pages() -> None:
@@ -92,6 +94,7 @@ def test_text_content_window_uses_bounded_character_pages() -> None:
 
     assert first == {
         "content": "甲" * 8_000,
+        "revision": hashlib.sha256(content.encode("utf-8")).hexdigest()[:16],
         "offset": 0,
         "limit": 8_000,
         "returned_chars": 8_000,
@@ -109,8 +112,8 @@ def test_text_content_window_uses_bounded_character_pages() -> None:
     assert metadata_only["content"] == ""
     assert metadata_only["next_offset"] == 0
     assert metadata_only["budget_exhausted"] is True
-    assert clamped["limit"] == 32_000
-    assert clamped["returned_chars"] == 32_000
+    assert clamped["limit"] == 8_000
+    assert clamped["returned_chars"] == 8_000
 
 
 @pytest.mark.asyncio
@@ -121,16 +124,15 @@ async def test_project_read_text_pages_uploaded_large_file(monkeypatch, tmp_path
     uploaded.parent.mkdir(parents=True)
     uploaded.write_text("\n".join(f"scene-{idx}" for idx in range(1, 8)), encoding="utf-8")
 
-    page = await file_tools.read_text(project_id="project-1", rel_path="uploads/script.txt", max_bytes=10, offset=2, limit=3)
+    page = await file_tools.read_text(project_id="project-1", rel_path="uploads/script.txt", offset=2, limit=13)
 
     assert page["ok"] is True
     assert page["path"] == "uploads/script.txt"
-    assert page["content"] == "scene-2\nscene-3\nscene-4"
-    assert page["total_lines"] == 7
-    assert page["start_line"] == 2
-    assert page["end_line"] == 4
-    assert page["truncated"] is True
-    assert page["next_offset"] == 5
+    expected = uploaded.read_text(encoding="utf-8")
+    assert page["content_page"]["content"] == expected[2:15]
+    assert page["content_page"]["total_chars"] == len(expected)
+    assert page["content_page"]["offset"] == 2
+    assert page["content_page"]["next_offset"] == 15
 
 
 @pytest.mark.asyncio
@@ -145,15 +147,14 @@ async def test_extract_text_from_upload_supports_paged_text(monkeypatch, tmp_pat
         project_id="project-1",
         rel_path="uploads/notes.md",
         offset=3,
-        limit=2,
+        limit=12,
     )
 
     assert extracted["ok"] is True
-    assert extracted["text"] == "note-3\nnote-4"
-    assert extracted["total_lines"] == 5
-    assert extracted["start_line"] == 3
-    assert extracted["end_line"] == 4
-    assert extracted["next_offset"] == 5
+    expected = uploaded.read_text(encoding="utf-8")
+    assert extracted["content_page"]["content"] == expected[3:15]
+    assert extracted["content_page"]["offset"] == 3
+    assert extracted["content_page"]["next_offset"] == 15
 
 
 @pytest.mark.asyncio

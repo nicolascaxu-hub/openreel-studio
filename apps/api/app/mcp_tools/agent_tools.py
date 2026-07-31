@@ -18,8 +18,8 @@ Design notes:
     leak across projects.
   - tool errors are NOT raised — they are written back into the transcript
     so the sub-agent can see "that didn't work" and pick a different path.
-  - tool outputs are truncated to ~2000 chars before being fed back, so the
-    sub-agent's context doesn't explode.
+  - tool outputs pass through the same typed model-context boundary as the
+    main agent, including document paging and multimodal budgets.
 """
 from __future__ import annotations
 
@@ -35,11 +35,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.agent import context_compact
 from app.agent import canvas_workflow_templates, workflow_spec_artifacts
+from app.agent.model_context.types import coerce_tool_output
 from app.agent import workflow_spec_role
 from app.agent.prompt_dump import dump_llm_request, new_run_id
 from app.agent.token_usage import build_usage_snapshot
+from app.agent.tool_output import build_tool_output_envelope
 from app.agent.vision_context import redact_image_data_urls
 from app.config import settings
 from app.db.models import Project
@@ -298,9 +299,6 @@ ROLE_PRESETS: dict[str, dict[str, Any]] = {
 DEFAULT_MAX_STEPS = 4
 MAX_SUBAGENT_STEPS = 40
 DEFAULT_MAX_CONCURRENCY = 3
-TOOL_RESULT_TRUNCATE = 2000
-WORKFLOW_SPEC_SKILL_RESULT_TRUNCATE = 24000
-WORKFLOW_SPEC_ARTIFACT_TOOL_RESULT_TRUNCATE = 5000
 SUBAGENT_IMAGE_CONTEXT_LIMIT = 3
 SUBAGENT_PROMPT_SCHEMA_VERSION = "subagent_prompt_v2"
 REVIEW_RESULT_SCHEMA_VERSION = "agent_review_result_v1"
@@ -591,34 +589,6 @@ def _clip_text(value: Any, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "...<truncated>"
-
-
-def _render_subagent_tool_result(tool_name: str, result: Any) -> str:
-    """Render read-tool output for subagents without hiding media status/URLs."""
-    if isinstance(result, dict) and any(str(key).startswith("_model_content") for key in result):
-        result = {
-            key: value
-            for key, value in result.items()
-            if not str(key).startswith("_model_content")
-        }
-    if tool_name in {"node.get", "node.run", "agent.review"}:
-        payload = {
-            "compact_summary": True,
-            "tool": tool_name,
-            "summary": context_compact.summarize_tool_result_for_context(tool_name, result),
-        }
-        return json.dumps(payload, ensure_ascii=False, default=str)
-    return json.dumps(result, ensure_ascii=False, default=str)
-
-
-def _subagent_tool_result_limit(role: str, tool_name: str) -> int:
-    if role == WORKFLOW_SPEC_ROLE_NAME and tool_name == "skill.get":
-        return WORKFLOW_SPEC_SKILL_RESULT_TRUNCATE
-    if role == WORKFLOW_SPEC_ROLE_NAME and tool_name in {"workflow.spec.read", "workflow.template.read"}:
-        return WORKFLOW_SPEC_SKILL_RESULT_TRUNCATE
-    if role == WORKFLOW_SPEC_ROLE_NAME and tool_name.startswith("workflow.spec."):
-        return WORKFLOW_SPEC_ARTIFACT_TOOL_RESULT_TRUNCATE
-    return TOOL_RESULT_TRUNCATE
 
 
 def _coerce_score(value: Any, default: int) -> int:
@@ -1432,7 +1402,7 @@ def _drop_subagent_image_context_for_refs(transcript: list[dict], refs: list[str
     removed = 0
     for index in range(len(transcript) - 1, -1, -1):
         message = transcript[index]
-        if not message.get("_subagent_model_content"):
+        if not message.get("_subagent_visual_context"):
             continue
         if _message_image_refs(message).isdisjoint(targets):
             continue
@@ -1615,6 +1585,7 @@ def _image_editor_after_tool_call(
     tool_name: str,
     tool_input: dict[str, Any],
     result: Any,
+    has_visual_context: bool = False,
 ) -> None:
     if state is None or not isinstance(result, dict) or result.get("ok") is False:
         return
@@ -1623,14 +1594,13 @@ def _image_editor_after_tool_call(
         if action == "preview":
             ref = _normalize_image_ref(result.get("candidate_ref"))
             if ref:
-                attached = bool(result.get("_model_content"))
                 _mark_image_editor_candidate(
                     state,
                     ref,
-                    "viewed" if attached else "preview",
+                    "viewed" if has_visual_context else "preview",
                     source_ref=_normalize_image_ref(result.get("source_ref")),
                     reason="preview_created",
-                    viewed=attached,
+                    viewed=has_visual_context,
                 )
         elif action == "commit":
             candidate_ref = _normalize_image_ref(tool_input.get("candidate_ref"))
@@ -1668,11 +1638,11 @@ def _image_editor_context_keep_refs(state: dict[str, Any] | None) -> set[str]:
     return keep
 
 
-def _prune_image_editor_model_content(transcript: list[dict], state: dict[str, Any] | None) -> None:
+def _prune_image_editor_visual_context(transcript: list[dict], state: dict[str, Any] | None) -> None:
     image_messages = [
         index
         for index, message in enumerate(transcript)
-        if message.get("_subagent_model_content")
+        if message.get("_subagent_visual_context")
         and isinstance(message.get("content"), list)
         and any(isinstance(part, dict) and part.get("type") == "image_url" for part in message["content"])
     ]
@@ -1718,41 +1688,11 @@ def _image_editor_lifecycle_summary(state: dict[str, Any] | None) -> dict[str, A
     }
 
 
-def _subagent_model_content_parts(result: Any) -> list[dict[str, Any]]:
-    if not isinstance(result, dict):
-        return []
-    raw = result.get("_model_content")
-    if not isinstance(raw, list):
-        return []
-    parts: list[dict[str, Any]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        kind = item.get("type")
-        if kind == "text":
-            text = str(item.get("text") or "")
-            if text:
-                parts.append({"type": "text", "text": text})
-        elif kind == "image_url":
-            image_url = item.get("image_url")
-            if isinstance(image_url, dict):
-                url = str(image_url.get("url") or "")
-                if url:
-                    payload = {"url": url}
-                    detail = image_url.get("detail")
-                    if detail not in (None, "", [], {}):
-                        payload["detail"] = str(detail)
-                    parts.append({"type": "image_url", "image_url": payload})
-    return parts
-
-
-def _subagent_model_content_refs(result: Any) -> list[str]:
+def _subagent_content_refs(result: Any, explicit_refs: list[str] | None = None) -> list[str]:
     if not isinstance(result, dict):
         return []
     refs: list[Any] = []
-    model_refs = result.get("_model_content_refs")
-    if isinstance(model_refs, list):
-        refs.extend(model_refs)
+    refs.extend(explicit_refs or [])
     refs.extend(_image_refs_from_vision_result(result))
     refs.extend([
         result.get("candidate_ref"),
@@ -1762,7 +1702,7 @@ def _subagent_model_content_refs(result: Any) -> list[str]:
     return _dedupe_refs(refs)
 
 
-def _append_subagent_model_content(
+def _append_subagent_visual_context(
     transcript: list[dict],
     parts: list[dict[str, Any]],
     *,
@@ -1775,11 +1715,11 @@ def _append_subagent_model_content(
     transcript.append({
         "role": "user",
         "content": parts,
-        "_subagent_model_content": True,
+        "_subagent_visual_context": True,
         "_subagent_image_refs": _dedupe_refs(refs or []),
     })
     if role == IMAGE_EDITOR_ROLE_NAME:
-        _prune_image_editor_model_content(transcript, image_editor_state)
+        _prune_image_editor_visual_context(transcript, image_editor_state)
 
 
 def _coerce_result_ref_list(value: Any) -> list[str]:
@@ -2901,7 +2841,10 @@ async def _subagent_loop(
                         input=tool_input,
                         candidate_status=_image_editor_candidate_status_payload(response_payload),
                     )
-                    result = await registry.call(tool_name, **tool_input)
+                    runtime_output = coerce_tool_output(
+                        await registry.call(tool_name, **tool_input)
+                    )
+                    result = runtime_output.value
                     if tool_name == "node.create":
                         _record_subagent_created_nodes(write_scope, result)
                     if role == IMAGE_EDITOR_ROLE_NAME:
@@ -2910,12 +2853,17 @@ async def _subagent_loop(
                             tool_name=tool_name,
                             tool_input=tool_input,
                             result=result,
+                            has_visual_context=bool(runtime_output.content_parts),
                         )
                     ok = not (isinstance(result, dict) and result.get("error"))
-                    rendered = _render_subagent_tool_result(tool_name, result)
-                    result_limit = _subagent_tool_result_limit(role, tool_name)
-                    if len(rendered) > result_limit:
-                        rendered = rendered[:result_limit] + "...<truncated>"
+                    output_envelope = build_tool_output_envelope(
+                        runtime_output,
+                        project_id=project_id,
+                        run_id=subagent_dump_run_id,
+                        iteration=step_no,
+                        tool_name=tool_name,
+                    )
+                    rendered = str(output_envelope["model_visible"]["content"])
                     tool_entry = {
                         "tool": tool_name,
                         "input": tool_input,
@@ -2943,13 +2891,16 @@ async def _subagent_loop(
                         "tool_call_id": tool_call_id,
                         "content": rendered,
                     })
-                    model_parts = _subagent_model_content_parts(result)
+                    model_parts = list(output_envelope["model_visible"]["content_parts"])
                     if model_parts:
-                        _append_subagent_model_content(
+                        _append_subagent_visual_context(
                             visual_tail,
                             model_parts,
                             role=role,
-                            refs=_subagent_model_content_refs(result),
+                            refs=_subagent_content_refs(
+                                result,
+                                list(runtime_output.content_refs),
+                            ),
                             image_editor_state=image_editor_state,
                         )
                 except Exception as exc:

@@ -266,9 +266,8 @@ def test_node_get_exposes_bounded_text_content_window() -> None:
     assert "0-based" in properties["content_offset"]["description"]
     assert properties["content_limit"]["type"] == "integer"
     assert properties["content_limit"]["minimum"] == 0
-    assert properties["content_limit"]["maximum"] == 32_000
-    assert "默认 8000" in properties["content_limit"]["description"]
-    assert "最大 32000" in properties["content_limit"]["description"]
+    assert properties["content_limit"]["maximum"] == 8_000
+    assert "默认及最大 8000" in properties["content_limit"]["description"]
     assert "content_page.next_offset" in spec.description
 
 
@@ -506,7 +505,7 @@ def test_registered_tool_specs_expose_boundary_metadata() -> None:
         "is_destructive",
         "requires_confirmation",
         "is_concurrency_safe",
-        "max_result_size",
+        "output_policy",
     }
     missing: list[str] = []
     for spec in registry.list_tools():
@@ -528,6 +527,9 @@ def test_registered_tool_specs_expose_boundary_metadata() -> None:
     assert canvas_delete is not None
     assert canvas_delete.is_destructive is True
     assert canvas_delete.requires_confirmation is True
+    for spec in registry.list_tools():
+        assert 0 < spec.output_policy.default_model_tokens <= spec.output_policy.max_model_tokens
+        assert spec.output_policy.max_model_tokens <= 10_000
 
 def test_tool_error_normalizer_fills_missing_contract_fields() -> None:
     from app.agent.tool_errors import normalize_tool_result
@@ -540,9 +542,7 @@ def test_tool_error_normalizer_fills_missing_contract_fields() -> None:
     assert result["tool"] == "project.get_state"
     assert result["hint"]
     assert result["suggested_next"] == "model_decides"
-    assert result["model_feedback"]["what_went_wrong"] == "Project not found"
-    assert result["model_feedback"]["how_to_fix"] == result["hint"]
-    assert "不要用完全相同参数重复调用" in result["model_feedback"]["retry_policy"]
+    assert "model_feedback" not in result
 
 def test_tool_error_normalizer_maps_common_id_errors_to_state_recovery() -> None:
     from app.agent.tool_errors import normalize_tool_result
@@ -560,8 +560,9 @@ def test_tool_error_normalizer_maps_common_id_errors_to_state_recovery() -> None
 
     assert result["suggested_next"] == "read_state"
     assert "节点编号" in result["hint"]
-    assert result["model_feedback"]["evidence"]["node_id"] == "segment_01"
-    assert result["model_feedback"]["evidence"]["available_node_ids"] == ["story_synopsis", "characters"]
+    assert result["node_id"] == "segment_01"
+    assert result["available_node_ids"] == ["story_synopsis", "characters"]
+    assert "model_feedback" not in result
 
 def test_tool_error_normalizer_preserves_confirmation_requests() -> None:
     from app.agent.tool_errors import normalize_tool_result
@@ -623,7 +624,9 @@ def test_node_read_tools_support_index_then_batch_detail_contract() -> None:
     assert "query" in list_props
     assert "regex" in list_props
     assert "默认返回 20" in (list_spec.description or "")
-    assert "limit=0" in (list_spec.description or "")
+    assert "next_offset" in (list_spec.description or "")
+    assert list_props["limit"]["maximum"] == 100
+    assert list_props["offset"]["minimum"] == 0
 
 @pytest.mark.asyncio
 async def test_agent_can_request_context_compaction_via_deferred_tool() -> None:

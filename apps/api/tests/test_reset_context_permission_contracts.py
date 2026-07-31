@@ -754,6 +754,54 @@ def test_project_get_state_display_returns_detached_state() -> None:
     assert result is not state
 
 
+def test_project_get_state_summarizes_large_runtime_collections() -> None:
+    from app.mcp_tools import project_tools
+
+    state = {
+        "memory": {"facts": [{"pinned": True}, {"pinned": False}]},
+        "active_workflow": {
+            "kind": "imported",
+            "workflow": {"id": "wf-1", "steps": [{"id": "a"}, {"id": "b"}]},
+        },
+        "workflow_runtime": {
+            "instances": {
+                "one": {"status": "running", "steps": {"large": "x" * 20_000}},
+                "two": {"status": "completed"},
+            }
+        },
+        "workflow_input_values": {
+            "by_workflow": {"wf-1": {"values": {"script": "x" * 20_000}}},
+            "by_instance": {"one": {"values": {"script": "x" * 20_000}}},
+        },
+        "episodes": [{"script": "x" * 20_000}],
+        "director_desk": {
+            "version": 1,
+            "revision": 12,
+            "captures": [{"pixels": "x" * 20_000}],
+            "model_assets": [{"data": "x" * 20_000}],
+        },
+    }
+
+    result = project_tools._project_state_for_status_display(state)
+
+    assert "memory" not in result
+    assert "workflow_runtime" not in result
+    assert "workflow_input_values" not in result
+    assert "episodes" not in result
+    assert "director_desk" not in result
+    assert result["memory_summary"] == {
+        "fact_count": 2,
+        "pinned_count": 1,
+        "detail_tool": "memory.recall",
+    }
+    assert result["active_workflow"]["workflow_id"] == "wf-1"
+    assert result["active_workflow"]["step_count"] == 2
+    assert result["workflow_runtime_summary"]["instance_count"] == 2
+    assert result["episodes_summary"]["count"] == 1
+    assert result["director_desk_summary"]["capture_count"] == 1
+    assert result["director_desk_summary"]["model_asset_count"] == 1
+
+
 @pytest.mark.asyncio
 async def test_project_get_state_overlays_db_workflow_snapshot(monkeypatch) -> None:
     from app.mcp_tools import project_tools
@@ -776,24 +824,31 @@ async def test_project_get_state_overlays_db_workflow_snapshot(monkeypatch) -> N
                 "workflow": {"nodes": [], "edges": []},
             }
 
-    async def fake_list_nodes(project_id: str):
+    async def fake_canvas_summary(session, project_id: str):
+        assert session is not None
         assert project_id == "proj-1"
-        return [{"id": "node-1", "type": "image", "status": "idle"}]
-
-    async def fake_list_edges(project_id: str):
-        assert project_id == "proj-1"
-        return [{"id": "edge-1", "source": "node-1", "target": "node-2"}]
+        return {
+            "node_count": 1,
+            "edge_count": 1,
+            "by_type": {"image": 1},
+            "by_status": {"idle": 1},
+            "detail_tool": "node.list",
+            "hint": "Use node.list for a bounded node index page and node.get for selected details.",
+        }
 
     monkeypatch.setattr(project_tools, "session_scope", lambda: FakeSessionScope())
     monkeypatch.setattr(project_tools, "ProjectService", FakeProjectService)
-    monkeypatch.setattr(project_tools.canvas_tools, "list_nodes", fake_list_nodes)
-    monkeypatch.setattr(project_tools.canvas_tools, "list_edges", fake_list_edges)
+    monkeypatch.setattr(project_tools, "_load_canvas_state_summary", fake_canvas_summary)
 
     result = await project_tools.project_get_state("proj-1")
 
     assert result["workflow"] == {
-        "nodes": [{"id": "node-1", "type": "image", "status": "idle"}],
-        "edges": [{"id": "edge-1", "source": "node-1", "target": "node-2"}],
+        "node_count": 1,
+        "edge_count": 1,
+        "by_type": {"image": 1},
+        "by_status": {"idle": 1},
+        "detail_tool": "node.list",
+        "hint": "Use node.list for a bounded node index page and node.get for selected details.",
     }
 
 

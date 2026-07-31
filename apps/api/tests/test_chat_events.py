@@ -182,17 +182,20 @@ def test_tool_done_event_keeps_tool_output_envelope() -> None:
             "round": 1,
             "result": {"ok": True, "node_id": "node-1"},
             "tool_output": {
-                "version": "tool_output_v1",
+                "version": "tool_output_v2",
+                "success": True,
+                "outcome": "success",
+                "handler_ok": True,
                 "summary": {"ok": True},
                 "compacted": False,
-                "artifact_path": None,
-                "raw_result_chars": 32,
-                "model_visible_chars": 32,
+                "artifact_ref": None,
+                "raw_result_tokens": 8,
+                "model_visible_tokens": 8,
             },
         }
     )
 
-    assert event["tool_output"]["version"] == "tool_output_v1"
+    assert event["tool_output"]["version"] == "tool_output_v2"
     assert event["tool_output"]["compacted"] is False
     assert event["result"]["node_id"] == "node-1"
 

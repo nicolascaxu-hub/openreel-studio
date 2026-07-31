@@ -52,7 +52,7 @@ async def test_markdown_skills_default_to_project_root_skills(tmp_path, monkeypa
     loaded_full = await skill_tools.skill_get_skill("custom_flow", category="workflow", detail="full")
     assert loaded_full["ok"] is True
     assert loaded_full["detail"] == "full"
-    assert "自定义流程" in loaded_full["content"]
+    assert "自定义流程" in loaded_full["content_page"]["content"]
 
     loaded_with_scope = await skill_tools.skill_get_skill("custom_flow", category="workflow", scope="user")
     assert loaded_with_scope["ok"] is True
@@ -82,7 +82,7 @@ async def test_markdown_skills_can_use_explicit_skills_dir(tmp_path, monkeypatch
 
     loaded = await skill_tools.skill_get_skill("bright_prompt", category="prompt")
     assert loaded["ok"] is True
-    assert "画面明亮" in loaded["content"]
+    assert "画面明亮" in loaded["content_page"]["content"]
 
 
 @pytest.mark.asyncio
@@ -247,7 +247,7 @@ async def test_review_skills_are_searched_separately_and_prefer_reviewer(tmp_pat
     loaded_for_self_check = await skill_tools.skill_get_skill("storyboard_frame_check", category="review")
     assert loaded_for_self_check["ok"] is True
     assert loaded_for_self_check["preferred_tool"] == "agent.review"
-    assert "逐格检查" in loaded_for_self_check["content"]
+    assert "逐格检查" in loaded_for_self_check["content_page"]["content"]
 
     loaded = skill_tools.load_review_skill_by_key("storyboard_frame_check")
     assert loaded["ok"] is True

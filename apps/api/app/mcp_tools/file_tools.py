@@ -19,12 +19,9 @@ from typing import Any
 from app.config import settings
 from app.mcp_tools.query_match import invalid_regex_response, match_text, search_blob
 
-TEXT_FULL_READ_MAX_BYTES = 200_000
-TEXT_WINDOW_DEFAULT_LINES = 200
-TEXT_WINDOW_MAX_LINES = 1_000
-TEXT_WINDOW_MAX_CHARS = 80_000
+TEXT_SOURCE_MAX_BYTES = 10 * 1024 * 1024
 TEXT_CONTENT_WINDOW_DEFAULT_CHARS = 8_000
-TEXT_CONTENT_WINDOW_MAX_CHARS = 32_000
+TEXT_CONTENT_WINDOW_MAX_CHARS = 8_000
 
 
 def _root() -> Path:
@@ -93,12 +90,6 @@ def _entry_payload(path: Path) -> dict[str, Any]:
     }
 
 
-def _text_total_lines(text: str) -> int:
-    if not text:
-        return 0
-    return text.count("\n") + 1
-
-
 def _bounded_int(value: Any, default: int, *, minimum: int = 1, maximum: int = 10_000_000) -> int:
     try:
         parsed = int(value)
@@ -107,18 +98,6 @@ def _bounded_int(value: Any, default: int, *, minimum: int = 1, maximum: int = 1
     if parsed <= 0:
         parsed = default
     return max(minimum, min(parsed, maximum))
-
-
-def _line_limit(value: int, default: int = TEXT_WINDOW_DEFAULT_LINES) -> int:
-    return _bounded_int(value, default, maximum=TEXT_WINDOW_MAX_LINES)
-
-
-def _start_line(value: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = 0
-    return max(1, parsed if parsed > 0 else 1)
 
 
 def text_content_window_limit(value: Any = None) -> int:
@@ -156,6 +135,7 @@ def text_content_window(
     next_offset = end if has_more else None
     return {
         "content": window,
+        "revision": hashlib.sha256(content.encode("utf-8")).hexdigest()[:16],
         "offset": start,
         "limit": normalized_limit,
         "returned_chars": len(window),
@@ -173,185 +153,56 @@ def text_content_window(
     }
 
 
-def _full_text_payload(
+def json_content_page(
+    value: Any,
     *,
-    path_label: str,
-    target: Path,
-    text: str,
-    size: int,
-    mode: str = "text",
+    offset: int = 0,
+    limit: int | None = None,
+    source: str = "document.json",
 ) -> dict[str, Any]:
-    total_lines = _text_total_lines(text)
-    return {
-        "ok": True,
-        "path": path_label,
-        "mode": mode,
-        "content": text,
-        "size": size,
-        "total_lines": total_lines,
-        "start_line": 1 if total_lines else 0,
-        "end_line": total_lines,
-        "truncated": False,
-        "next_offset": None,
-        "mime_type": mimetypes.guess_type(target.name)[0],
-    }
+    """Serialize structured data deterministically and expose one resumable text page."""
+
+    rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    page = text_content_window(rendered, offset=offset, limit=limit)
+    page["source"] = source
+    page["media_type"] = "application/json"
+    page["revision"] = hashlib.sha256(rendered.encode("utf-8")).hexdigest()[:16]
+    return page
 
 
-def _window_payload_from_lines(
-    *,
-    path_label: str,
-    target: Path,
-    lines: list[str],
-    size: int,
-    offset: int,
-    limit: int,
-    max_chars: int = TEXT_WINDOW_MAX_CHARS,
-    total_lines: int | None = None,
-    mode: str = "text",
-) -> dict[str, Any]:
-    start = _start_line(offset)
-    line_limit = _line_limit(limit)
-    stop = start + line_limit - 1
-    clipped: list[str] = []
-    char_count = 0
-    truncated_by_chars = False
-    end_line = start - 1
-    max_chars = _bounded_int(max_chars, TEXT_WINDOW_MAX_CHARS, maximum=TEXT_WINDOW_MAX_CHARS)
-
-    for line_number, raw_line in enumerate(lines, start=1):
-        if line_number < start or line_number > stop:
-            continue
-        line = raw_line.rstrip("\n").rstrip("\r")
-        separator_chars = 1 if clipped else 0
-        remaining = max_chars - char_count - separator_chars
-        if remaining <= 0:
-            truncated_by_chars = True
-            break
-        if len(line) > remaining:
-            clipped.append(line[:remaining])
-            char_count = max_chars
-            truncated_by_chars = True
-            end_line = line_number
-            break
-        clipped.append(line)
-        char_count += len(line) + separator_chars
-        end_line = line_number
-
-    total = len(lines) if total_lines is None else total_lines
-    content = "\n".join(clipped)
-    has_more_lines = end_line < total
-    next_offset = end_line + 1 if end_line >= start and has_more_lines else None
-    return {
-        "ok": True,
-        "path": path_label,
-        "mode": mode,
-        "content": content,
-        "size": size,
-        "total_lines": total,
-        "start_line": start if total else 0,
-        "end_line": end_line if end_line >= start else min(start - 1, total),
-        "limit": line_limit,
-        "truncated": bool(start > 1 or has_more_lines or truncated_by_chars),
-        "next_offset": next_offset,
-        "content_truncated_by_chars": truncated_by_chars,
-        "mime_type": mimetypes.guess_type(target.name)[0],
-        "hint": (
-            "Continue with offset=next_offset and a line limit when more content is needed."
-            if next_offset
-            else None
-        ),
-    }
-
-
-def _read_text_window_from_file(
-    *,
-    path_label: str,
-    target: Path,
-    size: int,
-    offset: int,
-    limit: int,
-    max_chars: int = TEXT_WINDOW_MAX_CHARS,
-) -> dict[str, Any]:
-    # Uploads are capped, but workspace files may be larger. Read line by line so
-    # a page can be returned without constructing a full-file string.
-    lines: list[str] = []
-    total = 0
-    start = _start_line(offset)
-    line_limit = _line_limit(limit)
-    stop = start + line_limit - 1
-    char_count = 0
-    truncated_by_chars = False
-    with target.open("r", encoding="utf-8", errors="replace") as handle:
-        for line_number, raw_line in enumerate(handle, start=1):
-            total = line_number
-            if line_number < start or line_number > stop or truncated_by_chars:
-                continue
-            line = raw_line.rstrip("\n").rstrip("\r")
-            separator_chars = 1 if lines else 0
-            remaining = max_chars - char_count - separator_chars
-            if remaining <= 0:
-                truncated_by_chars = True
-                continue
-            if len(line) > remaining:
-                lines.append(line[:remaining])
-                char_count = max_chars
-                truncated_by_chars = True
-                continue
-            lines.append(line)
-            char_count += len(line) + separator_chars
-
-    end_line = start + len(lines) - 1
-    has_more_lines = end_line < total
-    next_offset = end_line + 1 if lines and has_more_lines else None
-    return {
-        "ok": True,
-        "path": path_label,
-        "mode": "text",
-        "content": "\n".join(lines),
-        "size": size,
-        "total_lines": total,
-        "start_line": start if total else 0,
-        "end_line": end_line if lines else min(start - 1, total),
-        "limit": line_limit,
-        "truncated": bool(start > 1 or has_more_lines or truncated_by_chars),
-        "next_offset": next_offset,
-        "content_truncated_by_chars": truncated_by_chars,
-        "mime_type": mimetypes.guess_type(target.name)[0],
-        "hint": (
-            "Continue with offset=next_offset and a line limit when more content is needed."
-            if next_offset
-            else None
-        ),
-    }
-
-
-def _read_text_payload(
+def read_text_file_page(
     *,
     path_label: str,
     target: Path,
     max_bytes: int,
     offset: int,
-    limit: int,
+    limit: int | None,
 ) -> dict[str, Any]:
     size = target.stat().st_size
-    max_bytes = _bounded_int(max_bytes, TEXT_FULL_READ_MAX_BYTES)
-    if offset > 0 or limit > 0 or size > max_bytes:
-        return _read_text_window_from_file(
-            path_label=path_label,
-            target=target,
-            size=size,
-            offset=offset,
-            limit=limit,
-        )
+    max_bytes = _bounded_int(max_bytes, TEXT_SOURCE_MAX_BYTES, maximum=TEXT_SOURCE_MAX_BYTES)
+    if size > max_bytes:
+        return {
+            "ok": False,
+            "error": f"Text source is larger than the {max_bytes}-byte safety limit",
+            "error_kind": "file_too_large",
+            "path": path_label,
+            "size": size,
+            "max_bytes": max_bytes,
+        }
     raw = target.read_bytes()
     text = raw.decode("utf-8", errors="replace")
-    return _full_text_payload(path_label=path_label, target=target, text=text, size=size)
-
-
-def _as_extract_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    result = dict(payload)
-    result["text"] = result.pop("content", "")
-    return result
+    page = text_content_window(text, offset=offset, limit=limit)
+    page["source"] = path_label
+    page["revision"] = hashlib.sha256(raw).hexdigest()[:16]
+    return {
+        "ok": True,
+        "path": path_label,
+        "mode": "text",
+        "size": size,
+        "encoding": "utf-8",
+        "mime_type": mimetypes.guess_type(target.name)[0],
+        "content_page": page,
+    }
 
 
 _WORKSPACE_SEARCH_SKIP_DIRS = {
@@ -395,7 +246,8 @@ async def workspace_list(
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
     recursive: bool = False,
-    max_entries: int = 200,
+    offset: int = 0,
+    max_entries: int = 50,
 ) -> dict:
     """List files under the repository workspace."""
     invalid = invalid_regex_response(regex=regex, pattern=pattern)
@@ -407,9 +259,14 @@ async def workspace_list(
         return {"ok": False, "error": str(exc), "error_kind": "workspace_path_denied"}
     if not base.exists():
         return {"ok": False, "error": "Path not found", "error_kind": "file_not_found", "path": path}
-    max_entries = max(1, min(int(max_entries or 200), 2000))
+    max_entries = max(1, min(int(max_entries or 50), 100))
+    try:
+        offset_value = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset_value = 0
     entries: list[dict[str, Any]] = []
-    truncated = False
+    scan_truncated = False
+    scan_limit = 10_000
     if recursive:
         for root, dir_names, file_names in os.walk(base):
             dir_names[:] = [name for name in dir_names if name not in _WORKSPACE_SEARCH_SKIP_DIRS]
@@ -417,16 +274,16 @@ async def workspace_list(
             for name in sorted([*dir_names, *file_names]):
                 item = current / name
                 entries.append(_entry_payload(item))
-                if len(entries) >= max_entries:
-                    truncated = True
+                if len(entries) >= scan_limit:
+                    scan_truncated = True
                     break
-            if truncated:
+            if scan_truncated:
                 break
     elif base.is_dir():
         for entry in sorted(base.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
             entries.append(_entry_payload(entry))
-            if len(entries) >= max_entries:
-                truncated = True
+            if len(entries) >= scan_limit:
+                scan_truncated = True
                 break
     else:
         entries.append(_entry_payload(base))
@@ -442,44 +299,46 @@ async def workspace_list(
                 case_sensitive=case_sensitive,
             ).get("matched")
         ]
-    return {"ok": True, "root": str(_workspace_root()), "path": _workspace_rel(base), "entries": entries, "truncated": truncated}
+    total = len(entries)
+    page = entries[offset_value:offset_value + max_entries]
+    next_offset = offset_value + len(page) if offset_value + len(page) < total else None
+    return {
+        "ok": True,
+        "root": str(_workspace_root()),
+        "path": _workspace_rel(base),
+        "entries": page,
+        "total": total,
+        "returned": len(page),
+        "offset": offset_value,
+        "limit": max_entries,
+        "next_offset": next_offset,
+        "truncated": bool(scan_truncated or offset_value > 0 or next_offset is not None),
+        "scan_truncated": scan_truncated,
+    }
 
 
 async def workspace_read(
     path: str,
     mode: str = "text",
-    max_bytes: int = TEXT_FULL_READ_MAX_BYTES,
+    max_bytes: int = TEXT_SOURCE_MAX_BYTES,
     offset: int = 0,
-    limit: int = 0,
+    limit: int | None = None,
 ) -> dict:
-    """Read a workspace file as text or base64."""
+    """Read one bounded character page from a workspace text file."""
     try:
         target = _workspace_safe_path(path)
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "error_kind": "workspace_path_denied"}
     if not target.exists() or not target.is_file():
         return {"ok": False, "error": "File not found", "error_kind": "file_not_found", "path": path}
-    max_bytes = max(1, min(int(max_bytes or TEXT_FULL_READ_MAX_BYTES), 10_000_000))
-    size = target.stat().st_size
-    if mode == "base64" and size > max_bytes:
+    if mode != "text":
         return {
             "ok": False,
-            "error": f"File too large (> {max_bytes} bytes)",
-            "error_kind": "file_too_large",
+            "error": "workspace_read only returns text; use vision.view_image or a media-specific reader for binary files",
+            "error_kind": "binary_read_not_supported",
             "path": _workspace_rel(target),
-            "size": size,
         }
-    if mode == "base64":
-        raw = target.read_bytes()
-        return {
-            "ok": True,
-            "path": _workspace_rel(target),
-            "mode": "base64",
-            "content_base64": base64.b64encode(raw).decode("ascii"),
-            "size": size,
-            "mime_type": mimetypes.guess_type(target.name)[0],
-        }
-    return _read_text_payload(
+    return read_text_file_page(
         path_label=_workspace_rel(target),
         target=target,
         max_bytes=max_bytes,
@@ -497,6 +356,7 @@ async def workspace_search(
     case_sensitive: bool = False,
     recursive: bool = True,
     include_content: bool = True,
+    offset: int = 0,
     max_results: int = 50,
     max_file_bytes: int = 200_000,
 ) -> dict:
@@ -509,7 +369,12 @@ async def workspace_search(
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "error_kind": "workspace_path_denied"}
     query_text = str(query or "")
-    max_results = max(1, min(int(max_results or 50), 500))
+    max_results = max(1, min(int(max_results or 50), 100))
+    try:
+        offset_value = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset_value = 0
+    collect_until = offset_value + max_results + 1
     max_file_bytes = max(1, min(int(max_file_bytes or 200_000), 2_000_000))
     matches: list[dict[str, Any]] = []
     files = _iter_workspace_files(base, recursive=bool(recursive), max_files=5000)
@@ -560,8 +425,10 @@ async def workspace_search(
                         },
                     })
                     break
-        if len(matches) >= max_results:
+        if len(matches) >= collect_until:
             break
+    has_more = len(matches) > offset_value + max_results
+    page = matches[offset_value:offset_value + max_results]
     return {
         "ok": True,
         "root": str(_workspace_root()),
@@ -571,8 +438,13 @@ async def workspace_search(
         "case_sensitive": case_sensitive,
         "path": _workspace_rel(base),
         "glob": glob,
-        "matches": matches,
-        "truncated": len(matches) >= max_results,
+        "matches": page,
+        "returned": len(page),
+        "offset": offset_value,
+        "limit": max_results,
+        "next_offset": offset_value + len(page) if has_more else None,
+        "truncated": bool(offset_value > 0 or has_more),
+        "total": None if has_more else len(matches),
     }
 
 
@@ -725,7 +597,9 @@ async def list_dir(
     regex: str | list[str] | None = None,
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
-) -> list[dict] | dict:
+    offset: int = 0,
+    limit: int = 50,
+) -> dict:
     invalid = invalid_regex_response(regex=regex, pattern=pattern)
     if invalid is not None:
         return invalid
@@ -738,11 +612,11 @@ async def list_dir(
         raw = _os.path.normpath((rel_path or "").strip().lstrip("/"))
         target = (data_root / raw).resolve() if raw else data_root
         if not str(target).startswith(str(data_root)):
-            return []
+            return {"ok": False, "error": "Path escapes data root", "error_kind": "path_denied"}
         base = data_root
 
     if not target.exists() or not target.is_dir():
-        return []
+        return {"ok": True, "items": [], "total": 0, "returned": 0, "next_offset": None}
     items = []
     for entry in sorted(target.iterdir()):
         items.append(
@@ -765,15 +639,34 @@ async def list_dir(
                 case_sensitive=case_sensitive,
             ).get("matched")
         ]
-    return items
+    try:
+        offset_value = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset_value = 0
+    try:
+        limit_value = max(1, min(int(limit or 50), 100))
+    except (TypeError, ValueError):
+        limit_value = 50
+    total = len(items)
+    page = items[offset_value:offset_value + limit_value]
+    return {
+        "ok": True,
+        "items": page,
+        "total": total,
+        "returned": len(page),
+        "offset": offset_value,
+        "limit": limit_value,
+        "next_offset": offset_value + len(page) if offset_value + len(page) < total else None,
+        "truncated": bool(offset_value > 0 or offset_value + len(page) < total),
+    }
 
 
 async def read_text(
     project_id: str = "",
     rel_path: str = "",
-    max_bytes: int = TEXT_FULL_READ_MAX_BYTES,
+    max_bytes: int = TEXT_SOURCE_MAX_BYTES,
     offset: int = 0,
-    limit: int = 0,
+    limit: int | None = None,
 ) -> dict:
     """Read a text file. project_id empty → read from data/ ; otherwise project storage."""
     if not rel_path:
@@ -791,7 +684,7 @@ async def read_text(
 
     if not target.exists() or not target.is_file():
         return {"error": "File not found"}
-    return _read_text_payload(
+    return read_text_file_page(
         path_label=rel_path,
         target=target,
         max_bytes=max_bytes,
@@ -804,46 +697,50 @@ async def extract_text_from_upload(
     project_id: str,
     rel_path: str,
     offset: int = 0,
-    limit: int = 0,
-    max_chars: int = TEXT_WINDOW_MAX_CHARS,
+    limit: int | None = None,
+    max_chars: int = TEXT_SOURCE_MAX_BYTES,
 ) -> dict:
-    """Best-effort text extraction for txt / md / docx with optional line paging."""
-    max_chars = _bounded_int(max_chars, TEXT_WINDOW_MAX_CHARS, maximum=TEXT_WINDOW_MAX_CHARS)
+    """Best-effort text extraction with the same character-page contract as file reads."""
+    max_chars = _bounded_int(max_chars, TEXT_SOURCE_MAX_BYTES, maximum=TEXT_SOURCE_MAX_BYTES)
     target = _safe_path(project_id, rel_path)
     if not target.exists() or not target.is_file():
         return {"error": "File not found"}
 
     suffix = target.suffix.lower()
     if suffix in {".txt", ".md"}:
-        payload = _read_text_payload(
+        return read_text_file_page(
             path_label=rel_path,
             target=target,
             max_bytes=max_chars,
             offset=offset,
             limit=limit,
         )
-        return _as_extract_payload(payload)
     if suffix == ".docx":
+        if target.stat().st_size > max_chars:
+            return {
+                "ok": False,
+                "error": f"Document source is larger than the {max_chars}-byte safety limit",
+                "error_kind": "file_too_large",
+                "path": rel_path,
+                "size": target.stat().st_size,
+                "max_bytes": max_chars,
+            }
         try:
             from docx import Document  # type: ignore
         except ImportError:
             return {"error": "python-docx not installed"}
         doc = Document(str(target))
         text = "\n".join(p.text for p in doc.paragraphs)
-        lines = text.split("\n") if text else []
-        payload = _window_payload_from_lines(
-            path_label=rel_path,
-            target=target,
-            lines=lines,
-            size=target.stat().st_size,
-            offset=offset,
-            limit=limit,
-            max_chars=max_chars,
-        ) if (offset > 0 or limit > 0 or len(text) > max_chars) else _full_text_payload(
-            path_label=rel_path,
-            target=target,
-            text=text,
-            size=target.stat().st_size,
-        )
-        return _as_extract_payload(payload)
+        page = text_content_window(text, offset=offset, limit=limit)
+        page["source"] = rel_path
+        page["revision"] = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+        return {
+            "ok": True,
+            "path": rel_path,
+            "mode": "text",
+            "size": target.stat().st_size,
+            "encoding": "utf-8",
+            "mime_type": mimetypes.guess_type(target.name)[0],
+            "content_page": page,
+        }
     return {"error": f"Unsupported file type: {suffix}"}

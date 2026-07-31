@@ -82,6 +82,33 @@ def test_task_list_supports_fuzzy_query_and_regex(tmp_path: Path, monkeypatch) -
     assert regex["tasks"][0]["match"]["matched_patterns"] == [r"node\.create|outline"]
 
 
+def test_task_list_is_bounded_and_continuable(tmp_path: Path, monkeypatch) -> None:
+    local_graph = TaskGraph(tmp_path / "tasks")
+    monkeypatch.setattr(task_tools, "task_graph", local_graph)
+    for index in range(5):
+        local_graph.create(subject=f"task {index}", project_id="project-1")
+
+    import asyncio
+
+    first = asyncio.run(task_tools.task_list(project_id="project-1", limit=2))
+    second = asyncio.run(
+        task_tools.task_list(
+            project_id="project-1",
+            offset=first["next_offset"],
+            limit=2,
+        )
+    )
+
+    assert first["total"] == 5
+    assert first["returned"] == 2
+    assert first["next_offset"] == 2
+    assert second["offset"] == 2
+    assert second["returned"] == 2
+    assert {item["id"] for item in first["tasks"]}.isdisjoint(
+        item["id"] for item in second["tasks"]
+    )
+
+
 def test_task_create_can_create_sequential_checklist_in_one_call(tmp_path: Path, monkeypatch) -> None:
     local_graph = TaskGraph(tmp_path / "tasks")
     monkeypatch.setattr(task_tools, "task_graph", local_graph)

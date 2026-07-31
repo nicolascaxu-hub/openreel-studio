@@ -5,9 +5,11 @@ REST/control-plane paths that call these Python helpers directly.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.config_store import get_store
+from app.mcp_tools.file_tools import text_content_window
 
 
 async def config_read(*, mask_secrets: bool = True) -> dict[str, Any]:
@@ -18,6 +20,12 @@ async def config_read(*, mask_secrets: bool = True) -> dict[str, Any]:
     """
     store = get_store()
     return await store.read(mask_secrets=mask_secrets)
+
+
+async def config_read_for_agent() -> dict[str, Any]:
+    """Return the structured runtime config with secrets unconditionally masked."""
+
+    return await config_read(mask_secrets=True)
 
 
 async def config_read_file(*, mask_secrets: bool = True) -> dict[str, Any]:
@@ -35,6 +43,31 @@ async def config_read_file(*, mask_secrets: bool = True) -> dict[str, Any]:
         "valid": ok,
         "errors": errors,
         "file_path": str(store.file_path),
+    }
+
+
+async def config_read_file_for_agent(
+    *,
+    content_offset: int = 0,
+    content_limit: int | None = None,
+) -> dict[str, Any]:
+    """Return one masked config page while the REST control plane keeps its full view."""
+
+    store = get_store()
+    raw = await store.get_raw_text()
+    masked = await store.read(mask_secrets=True)
+    rendered = json.dumps(masked, ensure_ascii=False, indent=2)
+    ok, errors = await store.validate_text(raw)
+    page = text_content_window(rendered, offset=content_offset, limit=content_limit)
+    page["source"] = "runtime.masked.json"
+    return {
+        "ok": True,
+        "raw_text_page": page,
+        "valid": ok,
+        "errors": errors,
+        "file_name": store.file_path.name,
+        "mask_secrets": True,
+        "hint": "Use config.read for the masked structured view; continue raw text with raw_text_page.next_offset.",
     }
 
 

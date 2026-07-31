@@ -22,6 +22,7 @@ from urllib.parse import quote
 from app.config import settings
 from app.db.models import Asset, Project, WorkflowNode
 from app.db.session import session_scope
+from app.mcp_tools import file_tools
 from app.mcp_tools.query_match import invalid_regex_response, match_text, search_blob
 from app.services.asset_library_paths import effective_asset_library
 from app.services.node_ids import next_node_display_id, node_display_id_allocation
@@ -50,6 +51,39 @@ _AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 _TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".json", ".csv", ".yaml", ".yml"}
 _ASSET_META_SUFFIX = ".openreel.json"
 _GENERIC_ASSET_TITLES = {"", "未命名", "未命名图片", "图片节点", "image", "image node"}
+_ASSET_LIST_DEFAULT_LIMIT = 20
+_ASSET_LIST_MAX_LIMIT = 100
+
+
+def _paged_items_result(
+    result: dict[str, Any],
+    *,
+    offset: int = 0,
+    limit: int = _ASSET_LIST_DEFAULT_LIMIT,
+) -> dict[str, Any]:
+    if result.get("error"):
+        return result
+    try:
+        offset_value = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset_value = 0
+    try:
+        limit_value = max(1, min(int(limit or _ASSET_LIST_DEFAULT_LIMIT), _ASSET_LIST_MAX_LIMIT))
+    except (TypeError, ValueError):
+        limit_value = _ASSET_LIST_DEFAULT_LIMIT
+    items = list(result.get("items") or [])
+    total = len(items)
+    page_items = items[offset_value:offset_value + limit_value]
+    return {
+        **result,
+        "items": page_items,
+        "count": total,
+        "returned": len(page_items),
+        "offset": offset_value,
+        "limit": limit_value,
+        "next_offset": offset_value + len(page_items) if offset_value + len(page_items) < total else None,
+        "truncated": bool(offset_value > 0 or offset_value + len(page_items) < total),
+    }
 
 
 def _slug(name: str) -> str:
@@ -240,8 +274,8 @@ def _asset_file_payload(path: Path, **extra: Any) -> dict[str, Any]:
         payload["height"] = height
         payload["resolution"] = f"{width}x{height}"
     if prompt:
-        payload["prompt"] = prompt
         payload["prompt_snippet"] = prompt[:180]
+        payload["prompt_chars"] = len(prompt)
     return payload
 
 
@@ -643,6 +677,8 @@ async def assets_list_categories(
     library: str = "all",
     kind: str | None = None,
     episode: int | None = None,
+    offset: int = 0,
+    limit: int = _ASSET_LIST_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
     """List categories in the single asset library."""
     state = await _get_state(project_id)
@@ -680,7 +716,10 @@ async def assets_list_categories(
                 result["items"].append(item)
                 result["shared"].append(item)
 
-    return result
+    paged = _paged_items_result(result, offset=offset, limit=limit)
+    paged["shared"] = paged["items"]
+    paged["project"] = []
+    return paged
 
 
 async def assets_create_category(
@@ -870,6 +909,8 @@ async def assets_list_project(
     regex: str | list[str] | None = None,
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
+    offset: int = 0,
+    limit: int = _ASSET_LIST_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
     result = await _list_library_items(
         project_id,
@@ -883,7 +924,7 @@ async def assets_list_project(
         category = f"第{int(episode)}集"
         result["items"] = [item for item in result.get("items", []) if item.get("category") == category]
         result["count"] = len(result["items"])
-    return result
+    return _paged_items_result(result, offset=offset, limit=limit)
 
 
 async def assets_list_shared(
@@ -894,8 +935,10 @@ async def assets_list_shared(
     regex: str | list[str] | None = None,
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
+    offset: int = 0,
+    limit: int = _ASSET_LIST_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
-    return await _list_library_items(
+    result = await _list_library_items(
         project_id,
         kind=kind,
         category=category,
@@ -904,9 +947,15 @@ async def assets_list_shared(
         pattern=pattern,
         case_sensitive=case_sensitive,
     )
+    return _paged_items_result(result, offset=offset, limit=limit)
 
 
-async def assets_read_asset(project_id: str, path: str) -> dict[str, Any]:
+async def assets_read_asset(
+    project_id: str,
+    path: str,
+    content_offset: int = 0,
+    content_limit: int | None = None,
+) -> dict[str, Any]:
     state = await _get_state(project_id)
     lib = effective_asset_library(state.get("asset_library"), ensure_dirs=True)
 
@@ -923,6 +972,30 @@ async def assets_read_asset(project_id: str, path: str) -> dict[str, Any]:
         "size": p.stat().st_size,
         "modified_at": datetime.fromtimestamp(p.stat().st_mtime).isoformat(),
     }
-    if suffix in {".txt", ".md"}:
-        info["text"] = p.read_text(encoding="utf-8", errors="replace")
+    metadata = _read_asset_sidecar(p)
+    prompt = str(metadata.pop("prompt", "") or "")
+    if metadata:
+        info["metadata"] = metadata
+    if prompt and suffix not in _TEXT_SUFFIXES:
+        prompt_page = file_tools.text_content_window(
+            prompt,
+            offset=content_offset,
+            limit=content_limit,
+        )
+        prompt_page["source"] = f"{p.name}:metadata.prompt"
+        info["prompt_page"] = prompt_page
+    elif prompt:
+        info["prompt_chars"] = len(prompt)
+        info["prompt_snippet"] = prompt[:180]
+    if suffix in _TEXT_SUFFIXES:
+        page_payload = file_tools.read_text_file_page(
+            path_label=str(p),
+            target=p,
+            max_bytes=file_tools.TEXT_SOURCE_MAX_BYTES,
+            offset=content_offset,
+            limit=content_limit,
+        )
+        if not page_payload.get("ok"):
+            return page_payload
+        info["content_page"] = page_payload["content_page"]
     return info

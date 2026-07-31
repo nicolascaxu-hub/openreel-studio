@@ -5,18 +5,21 @@ Two skill sources:
   skills/                       — user custom skills grouped by category
 
 skill.search(category=...) → returns matching names + descriptions (lightweight)
-skill.get                  → returns content; workflow skills help select templates, review skills prefer agent.review
+skill.get                  → returns a resumable content_page; workflow skills help select templates
 """
 from __future__ import annotations
 
 import logging
 import os
 import re
+import hashlib
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 from app.config import settings
+from app.agent.model_context.policy import COLLECTION_OUTPUT_POLICY, DOCUMENT_OUTPUT_POLICY
+from app.mcp_tools.file_tools import text_content_window
 from app.mcp_tools.query_match import invalid_regex_response, match_text, search_blob
 from app.mcp_tools.registry import register
 
@@ -56,6 +59,8 @@ _SCOPE_ALIASES: dict[str, str] = {
     "system": "builtin",
 }
 _SEARCHABLE_SCOPES = {"user", "builtin"}
+SKILL_SEARCH_DEFAULT_LIMIT = 8
+SKILL_SEARCH_MAX_LIMIT = 50
 
 
 def _md_skills_root() -> Path:
@@ -245,7 +250,7 @@ def _skill_search_result_item(skill: dict[str, Any], match: dict[str, Any], quer
     item = {
         "name": skill["name"],
         "category": skill["category"],
-        "description": skill["description"],
+        "description": str(skill["description"] or "")[:1_024],
         "applies_to": skill["applies_to"],
         "scope": skill.get("scope", ""),
         "source": skill.get("source", ""),
@@ -253,7 +258,7 @@ def _skill_search_result_item(skill: dict[str, Any], match: dict[str, Any], quer
         "priority": skill.get("priority", 100),
     }
     if skill.get("summary"):
-        item["summary"] = skill["summary"]
+        item["summary"] = str(skill["summary"] or "")[:1_024]
     if skill.get("category") == "review":
         item["recommended_tool"] = "agent.review"
         item["usage"] = "检查类 skill；把 name 作为 review_skill_key 传给 agent.review，附上目标节点或来源引用。"
@@ -499,7 +504,14 @@ def _read_index_skill_summary(skill: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _read_index_skill_content(skill: dict[str, Any], *, limit: int | None = None) -> dict[str, Any]:
+def _read_index_skill_content(
+    skill: dict[str, Any],
+    *,
+    limit: int | None = None,
+    paged: bool = False,
+    content_offset: int = 0,
+    content_limit: int | None = None,
+) -> dict[str, Any]:
     name = str(skill.get("name") or "")
     source = skill.get("source", "")
     if source == "python_package":
@@ -525,8 +537,14 @@ def _read_index_skill_content(skill: dict[str, Any], *, limit: int | None = None
         "source_root": skill.get("source_root", ""),
         "detail": "full",
         "summary": summary,
-        "content": content,
     }
+    if paged:
+        page = text_content_window(content, offset=content_offset, limit=content_limit)
+        page["source"] = "SKILL.md"
+        page["revision"] = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+        payload["content_page"] = page
+    else:
+        payload["content"] = content
     if skill.get("category") == "workflow":
         payload["workflow_template_match_hint"] = _workflow_template_match_hint(skill, summary)
         direct = _direct_workflow_template_for_skill(skill)
@@ -555,6 +573,7 @@ def load_review_skill_by_key(key: str) -> dict[str, Any]:
     "skill.search",
     description="按 category/scope 搜索 skill 索引；review 类返回 name 后交给 agent.review 使用。",
     tags=["skill", "read"],
+    output_policy=COLLECTION_OUTPUT_POLICY,
 )
 async def skill_search(
     query: str = "",
@@ -565,6 +584,8 @@ async def skill_search(
     regex: str | list[str] | None = None,
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
+    offset: int = 0,
+    limit: int = SKILL_SEARCH_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
     invalid = invalid_regex_response(regex=regex, pattern=pattern)
     if invalid is not None:
@@ -613,7 +634,7 @@ async def skill_search(
                 "top": [
                     {
                         "name": item.get("name"),
-                        "description": item.get("description", ""),
+                        "description": str(item.get("description", "") or "")[:1_024],
                         "scope": item.get("scope", ""),
                         "source_root": item.get("source_root", ""),
                     }
@@ -634,11 +655,13 @@ async def skill_search(
             "scope_filter": scope_filter or "",
         }
 
+    offset = max(0, int(offset or 0))
+    limit = max(1, min(int(limit or SKILL_SEARCH_DEFAULT_LIMIT), SKILL_SEARCH_MAX_LIMIT))
     query_list = [str(item or "").strip() for item in (queries or []) if str(item or "").strip()]
     if query_list:
         if query and str(query).strip() not in query_list:
             query_list.insert(0, str(query).strip())
-        query_list = query_list[:12]
+        query_list = query_list[:6]
         groups: list[dict[str, Any]] = []
         merged: list[dict[str, Any]] = []
         for one_query in query_list:
@@ -652,24 +675,30 @@ async def skill_search(
                 case_sensitive=case_sensitive,
             )
             public_group = []
-            for item in group_results:
+            for item in group_results[offset:offset + min(limit, 3)]:
                 public_item = dict(item)
                 public_item.pop("_score", None)
                 public_group.append(public_item)
             groups.append({
                 "query": one_query,
                 "skills": public_group,
-                "total": len(public_group),
+                "total": len(group_results),
+                "returned": len(public_group),
             })
             merged.extend(group_results)
-        results = _dedupe_skill_items(merged)
+        all_results = _dedupe_skill_items(merged)
+        total = len(all_results)
+        results = all_results[offset:offset + limit]
         for item in results:
             item.pop("_score", None)
         return {
             "ok": True,
             "mode": "multi_query",
             "skills": results,
-            "total": len(results),
+            "total": total,
+            "returned": len(results),
+            "offset": offset,
+            "next_offset": offset + len(results) if offset + len(results) < total else None,
             "groups": groups,
             "queries": query_list,
             "scope_filter": scope_filter or "",
@@ -687,15 +716,26 @@ async def skill_search(
     )
     if scope_filter is None:
         results = _dedupe_skill_items(results)
+    total = len(results)
+    results = results[offset:offset + limit]
     for item in results:
         item.pop("_score", None)
-    return {"ok": True, "skills": results, "total": len(results), "scope_filter": scope_filter or ""}
+    return {
+        "ok": True,
+        "skills": results,
+        "total": total,
+        "returned": len(results),
+        "offset": offset,
+        "next_offset": offset + len(results) if offset + len(results) < total else None,
+        "scope_filter": scope_filter or "",
+    }
 
 
 @register(
     "skill.get",
-    description="读取 skill 摘要或全文；workflow 默认返回摘要，detail='full' 才返回全文。",
+    description="读取 skill 摘要或正文页；workflow 默认返回摘要，detail='full' 返回 content_page。",
     tags=["skill", "read"],
+    output_policy=DOCUMENT_OUTPUT_POLICY,
 )
 async def skill_get_skill(
     name: str = "",
@@ -703,6 +743,8 @@ async def skill_get_skill(
     kind: str = "",
     scope: str = "",
     detail: str = "",
+    content_offset: int = 0,
+    content_limit: int | None = None,
 ) -> dict[str, Any]:
     if not name:
         return {"ok": False, "error": "请提供 skill 名称", "error_kind": "missing_name"}
@@ -722,7 +764,12 @@ async def skill_get_skill(
         detail_norm = str(detail or "").strip().lower()
         if match.get("category") == "workflow" and detail_norm not in {"full", "content"}:
             return _read_index_skill_summary(match)
-        payload = _read_index_skill_content(match)
+        payload = _read_index_skill_content(
+            match,
+            paged=True,
+            content_offset=content_offset,
+            content_limit=content_limit,
+        )
         if payload.get("ok") and payload.get("category") == "review":
             payload["preferred_tool"] = "agent.review"
             payload["usage"] = "reviewer 会按 review_skill_key 隔离加载；主 Agent 只做最终确认。"

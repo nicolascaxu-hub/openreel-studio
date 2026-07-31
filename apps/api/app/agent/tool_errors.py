@@ -26,7 +26,6 @@ def normalize_tool_result(result: Any, *, tool_name: str = "tool") -> Any:
     normalized.setdefault("tool", tool_name)
     normalized.setdefault("hint", _default_hint(normalized["error_kind"]))
     normalized.setdefault("suggested_next", _default_suggested_next(normalized["error_kind"]))
-    normalized.setdefault("model_feedback", _model_feedback(normalized))
     return normalized
 
 
@@ -79,55 +78,3 @@ def _default_suggested_next(error_kind: str) -> str:
     if kind in {"project_missing", "node_missing", "not_found", "node_not_found", "parent_not_found", "task_not_found", "reference_not_found"}:
         return "read_state"
     return "model_decides"
-
-
-def _diagnostic_evidence(result: dict[str, Any]) -> dict[str, Any]:
-    evidence_keys = (
-        "node_id",
-        "parent_id",
-        "task_id",
-        "plan_id",
-        "title",
-        "status",
-        "expected_aspect_ratio",
-        "conflicting_value",
-        "allowed_fields",
-        "missing_fields",
-        "available_node_ids",
-        "available_nodes",
-        "candidates",
-        "supported_aspect_ratios",
-        "required_action",
-        "suggested_tool",
-        "missing_guide_topics",
-        "required_tool_calls",
-        "required_tool_flow",
-        "fix_example",
-        "agent",
-        "committed",
-        "candidate_ref",
-        "committed_ref",
-        "steps_used",
-    )
-    evidence: dict[str, Any] = {}
-    for key in evidence_keys:
-        value = result.get(key)
-        if value not in (None, "", [], {}):
-            evidence[key] = value
-    return evidence
-
-
-def _model_feedback(result: dict[str, Any]) -> dict[str, Any]:
-    kind = str(result.get("error_kind") or "tool_error")
-    hint = str(result.get("hint") or _default_hint(kind))
-    suggested_next = str(result.get("suggested_next") or _default_suggested_next(kind))
-    error = str(result.get("error") or "Tool returned an error")
-    return {
-        "tool": result.get("tool") or "tool",
-        "error_kind": kind,
-        "what_went_wrong": error,
-        "how_to_fix": hint,
-        "suggested_next": suggested_next,
-        "retry_policy": "不要用完全相同参数重复调用；先按 how_to_fix 修正参数、补状态/依赖，或停止询问用户。",
-        "evidence": _diagnostic_evidence(result),
-    }

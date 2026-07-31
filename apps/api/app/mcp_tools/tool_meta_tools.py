@@ -336,7 +336,7 @@ def _tool_search_item(spec: ToolSpec, *, category: str, detail: bool = False) ->
             "is_destructive": bool(spec.is_destructive),
             "requires_confirmation": bool(spec.requires_confirmation),
             "is_concurrency_safe": bool(spec.is_concurrency_safe),
-            "max_result_size": spec.max_result_size,
+            "output_policy": spec.output_policy.as_dict(),
         },
     }
     hints = _tool_usage_hints(spec)
@@ -424,7 +424,7 @@ async def tool_describe(names: list[str] | str, _state: dict[str, Any] | None = 
                 "is_destructive": bool(spec.is_destructive),
                 "requires_confirmation": bool(spec.requires_confirmation),
                 "is_concurrency_safe": bool(spec.is_concurrency_safe),
-                "max_result_size": spec.max_result_size,
+                "output_policy": spec.output_policy.as_dict(),
             },
         })
 

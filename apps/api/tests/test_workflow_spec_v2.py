@@ -2310,10 +2310,22 @@ async def test_workflow_template_read_returns_public_v2_instead_of_private_execu
     )
 
     assert result["ok"] is True
-    assert result["workflow"]["schema"] == WORKFLOW_SPEC_VERSION
-    assert "public_spec" not in result["workflow"]
-    assert "plan_hash" not in result["workflow"]
-    assert "node_type" not in str(result["workflow"])
+    pages = [result["workflow_page"]["content"]]
+    next_offset = result["workflow_page"]["next_offset"]
+    while next_offset is not None:
+        result = await workflow_tools.workflow_template_read(
+            project_id="project-1",
+            template_id="general_short_drama_workflow",
+            detail="workflow",
+            content_offset=next_offset,
+        )
+        pages.append(result["workflow_page"]["content"])
+        next_offset = result["workflow_page"]["next_offset"]
+    workflow = json.loads("".join(pages))
+    assert workflow["schema"] == WORKFLOW_SPEC_VERSION
+    assert "public_spec" not in workflow
+    assert "plan_hash" not in workflow
+    assert "node_type" not in str(workflow)
 
 
 def test_invalid_user_override_does_not_hide_runnable_builtin_template(

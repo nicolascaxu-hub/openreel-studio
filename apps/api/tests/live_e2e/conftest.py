@@ -67,7 +67,8 @@ async def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIt
     validation, and agent loop are real. The database is isolated so live tests
     do not modify a developer's normal local project data.
     """
-    from app.agent import agent_trace, context_compact, message_queue, prompt_dump, task_graph, trace_store
+    from app.agent import agent_trace, message_queue, prompt_dump, task_graph, trace_store
+    from app.agent.model_context import artifact_store
     from app.api import routes_agent_debug
     from app.db import session as db_session
 
@@ -95,14 +96,13 @@ async def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIt
     prompt_root = tmp_path / "prompts"
     tool_root = tmp_path / "tool_results"
     task_root = tmp_path / "tasks"
-    project_files_root = tmp_path / "project_files"
     task_root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(agent_trace, "traces_root", lambda: trace_root)
     monkeypatch.setattr(routes_agent_debug, "traces_root", lambda: trace_root)
     monkeypatch.setattr(prompt_dump, "_DUMP_ROOT", prompt_root)
     monkeypatch.setattr(prompt_dump, "prompt_dumps_root", lambda: prompt_root)
     monkeypatch.setattr(routes_agent_debug, "prompt_dumps_root", lambda: prompt_root)
-    monkeypatch.setattr(context_compact, "tool_results_dir", lambda: tool_root)
+    monkeypatch.setattr(artifact_store, "tool_results_dir", lambda: tool_root)
     monkeypatch.setattr(routes_agent_debug, "tool_results_dir", lambda: tool_root)
     monkeypatch.setattr(task_graph.task_graph, "dir", task_root)
     monkeypatch.setattr(task_graph.task_graph, "_next_id", 1)

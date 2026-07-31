@@ -1,3 +1,4 @@
+import hashlib
 import json
 from contextlib import asynccontextmanager
 from copy import deepcopy
@@ -643,6 +644,7 @@ async def test_node_get_pages_text_content_once_with_model_selected_window(monke
     assert "content" not in first["output"]
     assert first["content_page"] == {
         "content": content[:8_000],
+        "revision": hashlib.sha256(content.encode("utf-8")).hexdigest()[:16],
         "offset": 0,
         "limit": 8_000,
         "returned_chars": 8_000,
@@ -701,7 +703,7 @@ async def test_node_get_shares_content_budget_across_batch(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_node_list_defaults_to_twenty_index_items_and_limit_zero_returns_all(monkeypatch):
+async def test_node_list_defaults_to_twenty_and_uses_bounded_offset_pages(monkeypatch):
     nodes = [
         {
             "id": f"node-{index}",
@@ -723,11 +725,12 @@ async def test_node_list_defaults_to_twenty_index_items_and_limit_zero_returns_a
 
     default_result = await node_universal.node_list("proj-1")
     null_limit_result = await node_universal.node_list("proj-1", limit=None)
-    all_result = await node_universal.node_list("proj-1", limit=0)
+    second_page = await node_universal.node_list("proj-1", offset=20, limit=20)
 
     assert default_result["returned"] == 20
     assert default_result["total"] == 25
     assert default_result["truncated"] is True
+    assert default_result["next_offset"] == 20
     assert null_limit_result["returned"] == 20
     assert null_limit_result["filters"]["limit"] == 20
     first = default_result["nodes"][0]
@@ -737,9 +740,10 @@ async def test_node_list_defaults_to_twenty_index_items_and_limit_zero_returns_a
     assert first["prompt_preview"] == "12345678901234567890"
     assert first["workflow"] == {"step_id": "step_0", "mode": "grid"}
     assert "output" not in first
-    assert all_result["returned"] == 25
-    assert all_result["truncated"] is False
-    assert all_result["filters"]["unlimited"] is True
+    assert second_page["returned"] == 5
+    assert second_page["offset"] == 20
+    assert second_page["next_offset"] is None
+    assert second_page["filters"]["unlimited"] is False
 
 
 @pytest.mark.asyncio
@@ -769,7 +773,7 @@ async def test_node_list_omits_workflow_runtime_nodes_by_default(monkeypatch):
 
     monkeypatch.setattr(node_universal.canvas_tools, "list_nodes", fake_list_nodes)
 
-    result = await node_universal.node_list("proj-1", limit=0)
+    result = await node_universal.node_list("proj-1")
 
     assert result["returned"] == 1
     assert result["total"] == 1

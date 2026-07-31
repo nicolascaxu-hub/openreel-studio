@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.agent.agent_trace import traces_root
-from app.agent.context_compact import tool_results_dir
+from app.agent.model_context.artifact_store import tool_results_dir
 from app.agent.prompt_dump import prompt_dumps_root
 from app.agent.slash_commands import build_doctor_snapshot
 from app.agent.trace_store import list_trace_runs, read_trace_events, summarize_token_usage

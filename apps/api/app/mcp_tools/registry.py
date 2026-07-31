@@ -27,6 +27,15 @@ from pathlib import Path
 from types import UnionType
 from typing import Any, Awaitable, Callable, Union, get_args, get_origin, get_type_hints
 
+from app.agent.model_context.policy import (
+    COLLECTION_OUTPUT_POLICY,
+    DELEGATED_OUTPUT_POLICY,
+    DOCUMENT_OUTPUT_POLICY,
+    JSON_OUTPUT_POLICY,
+    MULTIMODAL_OUTPUT_POLICY,
+    ToolOutputPolicy,
+)
+
 ToolHandler = Callable[..., Awaitable[Any]]
 
 
@@ -274,7 +283,7 @@ class ToolSpec:
     is_destructive: bool = False
     requires_confirmation: bool = False
     is_concurrency_safe: bool = False
-    max_result_size: int | None = None
+    output_policy: ToolOutputPolicy = JSON_OUTPUT_POLICY
 
     @property
     def short_name(self) -> str:
@@ -294,7 +303,7 @@ class ToolRuntimeMetadata:
     is_destructive: bool
     requires_confirmation: bool
     is_concurrency_safe: bool
-    max_result_size: int | None
+    output_policy: ToolOutputPolicy
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -309,7 +318,7 @@ class ToolRuntimeMetadata:
             "is_destructive": self.is_destructive,
             "requires_confirmation": self.requires_confirmation,
             "is_concurrency_safe": self.is_concurrency_safe,
-            "max_result_size": self.max_result_size,
+            "output_policy": self.output_policy.as_dict(),
         }
 
 
@@ -333,7 +342,7 @@ class ToolRegistry:
         is_destructive: bool | None = None,
         requires_confirmation: bool | None = None,
         is_concurrency_safe: bool | None = None,
-        max_result_size: int | None = None,
+        output_policy: ToolOutputPolicy | None = None,
         replace: bool = False,
     ) -> ToolSpec:
         if name in self._tools and not replace:
@@ -370,9 +379,7 @@ class ToolRegistry:
                 if is_concurrency_safe is not None
                 else bool(meta.get("is_concurrency_safe", False))
             ),
-            max_result_size=max_result_size
-            if max_result_size is not None
-            else meta.get("max_result_size"),
+            output_policy=output_policy or JSON_OUTPUT_POLICY,
         )
         self._tools[name] = spec
         standardizer = globals().get("_standardize_tool_spec")
@@ -439,7 +446,7 @@ class ToolRegistry:
             is_destructive=spec.is_destructive,
             requires_confirmation=spec.requires_confirmation,
             is_concurrency_safe=spec.is_concurrency_safe,
-            max_result_size=spec.max_result_size,
+            output_policy=spec.output_policy,
         )
 
     def runtime_manifest(self, profile: str | None = None) -> list[dict[str, Any]]:
@@ -487,7 +494,7 @@ class ToolRegistry:
                 "is_destructive": t.is_destructive,
                 "requires_confirmation": t.requires_confirmation,
                 "is_concurrency_safe": t.is_concurrency_safe,
-                "max_result_size": t.max_result_size,
+                "output_policy": t.output_policy.as_dict(),
             }
             for t in sorted(self._tools.values(), key=lambda s: s.name)
         ]
@@ -687,15 +694,15 @@ _STANDARD_DESCRIPTION_BASES: dict[str, str] = {
     "memory.save_fact": "保存当前项目级长期事实",
     "memory.save_user_fact": "保存跨项目用户偏好或稳定工作习惯",
     "node.create": "创建一个或少量 text/image/video/audio 创作节点",
-    "node.get": "读取一个或多个指定节点的输入、输出、提示词、状态、surface 和链接信息",
-    "node.list": "列出当前项目画布节点索引，默认返回 20 个节点，可按节点类型、状态或关键词过滤",
+    "node.get": "读取一个或多个节点详情",
+    "node.list": "列出节点索引页",
     "node.run": "执行指定节点并由后端按节点类型派发 runner、落库状态和产物",
     "node.update": "局部更新一个或少量指定节点的允许字段",
     "project.get_state": "读取项目 state、节点摘要、待确认输入、安全确认、任务和运行状态",
     "project.reset": "按 scope 清理失败节点或执行已确认的全量项目重置",
-    "skill.get": "读取 skill 摘要或全文；workflow 默认摘要，detail='full' 才返回全文",
+    "skill.get": "读取 skill 摘要或正文页",
     "skill.project_mentor": "查询项目架构、规则、文档入口和排障顺序",
-    "skill.search": "按 category/scope 搜索 workflow/prompt/review skill；返回用户自定义或内置默认来源",
+    "skill.search": "搜索 workflow/prompt/review skill 索引",
     "system.models": "读取任务类型到模型的当前映射",
     "system.status": "读取系统状态、模型、工具、MCP 和能力摘要",
     "task.complete": "把执行任务标记为 completed 并保存结果摘要",
@@ -763,18 +770,17 @@ _STANDARD_USAGE_BY_NAME: dict[str, str] = {
         "搭框架/低风险可用 nodes，复杂媒体 prompt 或大量节点分批。"
     ),
     "node.get": (
-        "精确读取节点详情；文本正文默认返回 8000 字符窗口，按 content_page.next_offset 分页；"
-        "多个节点一次传 node_ids，只有一个节点才传 node_id。"
+        "正文默认 8000 字符，按 content_page.next_offset 分页；node_ids 每次最多 20 个。"
     ),
-    "node.list": "默认返回 20 个节点索引；需要更多传 limit，完整索引用 limit=0；详情批量 node.get。",
+    "node.list": "默认返回 20 个；按 next_offset 分页，单页最多 100。",
     "node.run": (
         "运行前检查内容/prompt/fields/依赖；不符合要求先 node.update；"
         "fields.generation 成功即已原子保存，无需 node.get 验证；失败读 error_kind/hint/model_feedback。"
     ),
     "node.update": "input_json 与旧 input 局部合并；不同改动用 updates，同一 patch 可配 node_ids；复杂/高风险分批。",
     "project.get_state": "开始、继续、排障或回答状态问题前读取真实项目状态。",
-    "skill.search": "传 category='workflow'|'prompt'|'review'；scope=user 是自定义，scope=builtin 是内置默认；queries 可一次查询多个模块。",
-    "skill.get": "读取 skill；workflow skill 用于选择模板，prompt skill 可用于节点或工作流步骤，review 通常交给 agent.review。",
+    "skill.search": "指定 category；按 next_offset 分页。",
+    "skill.get": "workflow 默认摘要；正文按 content_page.next_offset 分页。",
     "task.create": "复杂多步用 subject 或 items 建 checklist；简单任务跳过。",
     "task.complete": "任务真实完成并有结果摘要后调用。",
     "task.list": "需要恢复进度、找可执行/失败/阻塞任务或清理残留前调用。",
@@ -798,7 +804,7 @@ _STANDARD_LIMIT_BY_NAME: dict[str, str] = {
     "node.update": "只改允许字段，不写入不属于该节点的产物",
     "project.get_state": "只读取项目状态",
     "project.reset": "full reset 需要当前用户明确请求和确认",
-    "skill.get": "只读取 skill；workflow 默认摘要，detail='full' 才返回全文",
+    "skill.get": "只读取 skill；workflow 默认摘要，detail='full' 返回有界正文页",
     "skill.search": "只搜索指定 category 的 skill 索引",
     "task.complete": "只标记真实完成的任务",
     "task.list": "只读取任务列表",
@@ -879,16 +885,6 @@ _CONFIRMATION_NAMES = {"project.reset", "canvas.delete"}
 _READ_ONLY_VERBS = ("get", "list", "describe", "search", "status", "models", "is_enabled")
 
 
-def _coerce_optional_int(value: Any) -> int | None:
-    if value in (None, ""):
-        return None
-    try:
-        result = int(value)
-    except (TypeError, ValueError):
-        return None
-    return result if result > 0 else None
-
-
 def _infer_read_only(spec: ToolSpec) -> bool:
     if spec.is_destructive or "destructive" in spec.tags:
         return False
@@ -915,7 +911,6 @@ def _apply_tool_boundary_metadata(spec: ToolSpec) -> None:
     )
     spec.is_read_only = _infer_read_only(spec)
     spec.is_concurrency_safe = bool(spec.is_concurrency_safe or spec.is_read_only)
-    spec.max_result_size = _coerce_optional_int(spec.max_result_size)
 
 
 def _standardize_tool_spec(spec: ToolSpec, target_registry: ToolRegistry | None = None) -> None:
@@ -948,7 +943,7 @@ def register(
     is_destructive: bool | None = None,
     requires_confirmation: bool | None = None,
     is_concurrency_safe: bool | None = None,
-    max_result_size: int | None = None,
+    output_policy: ToolOutputPolicy | None = None,
     replace: bool = False,
 ) -> Callable[[ToolHandler], ToolHandler]:
     """Decorator form. Skills can use this at import time."""
@@ -968,7 +963,7 @@ def register(
             is_destructive=is_destructive,
             requires_confirmation=requires_confirmation,
             is_concurrency_safe=is_concurrency_safe,
-            max_result_size=max_result_size,
+            output_policy=output_policy,
             replace=replace,
         )
         return fn
@@ -1017,6 +1012,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "tool.describe",
         tool_meta_tools.tool_describe,
         tags=["tool", "meta", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
       description=(
         "读取 deferred/Tier2 工具的 schema 和元数据。只描述可见按需工具；"
         "核心、隐藏和已注销工具不会通过这里展开。"
@@ -1026,6 +1022,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "tool.search",
         tool_meta_tools.tool_search,
         tags=["tool", "meta", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
       description=(
         "列出或搜索 deferred/Tier2 工具目录，用于按需发现指南、系统和低频能力；"
         "query='' 列目录，select:name 精确选择，支持关键词和 regex。"
@@ -1071,6 +1068,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "tool.execute",
         tool_meta_tools.tool_execute,
         tags=["tool", "meta", "execute"],
+        output_policy=DELEGATED_OUTPUT_POLICY,
       description=(
         "执行已经 search/describe 发现的 deferred/Tier2 工具。"
         "执行仍经过 schema、permission policy 和确认边界；失败时按 error_kind/hint 修参或停止。"
@@ -1156,6 +1154,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "image.edit",
         image_operation_tools.edit,
       tags=["image", "write"],
+      output_policy=MULTIMODAL_OUTPUT_POLICY,
       description="对图片节点执行本地编辑；preview 产出候选图，commit 才覆盖节点并归档历史。",
       search_hint=(
           "crop brush doodle fill cover mask segment background transparent alpha rounded rectangle annotate text arrow image edit preview commit "
@@ -1442,11 +1441,9 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "node.get",
         node_universal.node_get,
         tags=["node", "read"],
+        output_policy=DOCUMENT_OUTPUT_POLICY,
       description=(
-          "读取节点完整信息(input / output / prompt / status / surface / links)。"
-          "文本正文只在 content_page 返回一次，默认最多 8000 字符；"
-          "需要后续内容时传 content_offset=content_page.next_offset 和 content_limit。"
-          "已知节点编号 id 时传 node_id/node_ids；只记得标题/描述/错误时传 query 或 regex 先取候选详情。"
+          "读取 node_id/node_ids 的节点详情；文本正文在 content_page 中按字符偏移分页。"
       ),
       schema={
           "type": "object",
@@ -1456,7 +1453,8 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
               "node_ids": {
                   "type": "array",
                   "items": {"type": "string"},
-                  "description": "多个节点 id；需要多个详情时优先一次传入",
+                  "maxItems": 20,
+                  "description": "多个节点 id；每次最多 20 个，需要更多时分批读取",
               },
                 "query": {
                     "type": "string",
@@ -1479,7 +1477,9 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
               "case_sensitive": {"type": "boolean"},
                 "limit": {
                     "type": "integer",
-                    "description": "query/regex 查询最多读取多少个详情；默认 20，0 为全部。",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "query/regex 查询最多读取多少个详情；默认及上限均为 20。",
                 },
               "content_offset": {
                   "type": "integer",
@@ -1488,9 +1488,9 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
               },
               "content_limit": {
                   "type": "integer",
-                  "description": "本次调用共享的正文字符预算；默认 8000，0 只返回正文元数据，最大 32000。",
+                  "description": "本次调用共享的正文字符预算；默认及最大 8000，0 只返回正文元数据。",
                   "minimum": 0,
-                  "maximum": 32000,
+                  "maximum": 8000,
               },
           },
         },
@@ -1546,9 +1546,9 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "node.list",
         node_universal.node_list,
         tags=["node", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
       description=(
-          "列出项目画布节点索引，默认返回 20 个节点的 id/title/status/prompt_preview。"
-          "id 是项目内从 0 开始的节点编号。支持 query/regex 模糊找候选；需要更多索引时传 limit；limit=0 返回全部匹配节点；详情用 node.get(node_ids=[...]) 批量读取。"
+          "列出有界节点索引页，支持 query/regex 过滤。"
       ),
       schema={
           "type": "object",
@@ -1576,9 +1576,16 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
                   "description": "regex 的别名。",
               },
               "case_sensitive": {"type": "boolean"},
+              "offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "索引页起始偏移，默认 0；继续读取时传上页 next_offset。",
+              },
               "limit": {
                   "type": "integer",
-                  "description": "默认 20；可传更大值，最大 800；传 0 返回全部匹配节点索引。",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "description": "单页条目数，默认 20，最大 100。",
               },
           },
         },
@@ -1587,6 +1594,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "vision.view_image",
         vision_tools.view_image,
         tags=["vision", "read"],
+        output_policy=MULTIMODAL_OUTPUT_POLICY,
       description=(
           "读取项目内已有图片并把一张或多张图片像素附加给主模型上下文。"
           "需要看清图片细节时，先用 node.list/node.get 定位 node_id；可用 node_ids/sources 批量查看，工具不输出视觉摘要。"
@@ -1640,7 +1648,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "project.get_state",
         project_tools.project_get_state,
         tags=["project", "read"],
-        description="读取项目完整状态：节点、任务、参考图、确认状态和 token 使用。每轮先读。",
+        description="读取项目运行状态和画布计数摘要；节点索引与详情分别用 node.list/node.get。",
     )
 
     R("drama.parse_uploaded_script", drama_tools.parse_uploaded_script, tags=["drama", "ingest"])
@@ -1699,33 +1707,46 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "当用户说停止、取消、中止图片生成时调用。"
         ),
     )
-    R("media.get_presets", media_tools.get_presets, tags=["media", "read"])
+    R(
+        "media.get_presets",
+        media_tools.get_presets,
+        tags=["media", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
+    )
 
     # file.*
-    R("file.list_dir", file_tools.list_dir, tags=["file", "read"])
+    R(
+        "file.list_dir",
+        file_tools.list_dir,
+        tags=["file", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
+    )
     R(
         "file.read_text",
         file_tools.read_text,
         tags=["file", "read"],
+        output_policy=DOCUMENT_OUTPUT_POLICY,
       description=(
           "读取用户上传文件或用户本轮明确给出的项目存储相对路径。"
-          "rel_path 只接受上传结果或用户明确路径；大文件返回分页片段，按 next_offset 继续读取。"
+          "rel_path 只接受上传结果或用户明确路径；正文在 content_page 中按字符偏移分页。"
           "guide、节点、trace 和 tool result 状态查询使用对应工具。"
       ),
       usage_hints=[
-        "file.read_text(project_id=project_id, rel_path='uploads/script.txt', offset=1, limit=50)",
+        "file.read_text(project_id=project_id, rel_path='uploads/script.txt', offset=0, limit=8000)",
         ],
     )
     R(
         "file.extract_text_from_upload",
         file_tools.extract_text_from_upload,
         tags=["file", "read"],
-        description="从 txt、md、docx 上传文件抽取文本；大文件返回分页片段，按 next_offset 继续读取。",
+        output_policy=DOCUMENT_OUTPUT_POLICY,
+        description="从 txt、md、docx 上传文件抽取文本；正文在 content_page 中按字符偏移分页。",
     )
     R(
         "file.workspace_list",
         file_tools.workspace_list,
         tags=["file", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
       schema={
           "type": "object",
           "properties": {
@@ -1750,9 +1771,16 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
               },
               "case_sensitive": {"type": "boolean", "description": "是否大小写敏感，默认 false"},
               "recursive": {"type": "boolean", "description": "是否递归列出子目录"},
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "页起始偏移；继续读取时传上页 next_offset",
+                },
                 "max_entries": {
                     "type": "integer",
-                    "description": "最多返回条目数，默认 200，上限 2000",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "单页条目数，默认 50，上限 100",
                 },
           },
       },
@@ -1765,6 +1793,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "file.workspace_search",
         file_tools.workspace_search,
         tags=["file", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
       schema={
           "type": "object",
           "properties": {
@@ -1797,9 +1826,16 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
               "case_sensitive": {"type": "boolean", "description": "是否大小写敏感，默认 false"},
               "recursive": {"type": "boolean", "description": "是否递归搜索"},
               "include_content": {"type": "boolean", "description": "是否搜索文本内容"},
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "结果页起始偏移；继续搜索时传上页 next_offset",
+                },
                 "max_results": {
                     "type": "integer",
-                    "description": "最多返回匹配数，默认 50，上限 500",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "单页匹配数，默认 50，上限 100",
                 },
                 "max_file_bytes": {
                     "type": "integer",
@@ -1816,23 +1852,24 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "file.workspace_read",
         file_tools.workspace_read,
         tags=["file", "read"],
+        output_policy=DOCUMENT_OUTPUT_POLICY,
       schema={
           "type": "object",
           "properties": {
               "path": {"type": "string", "description": "workspace 相对文件路径"},
-              "mode": {"type": "string", "description": "text 或 base64，默认 text"},
+              "mode": {"type": "string", "enum": ["text"], "description": "仅支持 text；二进制使用专用媒体读取工具"},
                 "max_bytes": {
                     "type": "integer",
-                    "description": "最大读取字节数，默认 1000000，上限 10000000",
+                    "description": "源文件物理安全上限，默认及最大 10485760 字节",
                 },
-              "offset": {"type": "integer", "description": "按行读取时的起始行，1-based"},
-              "limit": {"type": "integer", "description": "按行读取时的最大行数"},
+              "offset": {"type": "integer", "minimum": 0, "description": "字符起始偏移，0-based"},
+              "limit": {"type": "integer", "minimum": 0, "maximum": 8000, "description": "本页字符数，默认及最大 8000；0 只返回元数据"},
           },
           "required": ["path"],
       },
-      description="读取当前 workspace 内的文件内容，支持文本、base64 和行范围，不执行 shell 命令。",
+      description="读取当前 workspace 文本文件的一个有界字符页，不执行 shell 命令。",
         usage_hints=[
-            "tool.execute(name='file.workspace_read', input={'path': 'README.md', 'offset': 1, 'limit': 80})"
+            "tool.execute(name='file.workspace_read', input={'path': 'README.md', 'offset': 0, 'limit': 8000})"
         ],
     )
     R(
@@ -1896,7 +1933,12 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
 
     # memory.*
     R("memory.save_fact", memory_tools.memory_save_fact, tags=["memory"])
-    R("memory.recall", memory_tools.memory_recall, tags=["memory", "read"])
+    R(
+        "memory.recall",
+        memory_tools.memory_recall,
+        tags=["memory", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
+    )
     R(
         "memory.compact_context",
         memory_tools.memory_compact_context,
@@ -1907,21 +1949,28 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         ),
     )
     R("memory.save_user_fact", memory_tools.memory_save_user_fact, tags=["memory", "user"])
-    R("memory.recall_user", memory_tools.memory_recall_user, tags=["memory", "user", "read"])
+    R(
+        "memory.recall_user",
+        memory_tools.memory_recall_user,
+        tags=["memory", "user", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
+    )
 
     # config.* — 统一配置总览（LLM / 图片 / 视频 / API Keys）
     # config.* — runtime.jsonc 文件即真相源；唯一对外写入口
     R(
         "config.read",
-        config_tools.config_read,
+        config_tools.config_read_for_agent,
         tags=["config", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
         description="读 runtime 配置（结构化），默认 mask api_key",
     )
     R(
         "config.read_file",
-        config_tools.config_read_file,
+        config_tools.config_read_file_for_agent,
         tags=["config", "read"],
-        description="读原始 JSONC 文本 + 结构 + 校验状态（UI 编辑器用）",
+        output_policy=DOCUMENT_OUTPUT_POLICY,
+        description="读取 runtime.jsonc 的一个有界原始文本页；结构化配置用 config.read。",
     )
     R(
         "config.validate",
@@ -1934,6 +1983,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "feature.list",
         feature_tools.feature_list,
         tags=["feature", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
         description="列出统一 feature flag 和 kill switch 状态。",
     )
     R(
@@ -1948,6 +1998,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "agent.run",
         agent_tools.agent_run,
         tags=["agent", "write"],
+        output_policy=DELEGATED_OUTPUT_POLICY,
       description="委派给已注册的专职子 Agent；适合选择已有 workflow 模板、媒体节点生产和隔离图片编辑。",
       search_hint=(
           "subagent specialist delegate agent run workflow_spec workflow template selector node_producer image_editor node produce prompt fields run image video audio generate character reference edit crop brush fill annotate text arrow "
@@ -1990,24 +2041,28 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "agent.map_reduce",
         agent_tools.agent_map_reduce,
         tags=["agent", "mode"],
+        output_policy=DELEGATED_OUTPUT_POLICY,
         description="Map-Reduce 模式:并行扇出 N 个独立子任务,可选 LLM 聚合摘要(三模型对比、候选图、独立配角)。",
     )
     R(
         "agent.pipeline",
         agent_tools.agent_pipeline,
         tags=["agent", "mode"],
+        output_policy=DELEGATED_OUTPUT_POLICY,
         description="Pipeline 模式:顺序管道,前一阶段产出按 carry_keys 注入下一阶段(场景→分镜→视频提示词)。",
     )
     R(
         "agent.hierarchical",
         agent_tools.agent_hierarchical,
         tags=["agent", "mode"],
+        output_policy=DELEGATED_OUTPUT_POLICY,
         description="Hierarchical 模式:每个 split 内部可继续走 map_reduce/pipeline(多集并行,每集再分发段任务)。",
     )
     R(
         "agent.review",
         agent_tools.agent_review,
         tags=["agent", "review", "read"],
+        output_policy=DELEGATED_OUTPUT_POLICY,
       description=(
           "隔离运行通用只读审查子 Agent，用真实项目状态、任务、计划、节点、指南和文件审查主 Agent 指定目标。"
           "复杂视频节点批次或任务需要第二视角时传 review_goal、user_request、work_summary、review_profile、evidence、guide_topics/focus。"
@@ -2022,6 +2077,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         "media.list_providers",
         media_provider_tools.media_list_providers,
         tags=["media", "provider", "read"],
+        output_policy=COLLECTION_OUTPUT_POLICY,
     )
     R(
         "media.test_provider",
@@ -2054,10 +2110,10 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
             "tool.execute(name='assets.save_to_shared', input={'kind': 'character', 'category': '主要角色', 'source': 'node:12', 'name': '角色名'})",
         ],
     )
-    R("assets.list_project", asset_library_tools.assets_list_project, tags=["assets", "read"])
-    R("assets.list_shared", asset_library_tools.assets_list_shared, tags=["assets", "read"])
-    R("assets.read_asset", asset_library_tools.assets_read_asset, tags=["assets", "read"])
-    R("assets.list_categories", asset_library_tools.assets_list_categories, tags=["assets", "read"])
+    R("assets.list_project", asset_library_tools.assets_list_project, tags=["assets", "read"], output_policy=COLLECTION_OUTPUT_POLICY)
+    R("assets.list_shared", asset_library_tools.assets_list_shared, tags=["assets", "read"], output_policy=COLLECTION_OUTPUT_POLICY)
+    R("assets.read_asset", asset_library_tools.assets_read_asset, tags=["assets", "read"], output_policy=DOCUMENT_OUTPUT_POLICY)
+    R("assets.list_categories", asset_library_tools.assets_list_categories, tags=["assets", "read"], output_policy=COLLECTION_OUTPUT_POLICY)
     R(
         "assets.create_category",
         asset_library_tools.assets_create_category,

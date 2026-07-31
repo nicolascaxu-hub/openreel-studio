@@ -69,7 +69,21 @@ maintain separate canvas/panel state before work appears.
   `content_offset=content_page.next_offset` and a bounded `content_limit`;
   `content_limit=0` returns body metadata only.
 - Tool errors are observations. Read `error_kind`, `hint`, and
-  `model_feedback`; repair the specific node or field before retrying.
+  `suggested_next`; repair the specific node or field before retrying.
+- Every tool result crosses one typed model-context compiler. JSON, documents,
+  collections, and multimodal parts have executable per-tool policies and a
+  global 10,000-token hard ceiling. Large raw results are retained only as
+  project-scoped diagnostic artifacts; model context and SSE receive bounded
+  projections plus an opaque `artifact_ref`.
+- Long text readers (`node.get`, `skill.get`, file readers, text assets, and
+  workflow spec/template readers) expose deterministic character pages with a
+  revision and `next_offset`. Continue from that offset instead of requesting
+  or reconstructing an unbounded result.
+- Collection readers use bounded pages. `project.get_state` returns runtime
+  state plus canvas counts rather than every node and edge; use `node.list` and
+  `node.get` for details. Task, memory, event, workspace, asset, skill, and
+  workflow runtime collections expose `offset`/`next_offset` (or a nested page)
+  so callers continue deliberately instead of using an unlimited sentinel.
 - System prompt stays short. Detailed workflow, examples, and debugging advice
   live in skills, docs, tests, validators, and permission policy.
 

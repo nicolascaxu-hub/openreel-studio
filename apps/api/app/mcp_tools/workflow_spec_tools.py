@@ -12,6 +12,8 @@ from typing import Any
 from app.agent import workflow_canvas_projection
 from app.agent import workflow_spec_artifacts
 from app.agent import workflow_spec_patch as workflow_spec_patch_service
+from app.agent.model_context.policy import DOCUMENT_OUTPUT_POLICY, LARGE_COLLECTION_OUTPUT_POLICY
+from app.mcp_tools import file_tools
 from app.mcp_tools.registry import register
 
 
@@ -103,6 +105,7 @@ async def workflow_spec_apply_patch(
     "workflow.canvas.inspect",
     description="只读投影 workflow 的批次、循环、画布节点、依赖边和最终输出。",
     tags=["workflow", "read", "review"],
+    output_policy=LARGE_COLLECTION_OUTPUT_POLICY,
     search_hint=(
         "workflow canvas inspect projection graph dry-run nodes edges final outputs dependencies "
         "工作流 画布 映射 投影 检查 节点 连线 最终产物 依赖"
@@ -160,14 +163,15 @@ async def workflow_canvas_inspect(
 
 @register(
     "workflow.spec.read",
-    description="读取 workflow spec artifact 的 preview 或 workflow；供模板选择和搭建模式复查。",
+    description="读取 workflow spec artifact 的 preview；完整 workflow 按稳定 JSON 字符页返回。",
     tags=["workflow", "artifact", "read"],
+    output_policy=DOCUMENT_OUTPUT_POLICY,
     search_hint=(
         "workflow spec artifact read preview workflow reusable revise tweak "
         "工作流 spec artifact 读取 预览 模板 微调 修订"
     ),
     usage_hints=[
-        "detail='preview' 只返回用户可读摘要；detail='workflow' 返回完整模板给隔离子 Agent。",
+        "detail='preview' 返回用户可读摘要；detail='workflow' 返回 workflow_page，按 next_offset 继续。",
     ],
     schema={
         "type": "object",
@@ -175,6 +179,8 @@ async def workflow_canvas_inspect(
             "project_id": {"type": "string"},
             "artifact_ref": {"type": "string"},
             "detail": {"type": "string", "enum": ["preview", "workflow"]},
+            "content_offset": {"type": "integer", "minimum": 0},
+            "content_limit": {"type": "integer", "minimum": 0, "maximum": 8000},
         },
         "required": ["artifact_ref"],
     },
@@ -184,6 +190,8 @@ async def workflow_spec_read(
     project_id: str,
     artifact_ref: str,
     detail: str = "preview",
+    content_offset: int = 0,
+    content_limit: int | None = None,
 ) -> dict[str, Any]:
     if not project_id:
         return {"ok": False, "error": "project_id is required", "error_kind": "missing_project_id"}
@@ -202,5 +210,10 @@ async def workflow_spec_read(
         "self_check": artifact.get("self_check") or {},
     }
     if str(detail or "").strip() == "workflow":
-        payload["workflow"] = artifact.get("workflow") or {}
+        payload["workflow_page"] = file_tools.json_content_page(
+            artifact.get("workflow") or {},
+            offset=content_offset,
+            limit=content_limit,
+            source=f"workflow-spec:{artifact_ref}",
+        )
     return payload

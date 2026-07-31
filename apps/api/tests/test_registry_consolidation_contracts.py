@@ -209,7 +209,7 @@ async def test_video_production_skill_guides_reference_driven_short_video_nodes(
         scope="builtin",
         detail="full",
     )
-    guide = full["content"]
+    guide = full["content_page"]["content"]
 
     assert full["ok"] is True
     assert full["detail"] == "full"
@@ -280,8 +280,8 @@ async def test_video_production_hands_off_explicit_story_template_requests() -> 
         detail="full",
     )
 
-    assert "story_template_method" in result["content"]
-    assert "故事模板图/视觉开发板" in result["content"]
+    assert "story_template_method" in result["content_page"]["content"]
+    assert "故事模板图/视觉开发板" in result["content_page"]["content"]
     assert "related_skill" not in result
 
 
