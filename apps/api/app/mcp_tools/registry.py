@@ -207,6 +207,27 @@ def _node_create_field_properties() -> dict[str, Any]:
         "content": {"type": "string"},
         "description": {"type": "string"},
         "prompt": {"type": "string"},
+        "generation": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "instruction": {
+                    "type": "string",
+                    "description": "对最近用户文本执行的完整转换要求；runner 只输出最终正文。",
+                },
+                "source_message_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8,
+                    "description": "读取最近几条用户消息作为原始素材；同轮素材用 1，上一轮素材加当前要求通常用 2。",
+                },
+                "source_text": {
+                    "type": "string",
+                    "description": "直接工具调用时可提供原始文本；Agent 优先使用 source_message_count，避免重复长文本。",
+                },
+            },
+            "required": ["instruction", "source_message_count"],
+        },
         **_node_media_field_properties(),
         "duration_seconds": {"type": "number"},
         "production_path": {"type": "string"},
@@ -666,7 +687,7 @@ _STANDARD_DESCRIPTION_BASES: dict[str, str] = {
     "memory.save_fact": "保存当前项目级长期事实",
     "memory.save_user_fact": "保存跨项目用户偏好或稳定工作习惯",
     "node.create": "创建一个或少量 text/image/video/audio 创作节点",
-    "node.get": "读取一个或多个指定节点的完整输入、输出、提示词、状态、surface 和链接信息",
+    "node.get": "读取一个或多个指定节点的输入、输出、提示词、状态、surface 和链接信息",
     "node.list": "列出当前项目画布节点索引，默认返回 20 个节点，可按节点类型、状态或关键词过滤",
     "node.run": "执行指定节点并由后端按节点类型派发 runner、落库状态和产物",
     "node.update": "局部更新一个或少量指定节点的允许字段",
@@ -737,10 +758,19 @@ _STANDARD_USAGE_BY_NAME: dict[str, str] = {
     "agent.review": "阶段产出后调用；传目标、需求、摘要和证据；只修有证据的问题。",
     "agent.run": "workflow_spec 只选择已有 workflow 模板；node_producer 处理指定节点；image_editor 处理像素编辑。",
     "canvas.delete": "scope='selected' 配 node_ids；scope='all' 清空当前项目画布。",
-    "node.create": "单个或少量批量创建；搭框架/低风险可用 nodes，复杂媒体 prompt 或大量节点分批。",
-    "node.get": "精确读取节点详情；多个节点一次传 node_ids，只有一个节点才传 node_id。",
+    "node.create": (
+        "单个或少量批量创建；长正文保存用 fields.generation 后 node.run；"
+        "搭框架/低风险可用 nodes，复杂媒体 prompt 或大量节点分批。"
+    ),
+    "node.get": (
+        "精确读取节点详情；生成型长文本默认不返回正文，当前用户确需查看/分析正文才传 include_content=true；"
+        "多个节点一次传 node_ids，只有一个节点才传 node_id。"
+    ),
     "node.list": "默认返回 20 个节点索引；需要更多传 limit，完整索引用 limit=0；详情批量 node.get。",
-    "node.run": "运行前检查内容/prompt/fields/依赖；不符合当前 skill 或用户要求时先 node.update；失败读 error_kind/hint/model_feedback。",
+    "node.run": (
+        "运行前检查内容/prompt/fields/依赖；不符合要求先 node.update；"
+        "fields.generation 成功即已原子保存，无需 node.get 验证；失败读 error_kind/hint/model_feedback。"
+    ),
     "node.update": "input_json 与旧 input 局部合并；不同改动用 updates，同一 patch 可配 node_ids；复杂/高风险分批。",
     "project.get_state": "开始、继续、排障或回答状态问题前读取真实项目状态。",
     "skill.search": "传 category='workflow'|'prompt'|'review'；scope=user 是自定义，scope=builtin 是内置默认；queries 可一次查询多个模块。",
@@ -1372,7 +1402,9 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         tags=["node", "write"],
       description=(
         "创建一个或少量 text/image/video/audio 工程节点。制作流程由 active skill 或用户目标指导；"
-        "text 节点正文需要模型写进 fields.content；image/video/audio prompt 需要模型显式写入；"
+        "短 text 正文可直接写 fields.content；用户明确要求保存长文本时，写"
+        " fields.generation={instruction,source_message_count}，随后 node.run 由内部 runner 原子生成正文，"
+        "不要把长正文塞进本工具参数；image/video/audio prompt 需要模型显式写入；"
         "image/video/audio 的 duration、aspect、style、production_path 等制作参数也写进 fields。"
         "批量搭框架或少量低风险节点可传 nodes；复杂媒体提示词或大量节点要分批。"
         "parent_node_id 只做画布分组；上游节点、资产或 URL 统一写 fields.references，"
@@ -1412,6 +1444,7 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         tags=["node", "read"],
       description=(
           "读取节点完整信息(input / output / prompt / status / surface / links)。"
+          "带 fields.generation 的长文本默认隐藏正文；仅在当前用户需要查看或分析正文时传 include_content=true。"
           "已知节点编号 id 时传 node_id/node_ids；只记得标题/描述/错误时传 query 或 regex 先取候选详情。"
       ),
       schema={
@@ -1447,6 +1480,10 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
                     "type": "integer",
                     "description": "query/regex 查询最多读取多少个详情；默认 20，0 为全部。",
                 },
+              "include_content": {
+                  "type": "boolean",
+                  "description": "仅当前用户需要查看或分析 fields.generation 生成的完整长正文时设 true；默认 false。",
+              },
           },
         },
     )
@@ -1581,7 +1618,9 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         tags=["node", "execute"],
       description=(
         "执行已有 text/image/video/audio 节点并保存产物。需要节点已具备可运行输入；"
-        "普通 text 节点保存已有 fields.content；带 workflow prompt_ref/prompt_spec 的 text 节点可在本工具内单次 LLM 生成 fields.content；"
+        "普通 text 节点保存已有 fields.content；带 fields.generation 的 text 节点从已捕获用户消息"
+        "受控续写并原子生成正文，成功结果已完成验证，无需再 node.get；"
+        "带 workflow prompt_ref/prompt_spec 的 text 节点可在本工具内生成 fields.content；"
         "节点运行前先按当前 skill 和用户要求检查内容/prompt、fields 和依赖；"
         "不符合时先 node.update 修原节点，不要只改无关字段后重跑；"
         "复杂或高风险创作节点可用 agent.review 辅助检查内容、字段和依赖；"

@@ -165,6 +165,10 @@ async def test_project_mentor_skill_topic_docs_match_registered_topics() -> None
     assert documented_topics <= registered_topics
     assert "node-first" in skill_doc
     assert "one visible canvas" in skill_doc
+    assert "fields.generation={instruction,source_message_count}" in skill_doc
+    assert "atomically saves only a" in skill_doc
+
+
 def test_project_mentor_source_references_exist() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     missing = [

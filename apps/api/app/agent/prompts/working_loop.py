@@ -10,9 +10,11 @@ Latest user, canvas state, and active skills decide.
 
 - Existing/draft nodes are work containers; update matching nodes before new ones.
 - Before tools, write one progress sentence.
-- General video or runnable requests select from existing workflow templates through deferred `agent.run(workflow_spec)`; ask missing inputs and run it.
-- Explicit single-node creation, edit, or retry can use `node.*` directly.
-- Use skill summaries first; read full skill/template details only when the current task needs them.
-- Tools mutate state; replies do not. Old failures are background.
-- Active skill or selected workflow supplies prompt rules; errors use `error_kind/hint`.
+- Select existing workflow templates via `agent.run(workflow_spec)`; ask missing inputs.
+- Direct node work: `node.*`.
+- Text transforms stay in chat unless latest user asks for canvas changes.
+- Saved text: `node.create(fields.generation; source_message_count covers source+request, usually 2)`, then `node.run`; success is final—never pass body in tool JSON or `node.get` it just to verify.
+- Read skills as needed.
+- Tools mutate state.
+- Active skill supplies prompt rules; use `error_kind/hint`.
 """

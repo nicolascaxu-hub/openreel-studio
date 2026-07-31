@@ -31,6 +31,7 @@ from app.config_store.schema import (
 )
 from app.db.models import AppSetting, LlmProvider, MediaProvider, ModelConfig
 from app.db.session import session_scope
+from app.llm_limits import DEFAULT_LLM_MAX_OUTPUT_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +334,7 @@ async def _sync_to_db(cfg: RuntimeConfig) -> None:
                 row = ModelConfig(
                     task_type=task, provider=entry.provider, model_name=entry.model_name,
                     llm_provider_name=entry.name,
-                    max_tokens=entry.max_output_tokens or 4000,
+                    max_tokens=entry.max_output_tokens or DEFAULT_LLM_MAX_OUTPUT_TOKENS,
                     enabled=True,
                 )
                 session.add(row)
@@ -341,7 +342,7 @@ async def _sync_to_db(cfg: RuntimeConfig) -> None:
                 row.provider = entry.provider
                 row.model_name = entry.model_name
                 row.llm_provider_name = entry.name
-                row.max_tokens = entry.max_output_tokens or 4000
+                row.max_tokens = entry.max_output_tokens or DEFAULT_LLM_MAX_OUTPUT_TOKENS
                 row.enabled = True
                 session.add(row)
         for task, row in by_task.items():

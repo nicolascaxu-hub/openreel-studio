@@ -599,6 +599,59 @@ async def test_node_get_accepts_batch_node_ids(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_node_get_redacts_generated_long_text_unless_explicitly_requested(monkeypatch):
+    content = "完整剧本正文" * 240
+
+    async def fake_get_node(node_id: str):
+        return {
+            "id": node_id,
+            "project_id": "proj-1",
+            "type": "text",
+            "title": "整理后的剧本",
+            "status": "completed",
+            "input": {
+                "content": content,
+                "generation": {
+                    "status": "completed",
+                    "source_message_count": 2,
+                },
+            },
+            "output": {
+                "content": content,
+                "text_runner": "bounded_generation",
+            },
+        }
+
+    async def fake_public_id_map(project_id: str):
+        return {}
+
+    monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
+    monkeypatch.setattr(node_universal, "_node_public_id_map", fake_public_id_map)
+
+    compact = await node_universal.node_get(
+        project_id="proj-1",
+        node_id="script-1",
+    )
+    full = await node_universal.node_get(
+        project_id="proj-1",
+        node_id="script-1",
+        include_content=True,
+    )
+
+    assert "content" not in compact["input"]
+    assert "content" not in compact["output"]
+    assert compact["content_access"] == {
+        "available": True,
+        "content_chars": len(content),
+        "included": False,
+        "hint": "仅当当前用户需要查看或分析完整正文时，用 node.get(include_content=true)。",
+    }
+    assert full["input"]["content"] == content
+    assert full["output"]["content"] == content
+    assert "content_access" not in full
+
+
+@pytest.mark.asyncio
 async def test_node_list_defaults_to_twenty_index_items_and_limit_zero_returns_all(monkeypatch):
     nodes = [
         {
@@ -2588,6 +2641,198 @@ async def test_workflow_runtime_skill_payload_prefers_compiled_prompt_template()
         "content_mode": "compiled_prompt_template",
         "load_error": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_prepare_text_generation_captures_recent_message_ids(monkeypatch):
+    async def fake_recent_user_message_ids(project_id: str, count: int) -> list[str]:
+        assert project_id == "proj-1"
+        assert count == 2
+        return ["message-1", "message-2"]
+
+    monkeypatch.setattr(
+        node_universal,
+        "_recent_user_message_ids",
+        fake_recent_user_message_ids,
+    )
+
+    prepared, error = await node_universal._prepare_text_generation_fields(
+        "proj-1",
+        {
+            "title": "整理后的剧本",
+            "content": "不应直接落库的模型正文",
+            "generation": {
+                "instruction": "把上面的素材整理成标准剧本，只输出剧本正文。",
+                "source_message_count": 2,
+            },
+        },
+    )
+
+    assert error is None
+    assert prepared["content"] == "待生成"
+    assert prepared["prompt_status"] == "pending"
+    assert prepared["generation"]["status"] == "pending"
+    assert prepared["generation"]["source"] == "recent_user_messages"
+    assert prepared["generation"]["source_message_ids"] == ["message-1", "message-2"]
+    assert "source_text" not in prepared["generation"]
+
+
+@pytest.mark.asyncio
+async def test_node_run_direct_text_generation_saves_complete_content_atomically(monkeypatch):
+    updates: list[dict[str, Any]] = []
+    node = {
+        "id": "script-1",
+        "display_id": 3,
+        "project_id": "proj-1",
+        "type": "text",
+        "title": "整理后的剧本",
+        "status": "idle",
+        "input": {
+            "title": "整理后的剧本",
+            "content": "待生成",
+            "generation": {
+                "instruction": "把素材整理成标准剧本，只输出正文。",
+                "source_text": "第一场，雨夜。人物走进车站。",
+                "source_message_count": 1,
+                "status": "pending",
+            },
+        },
+    }
+
+    async def fake_resolve(project_id: str, node_id: str):
+        assert project_id == "proj-1"
+        return node_id
+
+    async def fake_public_id_map(project_id: str):
+        assert project_id == "proj-1"
+        return {"script-1": "3"}
+
+    async def fake_get_node(node_id: str):
+        assert node_id == "script-1"
+        return node
+
+    async def fake_update_node(node_id: str, patch: dict):
+        assert node_id == "script-1"
+        updates.append(deepcopy(patch))
+        if "input_data" in patch:
+            node["input"] = patch["input_data"]
+        if "status" in patch:
+            node["status"] = patch["status"]
+        if "output_data" in patch:
+            node["output"] = patch["output_data"]
+        return {"id": node_id, **patch}
+
+    async def fake_call_llm(**kwargs):
+        assert kwargs["project_id"] == "proj-1"
+        assert "第一场，雨夜" in kwargs["message"]
+        assert "把素材整理成标准剧本" in kwargs["message"]
+        return {
+            "content": "第一场 车站·夜·外\n人物走进雨中的车站。",
+            "model": "test-model",
+            "usage": {"prompt_tokens": 20, "completion_tokens": 30, "total_tokens": 50},
+            "continuation_count": 1,
+        }
+
+    monkeypatch.setattr(node_universal, "_resolve_agent_node_id", fake_resolve)
+    monkeypatch.setattr(node_universal, "_node_public_id_map", fake_public_id_map)
+    monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
+    monkeypatch.setattr(node_universal.canvas_tools, "update_node", fake_update_node)
+    monkeypatch.setattr(node_universal, "_call_direct_text_llm", fake_call_llm)
+
+    result = await node_universal.node_run(project_id="proj-1", node_id="script-1")
+
+    assert result["ok"] is True
+    assert result["node_id"] == "3"
+    assert result["result"]["text_runner"] == "bounded_generation"
+    assert result["result"]["content_chars"] > 0
+    assert "content" not in result["result"]
+    assert result["result"]["atomic_write"] is True
+    assert result["result"]["content_saved"] is True
+    assert result["result"]["verification_required"] is False
+    assert result["result"]["suggested_next"] == "respond_to_user"
+    from app.agent.tool_output import build_tool_output_envelope
+
+    observation = json.loads(
+        build_tool_output_envelope(
+            result,
+            project_id="proj-1",
+            run_id="text-runner-test",
+            iteration=1,
+            tool_name="node.run",
+        )["model_visible"]["content"]
+    )
+    assert observation["next_action"] == "respond_to_user"
+    assert observation["result"]["result"]["content_saved"] is True
+    assert result["result"]["continuation_count"] == 1
+    assert result["_subagent_usage"][0]["agent"] == "text_node_runner"
+    input_updates = [update["input_data"] for update in updates if "input_data" in update]
+    assert len(input_updates) == 1
+    assert input_updates[0]["content"].startswith("第一场 车站")
+    assert input_updates[0]["generation"]["status"] == "completed"
+    assert input_updates[0]["generation"]["last_run"]["content_chars"] > 0
+    assert updates[-1]["status"] == "completed"
+    assert updates[-1]["output_data"]["content"].startswith("第一场 车站")
+    assert "_full_content" not in updates[-1]["output_data"]
+
+
+@pytest.mark.asyncio
+async def test_node_run_direct_text_generation_rejects_incomplete_output(monkeypatch):
+    updates: list[dict[str, Any]] = []
+    node = {
+        "id": "script-1",
+        "display_id": 3,
+        "project_id": "proj-1",
+        "type": "text",
+        "title": "整理后的剧本",
+        "status": "idle",
+        "input": {
+            "title": "整理后的剧本",
+            "content": "待生成",
+            "generation": {
+                "instruction": "把素材整理成剧本。",
+                "source_text": "很长的原始素材",
+                "source_message_count": 1,
+                "status": "pending",
+            },
+        },
+    }
+
+    async def fake_resolve(project_id: str, node_id: str):
+        return node_id
+
+    async def fake_public_id_map(project_id: str):
+        return {"script-1": "3"}
+
+    async def fake_get_node(node_id: str):
+        return node
+
+    async def fake_update_node(node_id: str, patch: dict):
+        updates.append(deepcopy(patch))
+        if "status" in patch:
+            node["status"] = patch["status"]
+        return {"id": node_id, **patch}
+
+    async def fake_call_llm(**kwargs):
+        raise node_universal.LLMOutputTruncatedError(
+            "still truncated",
+            partial_content="不能保存的半截正文",
+            continuation_count=1,
+        )
+
+    monkeypatch.setattr(node_universal, "_resolve_agent_node_id", fake_resolve)
+    monkeypatch.setattr(node_universal, "_node_public_id_map", fake_public_id_map)
+    monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
+    monkeypatch.setattr(node_universal.canvas_tools, "update_node", fake_update_node)
+    monkeypatch.setattr(node_universal, "_call_direct_text_llm", fake_call_llm)
+
+    result = await node_universal.node_run(project_id="proj-1", node_id="script-1")
+
+    assert result["ok"] is False
+    assert result["error_kind"] == "text_output_truncated"
+    assert all("input_data" not in update for update in updates)
+    assert node["input"]["content"] == "待生成"
+    assert updates[-1]["status"] == "failed"
+
 
 @pytest.mark.asyncio
 async def test_node_run_workflow_text_node_uses_one_shot_llm(monkeypatch):

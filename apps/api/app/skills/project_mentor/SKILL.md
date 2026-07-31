@@ -57,6 +57,16 @@ maintain separate canvas/panel state before work appears.
   Save to the asset library only when the user explicitly asks.
 - Natural-language tasks enter the Agent loop. Backend preprocessing may clean
   input and stale state, but it must not decide business actions for the model.
+- Summaries, rewrites, formatting, analysis, and plans return in chat unless the
+  latest user message explicitly asks to save or change canvas content. An
+  explicitly saved long text uses a placeholder `text` node with
+  `fields.generation={instruction,source_message_count}`, followed by
+  `node.run`. The count covers the source message and current save request
+  (usually 2 for a follow-up request); the runner captures those message ids and
+  atomically saves only a complete result. A successful run is final and does
+  not need `node.get` verification. Generated long-text reads omit the body by
+  default; use `node.get(include_content=true)` only when the current user asks
+  to view or analyze that full text.
 - Tool errors are observations. Read `error_kind`, `hint`, and
   `model_feedback`; repair the specific node or field before retrying.
 - System prompt stays short. Detailed workflow, examples, and debugging advice

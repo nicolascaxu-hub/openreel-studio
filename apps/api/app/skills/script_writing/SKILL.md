@@ -56,6 +56,25 @@ applies_to: 写剧本 剧本 故事正文 分段故事 分集故事 script writi
 - `fields.content`: 完整剧本正文
 - `fields.references`: 可指向用户提供的文本、参考图说明或上游设定，role 使用 `context`
 
+用户只要求在聊天里整理或改写剧本时，直接返回正文，不创建节点。用户明确要求把长剧本保存到画布时，Agent 先创建占位节点：
+
+```json
+{
+  "type": "text",
+  "fields": {
+    "title": "整理后的剧本",
+    "purpose": "script",
+    "stage": "story",
+    "generation": {
+      "instruction": "把上面的素材整理成标准剧本，只输出完整剧本正文。",
+      "source_message_count": 2
+    }
+  }
+}
+```
+
+`source_message_count` 要覆盖素材消息和当前保存要求；“上一轮给素材、本轮要求保存”时通常填 `2`。随后调用 `node.run`。原始素材和生成后的长正文不放进 Agent 的工具参数；runner 从创建时捕获的用户消息读取素材，并且只在正文完整生成后写入 `fields.content`。成功返回已经代表原子写入完成，不再用 `node.get` 读取长正文做重复验证。之后只有当前用户要求查看或分析完整正文时，才使用 `node.get(include_content=true)`；默认读取只返回长度和生成状态。
+
 ## 检查点
 
 - 故事能被后续人物图、场景图、分镜和视频提示词继续使用。

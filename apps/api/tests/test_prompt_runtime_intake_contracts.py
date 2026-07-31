@@ -1213,3 +1213,132 @@ async def test_orchestrator_retries_empty_length_response(monkeypatch) -> None:
         for args, kwargs in holder["trace"]
     )
     assert holder["saved"][-1][1] == "已用更短方式继续。"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_never_executes_truncated_write_tool_call(monkeypatch) -> None:
+    holder = {"state": {}, "saved": [], "trace": [], "registry_calls": []}
+
+    class FakeProjectService:
+        async def get_project(self, project_id: str):
+            return SimpleNamespace(state_json=json.dumps(holder["state"]))
+
+        async def get_project_state(self, project_id: str):
+            return dict(holder["state"])
+
+        async def update_project_state(self, project_id: str, patch: dict):
+            holder["state"].update(patch)
+            return SimpleNamespace(state_json=json.dumps(holder["state"]))
+
+    class FakeTrace:
+        def __init__(self, project_id: str, run_id: str):
+            self.events = []
+
+        def emit(self, *args, **kwargs):
+            holder["trace"].append((args, kwargs))
+            self.events.append((args, kwargs))
+
+    class FakeMessage:
+        def __init__(self, content: str = "", tool_calls=None):
+            self.content = content
+            self.tool_calls = tool_calls
+
+        def model_dump(self):
+            return {
+                "role": "assistant",
+                "content": self.content,
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
+                        },
+                    }
+                    for call in (self.tool_calls or [])
+                ],
+            }
+
+    truncated_call = SimpleNamespace(
+        id="call-truncated-write",
+        function=SimpleNamespace(name="node__create", arguments="{}"),
+    )
+
+    class FakeLLMService:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_with_tools(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                message = FakeMessage("", [truncated_call])
+                finish_reason = "length"
+            else:
+                message = FakeMessage("写入已安全停止，没有创建空节点。")
+                finish_reason = "stop"
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=message, finish_reason=finish_reason)],
+                usage={"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
+                model="fake-model",
+            )
+
+        async def generate(self, *args, **kwargs):
+            return {"content": "正在校验写入参数。"}
+
+    async def fake_registry_call(name: str, **kwargs):
+        holder["registry_calls"].append((name, kwargs))
+        raise AssertionError("truncated write calls must not reach the registry")
+
+    async def fake_save_message(project_id: str, role: str, content: str, metadata=None):
+        holder["saved"].append((role, content, metadata))
+
+    async def fake_settings():
+        return {
+            "max_iterations": 3,
+            "max_output_tokens": 12_000,
+            "auto_archive": True,
+        }
+
+    async def fake_compute_canvas_summary(project_id: str):
+        return {"total": 0, "by_type": {}, "running": 0, "failed": 0, "completed": 0, "nodes": []}
+
+    async def fake_build_messages(project_id: str, message: str, include_history: bool = True, current_message_aliases=None):
+        return [{"role": "user", "content": message}]
+
+    async def fake_maybe_compress_history(project_id: str):
+        return None
+
+    monkeypatch.setattr(orchestrator_module, "AgentTrace", FakeTrace)
+    monkeypatch.setattr(orchestrator_module, "_load_agent_settings", fake_settings)
+    monkeypatch.setattr(orchestrator_module.registry, "call", fake_registry_call)
+
+    orchestrator = AgentOrchestrator.__new__(AgentOrchestrator)
+    orchestrator.project_service = FakeProjectService()
+    orchestrator.llm_service = FakeLLMService()
+    orchestrator._save_message = fake_save_message
+    orchestrator._compute_canvas_summary = fake_compute_canvas_summary
+    orchestrator._build_messages = fake_build_messages
+    orchestrator._maybe_compress_history = fake_maybe_compress_history
+
+    events = [
+        event
+        async for event in orchestrator._stream_one_turn("project-1", "把长剧本保存到画布")
+    ]
+
+    assert holder["registry_calls"] == []
+    assert orchestrator.llm_service.calls == 2
+    assert any(
+        event.get("type") == "tool_done"
+        and event.get("tool") == "node.create"
+        and isinstance(event.get("result"), dict)
+        and event["result"].get("error_kind") == "truncated_tool_call"
+        for event in events
+    )
+    assert any(
+        args
+        and args[0] == "tool_result"
+        and kwargs.get("transition_reason") == "truncated_write_tool_blocked"
+        for args, kwargs in holder["trace"]
+    )
+    assert holder["saved"][-1][1] == "写入已安全停止，没有创建空节点。"

@@ -3,17 +3,33 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import llm_service
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMOutputTruncatedError, LLMService
 
 
-def _response(content: str, finish_reason: str = "stop"):
+def _response(
+    content: str,
+    finish_reason: str = "stop",
+    *,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+):
+    usage = None
+    if prompt_tokens is not None or completion_tokens is not None:
+        prompt = prompt_tokens or 0
+        completion = completion_tokens or 0
+        usage = SimpleNamespace(
+            prompt_tokens=prompt,
+            completion_tokens=completion,
+            total_tokens=prompt + completion,
+        )
     return SimpleNamespace(
         choices=[
             SimpleNamespace(
                 finish_reason=finish_reason,
                 message=SimpleNamespace(content=content, tool_calls=None),
             )
-        ]
+        ],
+        usage=usage,
     )
 
 
@@ -264,8 +280,18 @@ async def test_llm_generate_continues_truncated_text(monkeypatch) -> None:
     async def fake_acompletion(**kwargs):
         calls["count"] += 1
         if calls["count"] == 1:
-            return _response("hello ", finish_reason="length")
-        return _response("world", finish_reason="stop")
+            return _response(
+                "hello ",
+                finish_reason="length",
+                prompt_tokens=10,
+                completion_tokens=5,
+            )
+        return _response(
+            "world",
+            finish_reason="stop",
+            prompt_tokens=20,
+            completion_tokens=4,
+        )
 
     monkeypatch.setattr(llm_service, "_resolve_config", _fake_config)
     monkeypatch.setattr(llm_service.litellm, "acompletion", fake_acompletion)
@@ -273,7 +299,102 @@ async def test_llm_generate_continues_truncated_text(monkeypatch) -> None:
     result = await LLMService().generate("agent_loop", [{"role": "user", "content": "hi"}])
 
     assert result["content"] == "hello world"
+    assert result["finish_reason"] == "stop"
+    assert result["continuation_count"] == 1
+    assert result["continuation_exhausted"] is False
+    assert result["usage"]["prompt_tokens"] == 30
+    assert result["usage"]["completion_tokens"] == 9
+    assert result["usage"]["total_tokens"] == 39
+    assert result["usage"]["llm_calls"] == 2
+    assert result["usage"]["active_input_tokens"] == 20
     assert calls["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_generate_requires_complete_text_after_bounded_continuation(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    async def fake_config(*args, **kwargs):
+        return {
+            **(await _fake_config()),
+            "provider_params": {"max_continuations": 1},
+        }
+
+    async def fake_acompletion(**kwargs):
+        calls["count"] += 1
+        return _response(
+            "part one" if calls["count"] == 1 else " part two",
+            finish_reason="length",
+        )
+
+    monkeypatch.setattr(llm_service, "_resolve_config", fake_config)
+    monkeypatch.setattr(llm_service.litellm, "acompletion", fake_acompletion)
+
+    with pytest.raises(LLMOutputTruncatedError) as exc_info:
+        await LLMService().generate(
+            "text_generation",
+            [{"role": "user", "content": "write long text"}],
+            require_complete=True,
+        )
+
+    assert exc_info.value.partial_content == "part one part two"
+    assert exc_info.value.continuation_count == 1
+    assert calls["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_generate_applies_explicit_output_limit(monkeypatch) -> None:
+    captured: dict = {}
+
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        return _response("ok")
+
+    monkeypatch.setattr(llm_service, "_resolve_config", _fake_config)
+    monkeypatch.setattr(llm_service.litellm, "acompletion", fake_acompletion)
+
+    await LLMService().generate(
+        "agent_loop",
+        [{"role": "user", "content": "hi"}],
+        max_tokens=12_000,
+    )
+
+    assert captured["max_tokens"] == 12_000
+
+
+@pytest.mark.asyncio
+async def test_generate_with_tools_does_not_continue_truncated_tool_arguments(monkeypatch) -> None:
+    calls = {"count": 0}
+    tool_call = SimpleNamespace(
+        id="call-1",
+        function=SimpleNamespace(name="node__create", arguments='{"project_id":"p"'),
+    )
+
+    async def fake_acompletion(**kwargs):
+        calls["count"] += 1
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(content="", tool_calls=[tool_call]),
+                )
+            ],
+            usage=None,
+        )
+
+    monkeypatch.setattr(llm_service, "_resolve_config", _fake_config)
+    monkeypatch.setattr(llm_service.litellm, "acompletion", fake_acompletion)
+
+    response = await LLMService().generate_with_tools(
+        "agent_loop",
+        [{"role": "user", "content": "save"}],
+        tools=[],
+    )
+
+    assert calls["count"] == 1
+    assert response.choices[0].finish_reason == "length"
+    assert response.choices[0].message.tool_calls == [tool_call]
+    assert response._openreel_tool_call_truncated is True
 
 
 def test_llm_request_policy_uses_provider_params() -> None:

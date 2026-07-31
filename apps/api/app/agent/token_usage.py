@@ -484,7 +484,17 @@ def build_usage_snapshot(
     model: str | None = None,
     model_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    usage = extract_usage_from_response(response)
+    aggregate_usage = getattr(response, "_openreel_aggregate_usage", None)
+    if aggregate_usage is None and isinstance(response, dict):
+        aggregate_usage = response.get("_openreel_aggregate_usage")
+    usage = (
+        dict(aggregate_usage)
+        if isinstance(aggregate_usage, dict)
+        else extract_usage_from_response(response)
+    )
+    latest_prompt_tokens = getattr(response, "_openreel_latest_prompt_tokens", None)
+    if latest_prompt_tokens is None and isinstance(response, dict):
+        latest_prompt_tokens = response.get("_openreel_latest_prompt_tokens")
     if model_metadata is None:
         model_metadata = getattr(response, "_openreel_model_metadata", None)
         if model_metadata is None and isinstance(response, dict):
@@ -504,7 +514,12 @@ def build_usage_snapshot(
     if tools:
         estimated_input_tokens += _estimate_payload_tokens(tools)
     prompt_tokens = usage.get("prompt_tokens")
-    active_input_tokens = prompt_tokens if isinstance(prompt_tokens, int) and prompt_tokens > 0 else estimated_input_tokens
+    active_prompt_tokens = latest_prompt_tokens if isinstance(latest_prompt_tokens, int) else prompt_tokens
+    active_input_tokens = (
+        active_prompt_tokens
+        if isinstance(active_prompt_tokens, int) and active_prompt_tokens > 0
+        else estimated_input_tokens
+    )
     context_limit, context_limit_source = _context_window_from_metadata(metadata)
     context_remaining = max(0, context_limit - active_input_tokens)
     context_used_rate = round(active_input_tokens / context_limit, 4) if context_limit else None
@@ -630,7 +645,8 @@ def accumulate_usage(
 ) -> dict[str, Any]:
     usage = _attach_usage_views(_with_current_context_window(usage))
     next_total = normalize_usage_totals(total)
-    next_total["llm_calls"] = int(next_total["llm_calls"]) + 1
+    usage_call_count = _as_non_negative_int(usage.get("llm_calls"))
+    next_total["llm_calls"] = int(next_total["llm_calls"]) + max(1, usage_call_count or 1)
     for key in (
         "prompt_tokens",
         "completion_tokens",

@@ -121,7 +121,7 @@ Standalone 节点仍要写清：
 
 最终汇报或运行下游前确认：
 
-- text 节点有非空 `fields.content` 或 output。
+- text 节点有非空 `fields.content` 或 output；带 `fields.generation` 的长文本节点必须已由 `node.run` 完整生成，不能把 pending/failed 占位内容当成成品。
 - image/video 节点有非空 prompt。
 - workflow spec 已写入 `duration_seconds` 和用户硬约束，媒体画幅等产物参数来自前端运行配置；standalone 节点则写入自身可执行字段。
 - `fields.references` 指向真实上游 node、asset 或上传路径。

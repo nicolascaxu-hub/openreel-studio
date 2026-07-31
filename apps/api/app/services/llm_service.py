@@ -20,9 +20,10 @@ import litellm
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.agent.token_usage import build_usage_snapshot
+from app.agent.token_usage import build_usage_snapshot, extract_usage_from_response
 from app.config import settings
 from app.db.session import session_scope
+from app.llm_limits import DEFAULT_LLM_MAX_OUTPUT_TOKENS
 
 
 _TASK_DEFAULTS = {
@@ -62,6 +63,21 @@ logger = logging.getLogger(__name__)
 
 class LLMConfigurationError(RuntimeError):
     """Raised when a hosted LLM task has no configured provider or API key."""
+
+
+class LLMOutputTruncatedError(RuntimeError):
+    """Raised when a complete text result cannot be produced within bounded continuations."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        partial_content: str = "",
+        continuation_count: int = 0,
+    ):
+        super().__init__(message)
+        self.partial_content = partial_content
+        self.continuation_count = continuation_count
 
 
 def _policy_int(value: Any, default: int, *, minimum: int, maximum: int) -> int:
@@ -249,7 +265,7 @@ async def _resolve_config(
         return {
             "model": node_override,
             "temperature": 0.7,
-            "max_tokens": 8192,
+            "max_tokens": DEFAULT_LLM_MAX_OUTPUT_TOKENS,
             "api_base": None,
             "api_key": None,
             "model_metadata": {},
@@ -309,7 +325,7 @@ async def _resolve_config(
     return {
         "model": default_model,
         "temperature": 0.7,
-        "max_tokens": 8192,
+        "max_tokens": DEFAULT_LLM_MAX_OUTPUT_TOKENS,
         "api_base": None,
         "api_key": default_key,
         "model_metadata": {},
@@ -403,7 +419,7 @@ def _config_from_provider_row(
     return {
         "model": model,
         "temperature": temperature,
-        "max_tokens": max_tokens or provider_row.max_output_tokens or 8192,
+        "max_tokens": max_tokens or provider_row.max_output_tokens or DEFAULT_LLM_MAX_OUTPUT_TOKENS,
         "top_p": top_p,
         "fallback_model": fallback_model,
         "api_base": provider_row.base_url,
@@ -420,7 +436,7 @@ def _completion_kwargs(cfg: dict, *, with_tools: list | None = None,
     kwargs: dict[str, Any] = {
         "model": cfg["model"],
         "temperature": cfg.get("temperature", 0.7),
-        "max_tokens": cfg.get("max_tokens", 8192),
+        "max_tokens": cfg.get("max_tokens", DEFAULT_LLM_MAX_OUTPUT_TOKENS),
         "timeout": policy["request_timeout_seconds"],
         # LiteLLM passes this to the OpenAI client. It must be explicit so its
         # retry loop cannot silently multiply OpenReel's configured attempts.
@@ -802,6 +818,71 @@ def _copy_response_with_content(response: Any, content: str) -> Any:
     return response
 
 
+def _set_response_finish_reason(response: Any, finish_reason: str) -> None:
+    try:
+        response.choices[0].finish_reason = finish_reason
+    except Exception:
+        pass
+
+
+def _aggregate_response_usage(responses: list[Any]) -> dict[str, Any]:
+    keys = (
+        "prompt_tokens",
+        "completion_tokens",
+        "reasoning_tokens",
+        "total_tokens",
+        "cached_prompt_tokens",
+        "cache_read_tokens",
+        "cache_creation_tokens",
+    )
+    totals = {key: 0 for key in keys}
+    found: set[str] = set()
+    for response in responses:
+        usage = extract_usage_from_response(response)
+        for key in keys:
+            value = usage.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            totals[key] += max(0, int(value))
+            found.add(key)
+    result = {key: totals[key] for key in keys if key in found}
+    result["llm_calls"] = len(responses)
+    prompt_tokens = result.get("prompt_tokens")
+    cached_tokens = result.get("cached_prompt_tokens")
+    if isinstance(prompt_tokens, int) and prompt_tokens > 0 and isinstance(cached_tokens, int):
+        result["cache_hit_rate"] = round(cached_tokens / prompt_tokens, 4)
+    return result
+
+
+def _attach_continuation_metadata(
+    response: Any,
+    *,
+    responses: list[Any],
+    continuation_count: int,
+    final_finish_reason: str,
+    exhausted: bool,
+    error: str | None = None,
+) -> Any:
+    latest_usage = extract_usage_from_response(responses[-1]) if responses else {}
+    metadata = {
+        "_openreel_aggregate_usage": _aggregate_response_usage(responses),
+        "_openreel_latest_prompt_tokens": latest_usage.get("prompt_tokens"),
+        "_openreel_continuation_count": continuation_count,
+        "_openreel_final_finish_reason": final_finish_reason,
+        "_openreel_continuation_exhausted": exhausted,
+    }
+    if error:
+        metadata["_openreel_continuation_error"] = error
+    for key, value in metadata.items():
+        try:
+            setattr(response, key, value)
+        except Exception:
+            if isinstance(response, dict):
+                response[key] = value
+    _set_response_finish_reason(response, final_finish_reason)
+    return response
+
+
 async def _continue_text_if_truncated(
     kwargs: dict[str, Any],
     response: Any,
@@ -811,12 +892,17 @@ async def _continue_text_if_truncated(
     max_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
     accept_backend_content: bool = True,
+    require_complete: bool = False,
 ) -> Any:
     finish_reason = _choice_finish_reason(response)
     if finish_reason not in _MAX_OUTPUT_FINISH_REASONS:
         return response
     msg = _choice_message(response)
     if getattr(msg, "tool_calls", None):
+        try:
+            setattr(response, "_openreel_tool_call_truncated", True)
+        except Exception:
+            pass
         return response
 
     combined = _message_content(response)
@@ -824,10 +910,13 @@ async def _continue_text_if_truncated(
         return response
 
     continue_kwargs = dict(kwargs)
-    continue_messages = list(kwargs.get("messages") or [])
+    base_messages = list(kwargs.get("messages") or [])
+    responses = [response]
+    continuation_count = 0
+    continuation_error: str | None = None
     for _ in range(max_continuations):
         continue_messages = [
-            *continue_messages,
+            *base_messages,
             {"role": "assistant", "content": combined},
             {"role": "user", "content": "Continue exactly where you stopped. Do not repeat previous text."},
         ]
@@ -841,8 +930,21 @@ async def _continue_text_if_truncated(
                 accept_backend_content=accept_backend_content,
             )
         except Exception as exc:
-            if not accept_backend_content or not combined.strip():
-                raise
+            continuation_error = str(exc)
+            if require_complete or not accept_backend_content or not combined.strip():
+                _attach_continuation_metadata(
+                    response,
+                    responses=responses,
+                    continuation_count=continuation_count,
+                    final_finish_reason=finish_reason,
+                    exhausted=True,
+                    error=continuation_error,
+                )
+                raise LLMOutputTruncatedError(
+                    "LLM continuation failed before a complete text result was produced",
+                    partial_content=combined,
+                    continuation_count=continuation_count,
+                ) from exc
             logger.warning(
                 "LLM continuation failed; accepting previously received backend content exception=%s content_chars=%s",
                 exc.__class__.__name__,
@@ -854,11 +956,40 @@ async def _continue_text_if_truncated(
             except Exception:
                 pass
             break
+        responses.append(next_response)
+        continuation_count += 1
         combined += _message_content(next_response)
         finish_reason = _choice_finish_reason(next_response)
         if finish_reason not in _MAX_OUTPUT_FINISH_REASONS:
             break
-    return _copy_response_with_content(response, combined)
+    exhausted = finish_reason in _MAX_OUTPUT_FINISH_REASONS
+    response = _copy_response_with_content(response, combined)
+    response = _attach_continuation_metadata(
+        response,
+        responses=responses,
+        continuation_count=continuation_count,
+        final_finish_reason=finish_reason,
+        exhausted=exhausted,
+        error=continuation_error,
+    )
+    if require_complete and exhausted:
+        raise LLMOutputTruncatedError(
+            "LLM output remained truncated after bounded continuation",
+            partial_content=combined,
+            continuation_count=continuation_count,
+        )
+    return response
+
+
+def _apply_call_max_tokens(cfg: dict[str, Any], kwargs: dict[str, Any], max_tokens: int | None) -> None:
+    if max_tokens is None:
+        return
+    requested = max(1, int(max_tokens))
+    metadata = cfg.get("model_metadata")
+    provider_limit = metadata.get("max_output_tokens") if isinstance(metadata, dict) else None
+    if isinstance(provider_limit, int) and provider_limit > 0:
+        requested = min(requested, provider_limit)
+    kwargs["max_tokens"] = requested
 
 
 class LLMService:
@@ -874,10 +1005,13 @@ class LLMService:
         system: str | None = None,
         project_id: str | None = None,
         node_override: str | None = None,
+        max_tokens: int | None = None,
+        require_complete: bool = False,
     ) -> dict[str, Any]:
         cfg = await _resolve_config(task_type, self.db, node_override)
         policy = _llm_request_policy(cfg)
         kwargs = _completion_kwargs(cfg)
+        _apply_call_max_tokens(cfg, kwargs, max_tokens)
         kwargs["messages"] = _build_messages_for_config(messages, system, cfg)
         response = await _acompletion_with_retries(
             kwargs,
@@ -894,6 +1028,7 @@ class LLMService:
             max_attempts=policy["max_retries"] + 1,
             retry_backoff_seconds=policy["retry_backoff_seconds"],
             accept_backend_content=policy["accept_backend_content"],
+            require_complete=require_complete,
         )
         response = _attach_model_metadata(response, cfg.get("model_metadata") or {})
         content = _message_content(response)
@@ -907,6 +1042,16 @@ class LLMService:
                 model=actual_model,
                 model_metadata=cfg.get("model_metadata") or {},
             ),
+            "finish_reason": str(
+                getattr(response, "_openreel_final_finish_reason", "")
+                or _choice_finish_reason(response)
+            ),
+            "continuation_count": int(
+                getattr(response, "_openreel_continuation_count", 0) or 0
+            ),
+            "continuation_exhausted": bool(
+                getattr(response, "_openreel_continuation_exhausted", False)
+            ),
         }
 
     async def generate_text(
@@ -915,7 +1060,8 @@ class LLMService:
         system_prompt: str | None = None,
         model: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+        require_complete: bool = False,
     ) -> str:
         policy = _llm_request_policy({})
         kwargs: dict[str, Any] = {
@@ -942,6 +1088,7 @@ class LLMService:
             max_attempts=policy["max_retries"] + 1,
             retry_backoff_seconds=policy["retry_backoff_seconds"],
             accept_backend_content=policy["accept_backend_content"],
+            require_complete=require_complete,
         )
         return _message_content(response)
 
@@ -991,8 +1138,7 @@ class LLMService:
         cfg = await _resolve_config(task_type, self.db, node_override)
         policy = _llm_request_policy(cfg)
         kwargs = _completion_kwargs(cfg, with_tools=tools)
-        if max_tokens is not None:
-            kwargs["max_tokens"] = max(1, int(max_tokens))
+        _apply_call_max_tokens(cfg, kwargs, max_tokens)
         kwargs["messages"] = _build_messages_for_config(messages, system, cfg)
         response = await _acompletion_with_retries(
             kwargs,

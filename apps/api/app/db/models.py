@@ -11,6 +11,8 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
+from app.llm_limits import DEFAULT_LLM_MAX_OUTPUT_TOKENS
+
 
 def gen_uuid() -> str:
     return str(uuid.uuid4())
@@ -247,7 +249,7 @@ class ModelConfigBase(SQLModel):
         None, index=True, description="引用 llm_providers.name；ConfigStore 同步时设置"
     )
     temperature: float = 0.7
-    max_tokens: int = 4000
+    max_tokens: int = DEFAULT_LLM_MAX_OUTPUT_TOKENS
     top_p: float = 1.0
     fallback_model: Optional[str] = None
     enabled: bool = True

@@ -98,6 +98,7 @@ from app.agent.video_mode import (
     build_video_mode_system_reminder,
 )
 from app.db.models import Message
+from app.llm_limits import DEFAULT_LLM_MAX_OUTPUT_TOKENS
 from app.mcp_tools.registry import registry
 from app.services.llm_service import LLMService, is_context_length_error
 from app.services.node_service import NodeService
@@ -349,6 +350,12 @@ async def _load_agent_settings() -> dict:
         return {
             "max_iterations": int(cfg.app_settings.get("agent.max_iterations", MAX_ITERATIONS)),
             "tool_call_budget": int(cfg.app_settings.get("agent.tool_call_budget", 0)),
+            "max_output_tokens": int(
+                cfg.app_settings.get(
+                    "agent.max_output_tokens",
+                    DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+                )
+            ),
             "auto_archive": bool(cfg.app_settings.get("agent.auto_archive", True)),
             "vision_context_max_images": cfg.app_settings.get("agent.vision_context_max_images"),
             "vision_context_max_dimension": cfg.app_settings.get("agent.vision_context_max_dimension"),
@@ -357,6 +364,7 @@ async def _load_agent_settings() -> dict:
         return {
             "max_iterations": MAX_ITERATIONS,
             "tool_call_budget": 0,
+            "max_output_tokens": DEFAULT_LLM_MAX_OUTPUT_TOKENS,
             "auto_archive": True,
             "vision_context_max_images": None,
             "vision_context_max_dimension": None,
@@ -2047,6 +2055,10 @@ class AgentOrchestrator:
                     tools=tools,
                     system=progress_system,
                     project_id=project_id,
+                    max_tokens=agent_prefs.get(
+                        "max_output_tokens",
+                        DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+                    ),
                 )
             except Exception as exc:
                 if is_context_length_error(exc):
@@ -2158,6 +2170,10 @@ class AgentOrchestrator:
                             tools=tools,
                             system=progress_system,
                             project_id=project_id,
+                            max_tokens=agent_prefs.get(
+                                "max_output_tokens",
+                                DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+                            ),
                         )
                         trace.emit(
                             "loop_transition",
@@ -2300,6 +2316,18 @@ class AgentOrchestrator:
                     )
                     continue
                 raw_text = msg.content or ""
+                if raw_text and finish_reason in {"length", "max_tokens"}:
+                    raw_text = (
+                        f"{raw_text}\n\n"
+                        "> 输出达到当前上限，已保留现有内容；如需剩余部分，请回复“继续”。"
+                    )
+                    trace.emit(
+                        "llm_output_truncated",
+                        iteration=iteration,
+                        transition_reason="bounded_text_continuation_exhausted",
+                        finish_reason=finish_reason,
+                        content_chars=len(str(msg.content or "")),
+                    )
                 proposed_plan_markdown = ""
                 if current_collaboration_mode(state) == "plan":
                     raw_text, proposed_plan_markdown = split_proposed_plan_blocks(raw_text)
@@ -2353,20 +2381,31 @@ class AgentOrchestrator:
                 )
                 break
 
-            # Has tool calls → execute each one
-            messages.append(msg.model_dump())
-
+            # Has tool calls → validate and execute each one.
+            finish_reason = str(getattr(choice, "finish_reason", "") or "").strip().lower()
             stop_after_tool = False
             round_tool_calls: list[tuple[Any, str, dict]] = []
             round_tools: list[str] = []
             planned_actions: list[str] = []
+            unsafe_tool_call_errors: dict[str, str] = {}
             for tool_call in msg.tool_calls:
                 fn = tool_call.function
                 tool_name = registry.resolve_tool_name(fn.name)
+                parse_failed = False
                 try:
                     tool_args = json.loads(fn.arguments) if fn.arguments else {}
-                except json.JSONDecodeError:
+                    if not isinstance(tool_args, dict):
+                        parse_failed = True
+                        tool_args = {}
+                except (json.JSONDecodeError, TypeError):
+                    parse_failed = True
                     tool_args = {}
+                spec = registry.get(tool_name)
+                is_write_tool = spec is None or not spec.is_read_only
+                if parse_failed:
+                    unsafe_tool_call_errors[str(tool_call.id)] = "invalid_json"
+                elif finish_reason in {"length", "max_tokens"} and is_write_tool:
+                    unsafe_tool_call_errors[str(tool_call.id)] = "output_truncated"
                 # Always use the real project_id, never trust LLM's value
                 tool_args["project_id"] = project_id
                 if tool_name in {"tool.search", "tool.describe", "tool.execute"}:
@@ -2377,6 +2416,21 @@ class AgentOrchestrator:
                 round_tools.append(tool_name)
                 round_tool_calls.append((tool_call, tool_name, tool_args))
                 planned_actions.append(tool_name)
+
+            assistant_tool_message = msg.model_dump()
+            if unsafe_tool_call_errors and isinstance(assistant_tool_message, dict):
+                assistant_tool_message["content"] = ""
+                compact_calls = assistant_tool_message.get("tool_calls")
+                if isinstance(compact_calls, list):
+                    for call in compact_calls:
+                        if not isinstance(call, dict):
+                            continue
+                        if str(call.get("id") or "") not in unsafe_tool_call_errors:
+                            continue
+                        function = call.get("function")
+                        if isinstance(function, dict):
+                            function["arguments"] = "{}"
+            messages.append(assistant_tool_message)
 
             trace.emit(
                 "tool_calls_requested",
@@ -2443,6 +2497,56 @@ class AgentOrchestrator:
                     yield {"type": "cancelled", "message": f"已停止当前任务：{cancel_reason}"}
                     yield {"type": "text_delta", "content": _sanitize_user_visible_text(f"\n\n已停止当前任务。{cancel_reason}")}
                     return
+
+                unsafe_reason = unsafe_tool_call_errors.get(str(tool_call.id))
+                if unsafe_reason:
+                    truncated_tool_call_retries += 1
+                    result = normalize_tool_result(
+                        {
+                            "ok": False,
+                            "error": "写工具调用在模型输出截断或参数损坏时被安全拦截，未执行任何写入。",
+                            "error_kind": "truncated_tool_call",
+                            "reason": unsafe_reason,
+                            "hint": (
+                                "下一轮只发送完整、紧凑的工具参数。长文本若明确要求保存，"
+                                "先创建带 fields.generation 的 text 节点，再用 node.run 由内部文本 runner 生成；"
+                                "不要把长正文放进 node.create/node.update 参数。"
+                            ),
+                        },
+                        tool_name=tool_name,
+                    )
+                    tool_output = build_tool_output_envelope(
+                        result,
+                        project_id=project_id,
+                        run_id=run_id,
+                        iteration=iteration,
+                        tool_name=tool_name,
+                    )
+                    trace.emit(
+                        "tool_result",
+                        iteration=iteration,
+                        tool_name=tool_name,
+                        deferred_tool_name=deferred_tool_name,
+                        transition_reason="truncated_write_tool_blocked",
+                        duration_ms=elapsed_ms(tool_started_at),
+                        retry_count=truncated_tool_call_retries,
+                        error_kind=result_error_kind(result),
+                        **tool_trace_fields(tool_output),
+                    )
+                    yield {
+                        "type": "tool_start",
+                        "tool": tool_name,
+                        "round": iteration + 1,
+                        "content": round_tool_start_content,
+                    }
+                    yield tool_done_event(tool_name, iteration + 1, tool_output)
+                    _append_tool_result_messages(tool_call.id, tool_output)
+                    if truncated_tool_call_retries >= 2:
+                        tool_errors.append(result)
+                        terminal_loop_error = result
+                        stop_after_tool = True
+                        break
+                    continue
 
                 if tool_name == "tool.execute" and not deferred_tool_name:
                     truncated_tool_call_retries += 1

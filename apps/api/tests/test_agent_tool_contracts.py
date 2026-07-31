@@ -225,6 +225,9 @@ def test_node_create_schema_uses_single_references_entrypoint() -> None:
     assert "prompt" in fields
     assert "title" in fields
     assert "references" in fields
+    assert fields["generation"]["required"] == ["instruction", "source_message_count"]
+    assert fields["generation"]["properties"]["source_message_count"]["maximum"] == 8
+    assert "长正文" in spec.description
     assert "depends_on" not in fields
     assert "reference_images" not in fields
     assert "source_image" in role_enum
@@ -251,6 +254,15 @@ def test_node_update_schema_prefers_input_patch_and_keeps_backend_alias_hidden()
     assert {"type": "string"} in items["oneOf"]
     assert "depends_on" not in props
     assert "局部合并" in spec.description
+
+
+def test_node_get_requires_explicit_full_generated_text_read() -> None:
+    spec = registry.get("node.get")
+    include_content = spec.schema["properties"]["include_content"]
+
+    assert include_content["type"] == "boolean"
+    assert "当前用户" in include_content["description"]
+    assert "include_content=true" in spec.description
 
 
 def test_agent_review_schema_keeps_structured_optional_arguments() -> None:

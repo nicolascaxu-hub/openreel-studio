@@ -11,6 +11,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.llm_limits import DEFAULT_LLM_MAX_OUTPUT_TOKENS
+
 
 # ── 子模型 ────────────────────────────────────────────────────────────────
 
@@ -93,7 +95,7 @@ class LlmProviderEntry(BaseModel):
     max_output_tokens: Optional[int] = Field(
         None,
         ge=1,
-        description="默认输出 token 上限；未指定 task max_tokens 时使用",
+        description="默认输出 token 上限；留空时使用系统默认 12000",
     )
     supports_prompt_cache: Optional[bool] = Field(
         None,
@@ -287,6 +289,7 @@ DEFAULT_MODEL_TASK_TIERS: dict[str, str] = {
 # app_settings 已知键和默认值；启动 bootstrap 时若文件缺失会补全
 DEFAULT_APP_SETTINGS: dict = {
     "agent.max_iterations": 200,
+    "agent.max_output_tokens": DEFAULT_LLM_MAX_OUTPUT_TOKENS,
     "agent.auto_archive": True,
     "agent.vision_context_max_images": 8,
     "agent.vision_context_max_dimension": 2048,
