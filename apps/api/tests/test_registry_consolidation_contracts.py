@@ -1,6 +1,7 @@
 from agent_plan_contract_helpers import *  # noqa: F401,F403
 
 from app.mcp_tools import skill_tools
+from app.skills.project_mentor import _REFERENCES as PROJECT_MENTOR_REFERENCES
 
 @pytest.mark.asyncio
 async def test_tool_search_finds_deferred_project_create_tool() -> None:
@@ -136,7 +137,7 @@ async def test_tool_search_uses_usage_hints_for_guide_tools() -> None:
     assert described["tools"][0]["example"]
 
 @pytest.mark.asyncio
-async def test_tool_search_finds_video_blueprint_guides_for_chinese_workflow_queries() -> None:
+async def test_tool_search_finds_video_guides_for_chinese_workflow_queries() -> None:
     default_flow = await tool_meta_tools.tool_search(query="通用制作流程", category="guide")
     default_names = {item["name"] for item in default_flow["tools"]}
 
@@ -237,8 +238,20 @@ def test_project_mentor_docs_do_not_point_agents_to_removed_template_paths() -> 
     assert "prompt_template_video_index" not in skill_doc
     assert "prompt_template_t2v" not in skill_doc
     assert "template.list_categories -> template.list -> template.get" not in skill_doc
-    assert "blueprint.start_tree_draft -> blueprint.append_tree_node" not in skill_doc
     assert "node-first" in skill_doc
+
+
+def test_project_mentor_source_references_exist() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    missing = [
+        f"{topic}: {reference}"
+        for topic, references in PROJECT_MENTOR_REFERENCES.items()
+        for reference in references
+        if not (repo_root / reference).exists()
+    ]
+
+    assert missing == []
+
 
 @pytest.mark.asyncio
 async def test_project_mentor_exposes_repair_and_audit_guides() -> None:
@@ -282,7 +295,6 @@ async def test_project_mentor_video_workflow_keeps_moved_prompt_details() -> Non
     assert "自动连线" in workflow["guidance"]
     assert "canvas.connect_nodes" not in workflow["guidance"]
     assert "start_tree_draft" not in workflow["guidance"]
-    assert "blueprint_tree_guide" not in workflow["guidance"]
     assert "final mode" not in workflow["guidance"]
     assert workflow["references_count"] > 0
 
@@ -534,7 +546,7 @@ async def test_story_template_method_is_separate_optional_guide() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_search_finds_revision_and_audit_guide_hints() -> None:
-    revision = await tool_meta_tools.tool_search(query="蓝图修订 source path", category="guide")
+    revision = await tool_meta_tools.tool_search(query="节点修订 source path", category="guide")
     audit = await tool_meta_tools.tool_search(query="制作审查 prompt_source skill", category="guide")
 
     assert any(item["name"] == "skill.project_mentor" for item in revision["tools"])
@@ -543,7 +555,7 @@ async def test_tool_search_finds_revision_and_audit_guide_hints() -> None:
 @pytest.mark.asyncio
 async def test_tool_search_finds_repair_and_plan_guide_hints() -> None:
     repair = await tool_meta_tools.tool_search(query="失败节点 原地修复 dependency_missing", category="guide")
-    plan = await tool_meta_tools.tool_search(query="蓝图执行计划 pending_video_blueprint_request", category="guide")
+    plan = await tool_meta_tools.tool_search(query="视频 workflow 节点 制作流程", category="guide")
 
     assert any(item["name"] == "skill.project_mentor" for item in repair["tools"])
     assert any(item["name"] == "skill.project_mentor" for item in plan["tools"])
@@ -740,29 +752,6 @@ async def test_canvas_crud_wrappers_are_unregistered_after_node_convergence() ->
         assert result["error_kind"] == "unknown_deferred_tool"
 
 @pytest.mark.asyncio
-async def test_blueprint_write_wrappers_are_unregistered_after_state_machine_internalization() -> None:
-    visible = _visible_tools(None)
-    listed = await tool_meta_tools.tool_search(query="", limit=0)
-    listed_names = {item["name"] for item in listed["tools"]}
-
-    assert not set(UNREGISTERED_BLUEPRINT_WRITE_TOOL_NAMES) & visible
-    assert not set(UNREGISTERED_BLUEPRINT_WRITE_TOOL_NAMES) & listed_names
-    for name in UNREGISTERED_BLUEPRINT_WRITE_TOOL_NAMES:
-        assert registry.get(name) is None, name
-
-    described = await tool_meta_tools.tool_describe(list(UNREGISTERED_BLUEPRINT_WRITE_TOOL_NAMES))
-    assert described["tools"] == []
-    assert set(described["not_found"]) == set(UNREGISTERED_BLUEPRINT_WRITE_TOOL_NAMES)
-
-    for name in UNREGISTERED_BLUEPRINT_WRITE_TOOL_NAMES:
-        result = await tool_meta_tools.tool_execute(
-            project_id="test",
-            name=name,
-            input={},
-        )
-        assert result["error_kind"] == "unknown_deferred_tool"
-
-@pytest.mark.asyncio
 async def test_deprecated_alias_tools_are_unregistered() -> None:
     visible = _visible_tools(None)
     listed = await tool_meta_tools.tool_search(query="", limit=0)
@@ -832,7 +821,7 @@ async def test_task_write_tools_are_unregistered_after_plan_materialization() ->
         assert result["error_kind"] == "unknown_deferred_tool"
 
 @pytest.mark.asyncio
-async def test_project_low_level_tools_are_unregistered_after_rest_and_blueprint_consolidation() -> None:
+async def test_project_low_level_tools_are_unregistered_after_rest_consolidation() -> None:
     visible = _visible_tools(None)
     listed = await tool_meta_tools.tool_search(query="", limit=0)
     listed_names = {item["name"] for item in listed["tools"]}
@@ -1405,11 +1394,6 @@ async def test_story_template_generation_defaults_to_4k_size(monkeypatch) -> Non
     assert assets == []
     assert result["asset_id"] is None
     assert result["asset_ids"] == []
-
-def test_image_provider_does_not_auto_downgrade_resolution() -> None:
-    assert media_provider._downgrade_size("3840x2160") is None
-    assert media_provider._downgrade_size("2560x1440") is None
-
 
 @pytest.mark.asyncio
 async def test_reference_character_skill_calls_internal_runner_without_registry(monkeypatch) -> None:

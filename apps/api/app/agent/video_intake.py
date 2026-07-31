@@ -1,15 +1,13 @@
-"""Video blueprint intake state helpers.
+"""Structured video intake state helpers.
 
 This module only tracks structured intake cards and pending intake state. It
-does not generate blueprints, approve plans, create nodes, or run media.
+does not choose production routes, create nodes, or run media.
 """
 from __future__ import annotations
 
 import re
 import time
 from typing import Any
-
-from app.agent.blueprint_confirmation_state import pending_blueprint_plan
 
 _FACT_FIELD_ALIASES: dict[str, set[str]] = {
     "topic": {"theme", "topic", "brief", "core_event", "content_focus", "subject", "story"},
@@ -130,7 +128,7 @@ def _merge_collected_facts(pending: dict[str, Any], items: list[dict[str, Any]])
 
 
 def collected_video_intake_facts_from_state(state: dict[str, Any] | None) -> dict[str, Any]:
-    pending = state.get("pending_video_blueprint_request") if isinstance(state, dict) else None
+    pending = state.get("pending_video_request") if isinstance(state, dict) else None
     if not isinstance(pending, dict):
         return {}
     facts = pending.get("collected_facts")
@@ -190,7 +188,7 @@ def _merge_pending_reference_images(pending: dict[str, Any], attachments: list[d
         **pending,
         "reference_images": merged,
         "reference_image_policy": (
-            "这些是用户在蓝图阶段上传的视觉参考图；后续人物、场景、分镜、关键帧、视觉资产和视频提示词"
+            "这些是用户在视频信息收集阶段上传的视觉参考图；后续人物、场景、分镜、关键帧、视觉资产和视频提示词"
             "应在不改写 rel_path/mention 的前提下按用户描述引用。"
         ),
     }
@@ -318,7 +316,7 @@ def _apply_structured_answer(
     next_pending = _merge_collected_facts(next_pending, items)
     if stage == "structure":
         next_pending["mode_selection_policy"] = (
-            "表单答案只作为用户偏好和约束；模型通过 start/append/finalize 蓝图草稿工具，在树、节点字段、references 和 depends_on 中表达制作方法。"
+            "表单答案只作为用户偏好和约束；模型读取相关 skill 后，通过节点字段和 fields.references 表达制作方法。"
         )
     return next_pending
 
@@ -330,9 +328,9 @@ def video_intake_state_patch_for_interaction(
     stage: str,
     intake: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Persist video-blueprint intake progress after a structured intake card."""
+    """Persist video intake progress after a structured intake card."""
     normalized_stage = str(stage or "").strip()
-    pending = state.get("pending_video_blueprint_request") if isinstance(state, dict) else None
+    pending = state.get("pending_video_request") if isinstance(state, dict) else None
     now = int(time.time())
     duration = _intake_default_duration(intake, 15)
     structured_items = _structured_answer_items(intake)
@@ -346,8 +344,6 @@ def video_intake_state_patch_for_interaction(
                 "updated_at": now,
             }
         else:
-            if pending_blueprint_plan(state):
-                return {}
             next_pending = {
                 "stage": "basic",
                 "raw_request": message,
@@ -356,7 +352,7 @@ def video_intake_state_patch_for_interaction(
             }
         next_pending = _apply_structured_answer(next_pending, "basic", structured_items)
         next_pending = _merge_pending_reference_images(next_pending, attachments)
-        return {"pending_video_blueprint_request": next_pending}
+        return {"pending_video_request": next_pending}
 
     if normalized_stage in {"structure", "video_structure"}:
         if isinstance(pending, dict) and str(pending.get("stage") or "basic") == "basic":
@@ -374,7 +370,7 @@ def video_intake_state_patch_for_interaction(
             else:
                 next_pending["basic_answer"] = message
             next_pending = _merge_pending_reference_images(next_pending, attachments)
-            return {"pending_video_blueprint_request": next_pending}
+            return {"pending_video_request": next_pending}
         if isinstance(pending, dict) and str(pending.get("stage") or "") == "structure":
             duration = _intake_default_duration(intake, pending.get("duration_seconds") or duration)
             next_pending = {
@@ -384,7 +380,7 @@ def video_intake_state_patch_for_interaction(
             }
             next_pending = _apply_structured_answer(next_pending, "structure", structured_items)
             next_pending = _merge_pending_reference_images(next_pending, attachments)
-            return {"pending_video_blueprint_request": next_pending}
+            return {"pending_video_request": next_pending}
 
         next_pending = {
             "stage": "structure",
@@ -397,5 +393,5 @@ def video_intake_state_patch_for_interaction(
         else:
             next_pending["basic_answer"] = message
         next_pending = _merge_pending_reference_images(next_pending, attachments)
-        return {"pending_video_blueprint_request": next_pending}
+        return {"pending_video_request": next_pending}
     return {}

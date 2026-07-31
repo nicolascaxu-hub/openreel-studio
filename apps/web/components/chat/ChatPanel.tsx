@@ -17,7 +17,6 @@ import {
   type TokenUsageSnapshot,
   summarizeAgentRoundToolResult,
 } from "@/stores/chatStore"
-import { useBlueprintStore, type BlueprintTreeEvent } from "@/stores/blueprintStore"
 import { useProjectStore, type ProjectRecord } from "@/stores/projectStore"
 import { useCanvasStore } from "@/stores/canvasStore"
 import { useViewModeStore } from "@/stores/viewModeStore"
@@ -37,7 +36,6 @@ import {
   saveMediaFile,
   resolveAssetLibraryPreviewUrl,
   type ChatStreamEvent,
-  type BlueprintStreamEvent,
   type UploadedAttachment,
 } from "@/lib/api"
 import { ProposedPlanCard } from "./ProposedPlanCard"
@@ -187,32 +185,6 @@ function collaborationModeClass(mode: AgentCollaborationMode): string {
   return "border-white/10 bg-white/[0.04] text-zinc-400"
 }
 
-const BLUEPRINT_EVENT_LABEL: Record<string, string> = {
-  blueprint_draft_started: "开始生成项目蓝图",
-  blueprint_section_started: "开始生成蓝图片段",
-  blueprint_section_delta: "蓝图片段更新",
-  blueprint_section_completed: "蓝图片段完成",
-  blueprint_section_needs_revision: "蓝图片段需要修改",
-  blueprint_draft_saved: "蓝图草稿已保存",
-  blueprint_validation_completed: "蓝图校验完成",
-  blueprint_proposed: "项目蓝图已生成",
-  blueprint_approved: "项目蓝图已确认",
-  blueprint_revision_proposed: "蓝图修改方案已生成",
-  blueprint_revision_applied: "蓝图修改已应用",
-  blueprint_cleared: "项目蓝图已清空",
-}
-
-const SILENT_BLUEPRINT_PROGRESS_EVENTS = new Set([
-  "blueprint_section_started",
-  "blueprint_section_delta",
-  "blueprint_section_completed",
-  "blueprint_draft_started",
-])
-
-function isBlueprintEvent(event: ChatStreamEvent): boolean {
-  return String(event.type).startsWith("blueprint_")
-}
-
 function isInteractionInputEvent(event: ChatStreamEvent): boolean {
   return event.type === "interaction_input_requested"
 }
@@ -296,7 +268,6 @@ function formatTokenPercent(value: number | null): string {
 }
 
 function tokenMonitorPhaseLabel(phase?: string): string {
-  if (phase === "blueprint_generation") return "蓝图"
   if (phase === "agent_loop") return "Agent"
   if (phase === "trace_summary") return "历史"
   return phase || "LLM"
@@ -455,59 +426,6 @@ function formatTokenStatus(snapshot: TokenUsageSnapshot | null): string {
     `- 最近调用窗口:${formatTokenPercent(latestContextAvailableRate)} 剩余${latestContextUsedRate !== null ? ` / ${formatTokenPercent(latestContextUsedRate)} 已用` : ""}`,
     `- 最近调用花费:${formatTokenCount(latestCallTokens)} tokens`,
   ].join("\n")
-}
-
-function readableDisplayBlocks(blocks: unknown): string {
-  if (!Array.isArray(blocks)) return ""
-  const lines: string[] = []
-  for (const raw of blocks) {
-    if (!raw || typeof raw !== "object") continue
-    const block = raw as Record<string, unknown>
-    const title = typeof block.title === "string" ? block.title.trim() : ""
-    const text = (
-      typeof block.text === "string" ? block.text :
-      typeof block.summary === "string" ? block.summary :
-      typeof block.body === "string" ? block.body :
-      ""
-    ).trim()
-    if (title && text) lines.push(`**${title}**: ${text}`)
-    else if (title) lines.push(`**${title}**`)
-    else if (text) lines.push(text)
-  }
-  return lines.join("\n")
-}
-
-function formatBlueprintEventSummary(event: ChatStreamEvent): string | null {
-  const raw = event as Record<string, unknown>
-  const type = String(event.type)
-  if (SILENT_BLUEPRINT_PROGRESS_EVENTS.has(type)) return null
-  const label = BLUEPRINT_EVENT_LABEL[type] ?? "蓝图更新"
-  const sectionId = typeof raw.section_id === "string" && raw.section_id ? ` · ${raw.section_id}` : ""
-  const summary = typeof raw.summary_text === "string" ? raw.summary_text.trim() : ""
-  const failure = typeof raw.failure_reason === "string" ? raw.failure_reason.trim() : ""
-  const blockText = readableDisplayBlocks(raw.display_blocks)
-  const body = blockText || failure || summary
-  if (!body && (type === "blueprint_section_delta" || type === "blueprint_section_started")) return null
-  const text = body || label
-  return `\n\n> **${label}${sectionId}**\n>\n> ${text.replace(/\n/g, "\n> ")}`
-}
-
-function blueprintTitleFromEvent(event: BlueprintStreamEvent): string | null {
-  if (event.type === "blueprint_cleared") return "未命名项目"
-  const viewModel = event.view_model_patch
-  const header = viewModel && typeof viewModel === "object" ? viewModel.header : null
-  if (header && typeof header === "object" && !Array.isArray(header)) {
-    const title = (header as Record<string, unknown>).title
-    if (typeof title === "string" && title.trim()) return title.trim()
-  }
-  const ref = event.blueprint_ref
-  if (ref && typeof ref === "object") {
-    for (const key of ["theme_title", "title", "blueprint_title"]) {
-      const value = ref[key]
-      if (typeof value === "string" && value.trim()) return value.trim()
-    }
-  }
-  return null
 }
 
 function NodeBubbleCard({ node }: { node: NodeBubble }) {
@@ -1461,10 +1379,6 @@ export function ChatPanel() {
   const setActiveChecklist = useChatStore((s) => s.setActiveChecklist)
   const setTokenUsage = useChatStore((s) => s.setTokenUsage)
   const applyTokenUsageEvent = useChatStore((s) => s.applyTokenUsageEvent)
-  const applyBlueprintEvent = useBlueprintStore((s) => s.applyStreamEvent)
-  const applyBlueprintTreeEvent = useBlueprintStore((s) => s.applyTreeEvent)
-  const loadBlueprint = useBlueprintStore((s) => s.load)
-  const resetBlueprintForProject = useBlueprintStore((s) => s.resetForProject)
   const setViewMode = useViewModeStore((s) => s.setMode)
   const currentProject = useProjectStore((s) => s.currentProject)
   const applyCanvasAction = useCanvasStore((s) => s.applyCanvasAction)
@@ -1505,10 +1419,6 @@ export function ChatPanel() {
     }
   }, [])
 
-  useEffect(() => {
-    resetBlueprintForProject(currentProject?.id ?? null)
-  }, [currentProject?.id, resetBlueprintForProject])
-
   const loadProjectSnapshot = useCallback(async (projectId: string) => {
     try {
       const [project, historyRes, nodesRes] = await Promise.all([
@@ -1521,8 +1431,6 @@ export function ChatPanel() {
         localStorage.setItem("drama.currentProjectId", record.id)
       } catch {}
       setCurrentProject(record)
-      resetBlueprintForProject(record.id)
-      void loadBlueprint(record.id)
       if (Array.isArray(historyRes)) {
         loadHistory(historyRes as { id: string; role: string; content: string; created_at: string }[])
       }
@@ -1550,10 +1458,8 @@ export function ChatPanel() {
     }
   }, [
     appendToLastAssistant,
-    loadBlueprint,
     loadHistory,
     loadNodes,
-    resetBlueprintForProject,
     setCurrentProject,
   ])
 
@@ -1726,25 +1632,6 @@ export function ChatPanel() {
         })
         completeAgentRound(roundNo)
       }
-      return
-    }
-    if (event.type === "blueprint_tree_changed") {
-      applyBlueprintTreeEvent(event as unknown as BlueprintTreeEvent, currentProject?.id)
-      return
-    }
-    if (isBlueprintEvent(event)) {
-      const blueprintEvent = event as BlueprintStreamEvent
-      applyBlueprintEvent(blueprintEvent, currentProject?.id)
-      const blueprintTitle = blueprintTitleFromEvent(blueprintEvent)
-      if (blueprintTitle && currentProject?.id) {
-        updateCurrentProject({ title: blueprintTitle })
-      }
-      if (event.type === "blueprint_revision_proposed") {
-        setLastAssistantPendingAction(pendingActionFromBlueprintRevision(blueprintEvent))
-      }
-      const text = formatBlueprintEventSummary(event)
-      if (text) appendToLastAssistant(text)
-      if (event.type === "blueprint_approved") setViewMode("canvas")
       return
     }
     if (event.type === "mode_updated") {
@@ -1982,7 +1869,6 @@ export function ChatPanel() {
       const title = String(event.title ?? "未命名项目")
       resetProjectRuntime({ clearMessages: true })
       applyCanvasAction("clear_all", {})
-      resetBlueprintForProject(currentProject?.id ?? null)
       updateCurrentProject({ title })
       setViewMode("canvas")
       appendMessage({
@@ -2000,7 +1886,6 @@ export function ChatPanel() {
       localStorage.setItem("drama.currentProjectId", newId)
       resetProjectRuntime({ clearMessages: true })
       applyCanvasAction("clear_all", {})
-      resetBlueprintForProject(newId)
       setActiveChecklist([])
       setCurrentProject({ id: newId, title })
       window.dispatchEvent(new CustomEvent("openreel:projects-changed"))
@@ -2119,7 +2004,6 @@ export function ChatPanel() {
         if (
           event.type !== "done" &&
           event.type !== "canvas_action" &&
-          event.type !== "blueprint_tree_changed" &&
           event.type !== "token_usage"
         ) {
           ensureLiveAssistantPlaceholder()
@@ -3135,7 +3019,7 @@ function pendingActionFromConfirmRequired(event: ChatStreamEvent): PendingAction
       target: action,
       action,
       title: "确认全量重置项目",
-      description: "该操作会清空蓝图、任务、面板和画布内容，并归档模型可见上下文。",
+      description: "该操作会清空任务、面板和画布内容，并归档模型可见上下文。",
       reason,
       risk: "destructive",
       confirmLabel: "确认重置",
@@ -3184,52 +3068,6 @@ function pendingActionFromConfirmRequired(event: ChatStreamEvent): PendingAction
     confirmMessage: "确认执行",
     cancelMessage: "取消",
     values: { scope, reason },
-  }
-}
-
-function riskFromBlueprintRevisionEvent(event: BlueprintStreamEvent): string {
-  const record = event as Record<string, unknown>
-  const risk = recordValue(record.risk)
-  const value = risk?.risk ?? risk?.level ?? record.risk
-  return typeof value === "string" && value.trim() ? value.trim() : "medium"
-}
-
-function pendingActionFromBlueprintRevision(event: BlueprintStreamEvent): PendingActionPayload {
-  const record = event as Record<string, unknown>
-  const pending = recordValue(record.pending_revision) ?? {}
-  const affected = Array.isArray(record.affected_source_paths)
-    ? record.affected_source_paths.map(String).filter(Boolean)
-    : Array.isArray(pending.applied_source_paths)
-      ? pending.applied_source_paths.map(String).filter(Boolean)
-      : []
-  const version = pending.version ?? record.version
-  const targetNodeId = typeof pending.target_node_id === "string" ? pending.target_node_id : undefined
-  const risk = riskFromBlueprintRevisionEvent(event)
-  const affectedText = affected.length > 0
-    ? `影响 ${affected.length} 个蓝图路径。`
-    : "会更新 active blueprint，并同步相关下游节点状态。"
-
-  return {
-    id: `confirm-blueprint-revision-${String(pending.id ?? version ?? "current")}`,
-    kind: "blueprint_revision",
-    target: "blueprint_revision",
-    action: "apply_blueprint_revision",
-    title: version ? `确认应用蓝图修订 v${String(version)}` : "确认应用蓝图修订",
-    description: "应用后会更新项目蓝图，并重物化或标记受影响的剧情、视觉和媒体节点。",
-    reason: targetNodeId ? `${affectedText} 目标节点：${targetNodeId}` : affectedText,
-    risk,
-    confirmLabel: "应用修订",
-    cancelLabel: "取消修订",
-    confirmMessage: "确认应用蓝图修订",
-    cancelMessage: "取消蓝图修订",
-    confirmDisplay: "应用蓝图修订",
-    cancelDisplay: "取消蓝图修订",
-    values: {
-      pending_revision_id: pending.id,
-      version,
-      target_node_id: targetNodeId,
-      affected_source_paths: affected,
-    },
   }
 }
 

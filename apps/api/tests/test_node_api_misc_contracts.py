@@ -2681,14 +2681,14 @@ async def test_media_reference_resolution_excludes_source_image_role(monkeypatch
             title="分镜图",
             type="image",
             status="completed",
-            input_json=json.dumps({"blueprint_node_id": "storyboard_01"}, ensure_ascii=False),
+            input_json=json.dumps({"aliases": ["storyboard_01"]}, ensure_ascii=False),
         ),
         SimpleNamespace(
             id="source-image",
             title="直接采用图",
             type="image",
             status="completed",
-            input_json=json.dumps({"blueprint_node_id": "source_01"}, ensure_ascii=False),
+            input_json=json.dumps({"aliases": ["source_01"]}, ensure_ascii=False),
         ),
     ]
 
@@ -2769,7 +2769,7 @@ async def test_image_node_source_image_adopts_existing_output_without_generation
 
 
 @pytest.mark.asyncio
-async def test_video_reference_resolver_maps_blueprint_ids_to_completed_image_nodes(monkeypatch):
+async def test_video_reference_resolver_maps_aliases_to_completed_image_nodes(monkeypatch):
     rows = [
         SimpleNamespace(
             id="image-node-1",
@@ -2777,7 +2777,7 @@ async def test_video_reference_resolver_maps_blueprint_ids_to_completed_image_no
             title="宫格分镜图",
             type="image",
             status="completed",
-            input_json=json.dumps({"blueprint_node_id": "storyboard_grid_01"}, ensure_ascii=False),
+            input_json=json.dumps({"aliases": ["storyboard_grid_01"]}, ensure_ascii=False),
         ),
         SimpleNamespace(
             id="image-node-2",
@@ -2785,7 +2785,7 @@ async def test_video_reference_resolver_maps_blueprint_ids_to_completed_image_no
             title="未完成角色图",
             type="image",
             status="idle",
-            input_json=json.dumps({"blueprint_node_id": "character_mo_ying"}, ensure_ascii=False),
+            input_json=json.dumps({"aliases": ["character_mo_ying"]}, ensure_ascii=False),
         ),
         SimpleNamespace(
             id="text-node-1",
@@ -2793,7 +2793,7 @@ async def test_video_reference_resolver_maps_blueprint_ids_to_completed_image_no
             title="分段剧本",
             type="text",
             status="completed",
-            input_json=json.dumps({"blueprint_node_id": "segment_01"}, ensure_ascii=False),
+            input_json=json.dumps({"aliases": ["segment_01"]}, ensure_ascii=False),
         ),
     ]
 
@@ -3269,40 +3269,6 @@ async def test_node_list_returns_agent_safe_envelope(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_image_creation_guide_exposes_skill_prompt_workflow(monkeypatch):
-    patches: list[dict] = []
-
-    async def fake_read_project_state(project_id: str):
-        assert project_id == "proj-1"
-        return {"project_mode": "single_node"}
-
-    async def fake_write_project_state_patch(project_id: str, patch: dict):
-        assert project_id == "proj-1"
-        patches.append(patch)
-
-    monkeypatch.setattr(node_universal, "_read_project_state", fake_read_project_state)
-    monkeypatch.setattr(node_universal, "_write_project_state_patch", fake_write_project_state_patch)
-
-    result = await node_universal.node_get_creation_guide(project_id="proj-1", type="image")
-
-    assert result["ok"] is True
-    assert "resolution" in result["required_fields"]
-    assert "aspect_ratio" in result["required_fields"]
-    assert result["call_example"]["args"]["fields"]["resolution"] == "1080x1920"
-    assert "prompt_source" in result["optional_fields"]
-    assert "prompt_template" not in result["optional_fields"]
-    assert "template_selection_reason" not in result["optional_fields"]
-    guidance_text = str(result["prompt_guidance"])
-    assert "当前 skill" in guidance_text
-    assert "最终图片 prompt" in guidance_text
-    assert "精确像素" in guidance_text
-    assert "1080x1920" in guidance_text
-    assert "skill_or_model_written" in guidance_text
-    assert "template.list" not in guidance_text
-    assert patches[-1] == {"guide_loaded": {"image": True}}
-
-
-@pytest.mark.asyncio
 async def test_node_update_keeps_title_and_prompt_in_input_json(monkeypatch):
     updates: list[dict] = []
 
@@ -3755,37 +3721,6 @@ async def test_node_run_recommends_review_without_blocking_render(monkeypatch):
     assert result["review_status"] == "review_recommended"
     assert result["recommended_tool"] == "agent.review"
     assert result["url"] == "/api/media/proj-1/image.png"
-
-
-@pytest.mark.asyncio
-async def test_video_creation_guide_exposes_skill_prompt_workflow(monkeypatch):
-    patches: list[dict] = []
-
-    async def fake_read_project_state(project_id: str):
-        assert project_id == "proj-1"
-        return {"project_mode": "video_production"}
-
-    async def fake_write_project_state_patch(project_id: str, patch: dict):
-        assert project_id == "proj-1"
-        patches.append(patch)
-
-    monkeypatch.setattr(node_universal, "_read_project_state", fake_read_project_state)
-    monkeypatch.setattr(node_universal, "_write_project_state_patch", fake_write_project_state_patch)
-
-    result = await node_universal.node_get_creation_guide(project_id="proj-1", type="video")
-
-    assert result["ok"] is True
-    assert "prompt_source" in result["optional_fields"]
-    assert "production_path" in result["optional_fields"]
-    assert "prompt_status" in result["optional_fields"]
-    guidance_text = str(result["prompt_guidance"])
-    assert "宫格分镜" in guidance_text
-    assert "看图" in guidance_text
-    assert "看不了图" in guidance_text
-    assert "当前 skill" in guidance_text
-    assert "最终 video prompt" in guidance_text
-    assert "template.list" not in guidance_text
-    assert patches[-1] == {"guide_loaded": {"video": True}}
 
 
 @pytest.mark.asyncio

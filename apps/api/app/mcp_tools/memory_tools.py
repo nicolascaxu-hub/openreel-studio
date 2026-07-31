@@ -169,8 +169,8 @@ async def memory_summarize_conversation(
     system = (
         "你是一个长期记忆压缩器。只从用户消息中提取用户明确确认、明确要求记住、"
         "或明确表示以后复用的稳定事实。忽略助手草稿、助手推演、工具结果、失败方案、"
-        "待确认蓝图、临时 intake 表单答案和普通创作请求。不要把助手生成的剧情、人物、"
-        "场景、分段或提示词写成长期事实；已确认蓝图由项目蓝图保存。"
+        "待确认方案、临时 intake 表单答案和普通创作请求。不要把助手生成的剧情、人物、"
+        "场景、分段或提示词写成长期事实；项目产物由画布节点保存。"
         "没有符合条件的事实就输出空数组 []。最多 6 条,输出 JSON 数组:[\"事实1\", \"事实2\"]。"
     )
     user = json.dumps(user_messages, ensure_ascii=False)
@@ -276,7 +276,7 @@ async def memory_compact_context(
         )
     summary_text = str(summary_result.get("content") or "").strip()
     if not summary_text:
-        summary_text = "历史上下文已压缩；继续前请以项目状态、蓝图、任务和节点工具为准。"
+        summary_text = "历史上下文已压缩；继续前请以项目状态、任务和节点工具为准。"
 
     preserved_tail = compact_preserved_tail(
         payload,

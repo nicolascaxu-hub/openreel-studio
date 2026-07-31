@@ -29,12 +29,10 @@ from app.agent.collaboration_mode import (
 from app.agent.event_stream import event_stream
 from app.agent.reset_flow import reset_project_event
 from app.agent.feature_flags import get_feature_states
-from app.agent.blueprint_confirmation_state import pending_blueprint_plan
 from app.agent.project_state_io import (
     read_project_state as _read_state,
     write_project_state as _write_state,
 )
-from app.agent.project_blueprint import BLUEPRINT_SECTION_TITLES
 from app.db.models import Message, WorkflowNode
 from app.db.session import session_scope
 from app.mcp_tools.drama_tools import reset_project
@@ -381,7 +379,7 @@ async def _reset_events(
                 expires_at=pending_reset.get("expires_at"),
             )
             text = (
-                "全量重置需要确认。该操作会清空项目蓝图、蓝图草稿、任务、面板、画布节点、连边、"
+                "全量重置需要确认。该操作会清空任务、面板、画布节点、连边、"
                 "人物、剧本、分镜等，并归档本项目聊天上下文；trace 和诊断日志会保留，"
                 "标题恢复为「未命名项目」。"
                 "确认执行请发送 /reset confirm；取消请发送 /reset cancel。"
@@ -461,7 +459,7 @@ async def _reset_events(
             reason=pending.get("reason") or "slash /reset confirm",
         )
         # reset_project writes a new project state. Do not write the stale
-        # pre-reset `state` back here, or it restores the old blueprint/tasks.
+        # pre-reset `state` back here, or it restores old runtime state/tasks.
         _, fresh_state = await _read_state(project_id)
         if isinstance(fresh_state, dict) and fresh_state.get("_pending_reset_confirm") is not None:
             fresh_state.pop("_pending_reset_confirm", None)
@@ -539,45 +537,13 @@ async def build_doctor_snapshot(project_id: str) -> dict[str, Any]:
         return {"ok": False, "project_id": project_id, "error": state["error"]}
 
     node_summary = await _node_summary(project_id)
-    pending_blueprint = pending_blueprint_plan(state)
     pending_reset = state.get("_pending_reset_confirm")
-    project_blueprint = state.get("project_blueprint") if isinstance(state.get("project_blueprint"), dict) else None
-    blueprint_progress = state.get("blueprint_progress") if isinstance(state.get("blueprint_progress"), dict) else {}
-    blueprint_generation_progress = (
-        state.get("blueprint_generation_progress")
-        if isinstance(state.get("blueprint_generation_progress"), dict)
-        else {}
-    )
-    blueprint_section_results = (
-        state.get("blueprint_section_results")
-        if isinstance(state.get("blueprint_section_results"), list)
-        else []
-    )
-    blueprint_stale_nodes = state.get("blueprint_stale_nodes")
-    stale_node_count = len(blueprint_stale_nodes) if isinstance(blueprint_stale_nodes, (list, dict)) else 0
     feature_flags = _feature_flag_summary(await get_feature_states())
-    generation_sections = blueprint_generation_progress.get("sections") if isinstance(blueprint_generation_progress.get("sections"), list) else []
-    completed_generation_sections = sum(1 for section in generation_sections if isinstance(section, dict) and section.get("status") == "completed")
-    current_section = str(blueprint_generation_progress.get("current_section") or "")
-    current_section_title = BLUEPRINT_SECTION_TITLES.get(current_section, current_section)
-    blueprint_status_line = (
-        f"- 蓝图进度：{blueprint_progress.get('status') or blueprint_generation_progress.get('status') or '无'}"
-        f"，章节 {completed_generation_sections}/{len(generation_sections)}"
-        + (f"，当前 {current_section_title}" if current_section_title else "")
-        + (f"，stale 节点 {stale_node_count}" if stale_node_count else "")
-    )
     text = "\n".join([
         "项目诊断",
-        (
-            f"- 项目蓝图：{project_blueprint.get('theme_title') or project_blueprint.get('id')} "
-            f"v{project_blueprint.get('version')} ({project_blueprint.get('status')})"
-            if project_blueprint else "- 项目蓝图：无"
-        ),
-        blueprint_status_line,
         f"- 节点总数：{node_summary['total']}",
         f"- 节点状态：{_compact_counts(node_summary['by_status'])}",
         f"- 节点类型：{_compact_counts(node_summary['by_type'])}",
-        f"- 待确认蓝图：{'有' if pending_blueprint else '无'}",
         f"- 待确认重置：{'有' if pending_reset else '无'}",
         (
             f"- 功能开关：{feature_flags['enabled']}/{feature_flags['total']} 开启"
@@ -588,14 +554,7 @@ async def build_doctor_snapshot(project_id: str) -> dict[str, Any]:
         "ok": True,
         "project_id": project_id,
         "node_summary": node_summary,
-        "has_pending_blueprint_confirmation": bool(pending_blueprint),
-        "pending_blueprint_confirmation_id": pending_blueprint.get("id") if isinstance(pending_blueprint, dict) else None,
         "has_pending_reset": bool(pending_reset),
-        "project_blueprint": project_blueprint,
-        "blueprint_progress": blueprint_progress,
-        "blueprint_generation_progress": blueprint_generation_progress,
-        "blueprint_section_results": blueprint_section_results,
-        "blueprint_stale_node_count": stale_node_count,
         "feature_flags": feature_flags,
         "text": text,
     }
@@ -774,7 +733,7 @@ def _format_reset_result(result: dict[str, Any]) -> str:
     deleted_edges = result.get("deleted_edges", 0)
     if scope == "full":
         return (
-            f"已完成全量重置。蓝图已清空，删除节点 {deleted_nodes} 个，"
+            f"已完成全量重置。删除节点 {deleted_nodes} 个，"
             f"连边 {deleted_edges} 条，标题已恢复为「{result.get('title') or '未命名项目'}」。"
         )
     return f"已清理失败节点。删除节点 {deleted_nodes} 个，连边 {deleted_edges} 条。"

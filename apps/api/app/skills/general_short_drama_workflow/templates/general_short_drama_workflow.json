@@ -462,7 +462,7 @@
                 {"from": "story_template", "as": ["vision"]}
               ],
               "prompt": {
-                "role": "你是严格、独立的资深影视编导与故事板质量审核员。你必须真实查看本轮故事模板图，判断它能否作为最终视频的视觉蓝图。",
+                "role": "你是严格、独立的资深影视编导与故事板质量审核员。你必须真实查看本轮故事模板图，判断它能否作为最终视频的视觉基准。",
                 "task": "查看本轮故事模板图，结合当前段剧本 {{ steps.segment_script.output }}、目标时长 {{ segment.duration_seconds }} 秒、镜头节拍 {{ steps.frame_plan.output.frames }}、场景与配角 {{ steps.scene_plan.output }} 和统一风格 {{ steps.production_plan.output.style_template }}，逐格核对剧情匹配、镜头数量与顺序、时长分配、单格核心动作、景别机位与运镜、构图和人物站位、180度轴线与行动路线、角色/服装/场景/道具参考一致性、相邻镜头视觉连续性，以及故事板区、空间机位区、锚点区和光影色板区是否清晰可读。",
                 "output": "只输出结构化审核结果，包含 score、dimension_scores、reason、issues 和 regeneration_instruction。score 是 0 到 100 的整数。dimension_scores 分别给出 story_match、shot_sequence_timing、shot_language、spatial_staging、composition_action、reference_fidelity、visual_continuity、technical_usability。issues 中每项必须写 category、frame、severity、problem、evidence、correction，指出具体画格或功能区、可见证据和可执行修正。reason 总结通过或不通过的核心依据；regeneration_instruction 汇总成下一轮提示词可以直接执行的完整重写要求。",
                 "check": "按权重严格评分：剧情匹配 15、镜头顺序与时长 15、镜头语言 15、空间调度 15、构图与动作 15、参考一致性 10、视觉连续性 10、技术可用性 5。只有总分 >=80 且不存在剧情错配、关键镜头缺失、时长总和错误、多动作堆叠、无解释越轴、人物场景漂移、主体故事板过小或标注不可读时才通过；任一重大问题都必须压到 80 分以下。低于 80 分必须给出明确原因、问题位置、图中证据和逐项修改建议。"
@@ -559,7 +559,7 @@
           "prompt": {
             "role": "你是 AI 视频生成提示词专家，必须真实查看故事模板图、场景图和人物定妆图，把已经完成的故事模板逐格转译成可执行的视频提示词，而不是另行创作。",
             "task": "看全部指定参考图，基于当前段 {{ segment }}、当前段剧本 {{ steps.segment_script.output }}、镜头节拍 {{ steps.frame_plan.output.frames }}、场景与配角 {{ steps.scene_plan.output }}、统一风格 {{ steps.production_plan.output.style_template }} 和目标时长 {{ segment.duration_seconds }} 秒，严格按照故事模板图生成本段最终视频提示词。",
-            "output": "只输出纯文本视频提示词，不输出 JSON。开头列出每张参考图片的用途声明，明确故事模板图是本段视频蓝图。空一行后按照故事模板图上实际可见的第1格、第2格顺序和时长标注逐段转译，格式为：【起止时间 | 第N格 | 画面概述→动作变化 | 镜头运动方式】后接镜头层、主体层、画面层和必要对白或音效。图上画了什么人物、场景、动作、景别、运镜和台词就写什么；图上没有的内容不得新增。标注清楚时沿用图上时长；个别标注不可读时仅用 frame_plan 对应项校正，不改变镜头数量、顺序和画面内容。第一段从 0 秒开始，相邻时间段首尾相接，最后一段精确结束于 {{ segment.duration_seconds }} 秒；末尾写人物、服装、场景、道具、轴线和运动方向的一致性要求。",
+            "output": "只输出纯文本视频提示词，不输出 JSON。开头列出每张参考图片的用途声明，明确故事模板图是本段视频的视觉基准。空一行后按照故事模板图上实际可见的第1格、第2格顺序和时长标注逐段转译，格式为：【起止时间 | 第N格 | 画面概述→动作变化 | 镜头运动方式】后接镜头层、主体层、画面层和必要对白或音效。图上画了什么人物、场景、动作、景别、运镜和台词就写什么；图上没有的内容不得新增。标注清楚时沿用图上时长；个别标注不可读时仅用 frame_plan 对应项校正，不改变镜头数量、顺序和画面内容。第一段从 0 秒开始，相邻时间段首尾相接，最后一段精确结束于 {{ segment.duration_seconds }} 秒；末尾写人物、服装、场景、道具、轴线和运动方向的一致性要求。",
             "check": "逐格对照故事模板真实画面和文字标注；不使用第X排第Y格坐标；不新增图上没有的角色、场景、动作或镜头；每个时间段只有一个核心动作；景别、运镜、光线和声音具体可执行；逐段核算时长，无重叠、无缺口，最终时间码精确等于 {{ segment.duration_seconds }} 秒；不输出 JSON、解释、参数表或脱离模板图的补写。"
           },
           "fields": {

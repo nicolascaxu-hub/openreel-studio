@@ -102,34 +102,6 @@ def _request_user_metadata(request: ChatRequest) -> dict | None:
     return metadata or None
 
 
-def _emit_rest_control_event(
-    project_id: str,
-    route: str,
-    *,
-    branch: str,
-    status: str,
-    **data: Any,
-) -> None:
-    """Mirror deterministic REST control-plane branches into lifecycle events."""
-    try:
-        event_stream.emit(
-            "control_plane_branch",
-            project_id=project_id,
-            correlation_id=f"rest:{route}:{int(time.time())}",
-            data={
-                "protocol": "rest_control",
-                "protocol_reason": "deterministic REST control endpoint bypasses LLM by contract",
-                "route": route,
-                "branch": branch,
-                "status": status,
-                **{key: value for key, value in data.items() if value is not None},
-            },
-        )
-    except Exception:
-        # Observability must not break deterministic control-plane endpoints.
-        pass
-
-
 def _emit_sse_mirror_event(
     project_id: str | None,
     *,

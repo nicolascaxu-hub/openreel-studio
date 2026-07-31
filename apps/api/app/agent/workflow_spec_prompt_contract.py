@@ -130,6 +130,26 @@ WORKFLOW_SPEC_V2_EXAMPLE = {
     ],
 }
 
+WORKFLOW_SPEC_V2_SYSTEM_GUIDE = """\
+## Workflow Spec v2 essentials
+
+- Author one strict JSON object with `schema,id,title,inputs,steps`; use schema `openreel.workflow.v2`.
+- Read `workflow.protocol_info` for the complete current schema before every write. Treat its contract and validation errors as authoritative.
+- Use short lowercase snake-case workflow/input/step ids. Every step id is globally unique; budget nested projected ids for loop ancestry.
+- Inputs are an object map. Steps use only supported kinds and fields reported by the protocol. A prompt has non-empty `task` and may add `role,output,check`.
+- Declare every output field later read. Object and collection outputs need `output.schema.fields`.
+- Dependencies come from `needs`, template paths, loop sources, plugin inputs, and `uses`; `needs` contains logical step ids.
+- Media is one logical step with its own prompt; direct adoption uses one exclusive `source` use.
+- `uses` is the only reference contract: `vision` sends pixels to a prompt model, `reference` sends media to generation, and `source` adopts existing media.
+- Item loops read a declared array path and use a stable item key. Count loops use the protocol's bounded form. Downstream steps depend on the logical loop id.
+- Dynamic references add `select.values` with a declared path and stable candidate fields. Never bind by array position.
+- Feedback loops keep producer -> review direction, use `foreach.until` with the review output as the terminal gate, and pass prior review through `{{ previous }}`.
+- Keep provider/model routing and runtime media settings out of portable specs; frontend supplies media runtime settings.
+- Before writing, check ids, declared paths, schemas, loop scope, media roles, conditions, and visible outputs. After writing, inspect with representative inputs; repair only through the returned `repair_ref`.
+
+Generic bounded review pattern: a loop contains one producer and one terminal structured review; the review depends on the producer, the gate reads a declared review field, and downstream steps depend on the loop id.
+"""
+
 WORKFLOW_SPEC_V2_GUIDE = """\
 ## Workflow Spec v2
 

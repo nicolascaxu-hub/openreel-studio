@@ -8,7 +8,6 @@ from sqlmodel import select
 
 from app.db.models import Project, Version
 from app.db.session import session_scope
-from app.agent.blueprint_tree import summarize_blueprint_for_state
 from app.mcp_tools import canvas_tools
 from app.mcp_tools.query_match import invalid_regex_response, match_text, search_blob
 from app.services.node_public_ids import (
@@ -101,45 +100,13 @@ async def project_get_state(project_id: str) -> dict[str, Any]:
                 for edge in await canvas_tools.list_edges(project_id)
             ],
         }
-        semantic_blueprint = summarize_blueprint_for_state(project_id)
-        if semantic_blueprint:
-            result["semantic_blueprint"] = semantic_blueprint
-            if not isinstance(result.get("project_blueprint"), dict):
-                result["suggested_next"] = (
-                    "continue_from_existing_legacy_blueprint"
-                    if semantic_blueprint.get("needs_finalize")
-                    else "read_project_nodes"
-                )
-                result["model_feedback"] = {
-                    "what_went_wrong": "项目存在旧蓝图文件，但当前 Agent 工具面已改为节点优先。",
-                    "how_to_fix": (
-                        "读取当前节点状态，优先把可用旧蓝图信息转换成 text/image/video/audio 节点；"
-                        "后续修改和执行都走 node.list、node.get、node.create、node.update、node.run。"
-                    ),
-                    "suggested_next": result["suggested_next"],
-                }
         result["agent_token_usage_summary"] = _agent_token_usage_summary(result)
         return result
 
 
-def _has_blueprint_episode_plan(state: dict[str, Any]) -> bool:
-    for key in ("project_blueprint", "pending_blueprint_draft", "pending_blueprint_review"):
-        value = state.get(key)
-        if isinstance(value, dict) and value:
-            return True
-    return False
-
-
 def _project_state_for_status_display(state: dict[str, Any]) -> dict[str, Any]:
-    """Return state for project/status queries without promoting defaults to facts."""
-    result = dict(state)
-    metadata = result.get("metadata")
-    if isinstance(metadata, dict):
-        metadata = dict(metadata)
-        if not _has_blueprint_episode_plan(state):
-            metadata.pop("episode_count", None)
-        result["metadata"] = metadata
-    return result
+    """Return a detached state mapping for project/status queries."""
+    return dict(state)
 
 
 def _percent(value: Any) -> float | None:

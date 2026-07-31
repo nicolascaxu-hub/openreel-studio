@@ -108,12 +108,12 @@ _STATIC_SEARCH_HINTS: dict[str, str] = {
     "workflow.run_next": "run next ready workflow step continue fill inputs dependency 下一步 继续运行 填写输入 依赖",
     "workflow.run_all": "run all remaining workflow steps execute full flow fill inputs 一键运行 全部 剩余步骤 填写输入",
     "skill.project_mentor": (
-        "guide project mentor video workflow blueprint tree T2V I2V storyboard shot images story template "
+        "guide project mentor video workflow T2V I2V storyboard shot images story template "
         "text-to-video image-to-video keyframes first frame last frame multi reference @图片 uploaded image style reference asset library "
-        "blueprint revision audit trace debugging node repair rerun failed node blueprint plan source path production audit model_written "
-        "prompt_source dependency_missing pending_video_blueprint_request agent architecture "
-        "项目规则 视频工作流 蓝图修订 制作审查 交付审查 "
-        "失败节点 原地修复 节点修复 重跑 蓝图执行计划 执行计划 排障 "
+        "revision audit trace debugging node repair rerun failed node plan source path production audit model_written "
+        "prompt_source dependency_missing pending_video_request agent architecture "
+        "项目规则 视频工作流 节点修订 制作审查 交付审查 "
+        "失败节点 原地修复 节点修复 重跑 视频执行计划 执行计划 排障 "
         "文生视频 图生视频 首尾帧 多图参考 参考图 风格参考 宫格分镜 单张分镜 "
         "人物图 场景图 分镜图 故事模板图 首帧图 尾帧图 通用制作流程 标准制作流程 通用视频制作流程"
     ),

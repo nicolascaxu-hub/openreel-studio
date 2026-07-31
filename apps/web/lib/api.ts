@@ -1550,50 +1550,6 @@ export async function uploadFile(
   return asJson<UploadedAttachment>(res)
 }
 
-export type BlueprintStreamEvent = {
-  type:
-    | 'blueprint_draft_started'
-    | 'blueprint_section_started'
-    | 'blueprint_section_delta'
-    | 'blueprint_section_completed'
-    | 'blueprint_section_needs_revision'
-    | 'blueprint_draft_saved'
-    | 'blueprint_validation_completed'
-    | 'blueprint_proposed'
-    | 'blueprint_approved'
-    | 'blueprint_revision_proposed'
-    | 'blueprint_revision_applied'
-    | 'blueprint_cleared'
-  project_id?: string
-  section_id?: string | null
-  title?: string | null
-  section_index?: number | null
-  window_index?: number | null
-  window_count?: number | null
-  status?: string | null
-  summary_text?: string | null
-  failure_reason?: string | null
-  display_blocks?: Record<string, unknown>[]
-  view_model_patch?: Record<string, unknown>
-  blueprint_ref?: Record<string, unknown>
-  intake?: Record<string, unknown>
-  debug_json_path?: string | null
-  validation?: Record<string, unknown>
-}
-
-export type BlueprintTreeEvent = {
-  type: 'blueprint_tree_changed'
-  project_id?: string
-  tree_version?: number
-  draft_mode?: string
-  replacement?: boolean
-  action: 'add_child' | 'update_node' | 'delete_node' | 'replace_tree'
-  parent_id?: string
-  node_id?: string
-  node?: Record<string, unknown>
-  patch?: Record<string, unknown>
-}
-
 export type InteractionStreamEvent = {
   type: 'interaction_input_requested'
   project_id?: string
@@ -1641,16 +1597,10 @@ export type ChatStreamEvent =
   | { type: 'queued'; ok?: boolean; queued_count?: number; error?: string }
   | { type: 'merged_messages'; count: number }
   | { type: 'queued_turn_started'; client_user_message_id?: string | null; message?: string | null; queued_remaining?: number | null }
-  | { type: 'parallel_start'; total_steps: number; waves: number; project_id: string }
-  | { type: 'step_failed'; error: string; step_index?: number | null; tool?: string | null }
-  | { type: 'step_completed'; step_index: number; tool: string; title?: string; result?: unknown; progress?: string }
-  | { type: 'parallel_done'; completed: number; total: number }
   | { type: 'info'; message: string }
   | { type: 'error'; message: string; recoverable?: boolean }
   | { type: 'cancel_requested'; project_id?: string; streaming?: boolean; queued_count?: number }
   | { type: 'cancelled'; message?: string }
-  | BlueprintTreeEvent
-  | BlueprintStreamEvent
   | InteractionStreamEvent
   | { type: 'done'; status?: string }
   | { type: string; [k: string]: unknown }

@@ -12,7 +12,6 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any, AsyncGenerator
 
 from app.agent.agent_trace import (
@@ -21,8 +20,6 @@ from app.agent.agent_trace import (
     result_error_kind,
     visible_tool_names,
 )
-from app.agent.blueprint_revision import apply_pending_blueprint_revision
-from app.agent.blueprint_tree import summarize_blueprint_for_state
 from app.agent.context_policy import (
     chat_history_visible_for_turn,
 )
@@ -40,7 +37,6 @@ from app.agent.interaction_payload import (
     build_interaction_agent_message,
     is_interaction_input,
 )
-from app.agent.blueprint_confirmation_state import pending_blueprint_plan
 from app.agent.token_usage import (
     accumulate_usage,
     build_usage_monitor_payload,
@@ -112,8 +108,6 @@ from app.services.version_service import VersionService
 
 logger = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
-
 MAX_ITERATIONS = 200  # 上限很高，几乎不限；真正拦截靠重复错误检测
 _MENTOR_GUIDE_CACHE_KEY = "_mentor_guides_loaded"
 _SKILL_GUIDE_CACHE_KEY = "_skills_loaded"
@@ -156,82 +150,6 @@ def _message_model_visible(metadata: dict[str, Any]) -> bool:
     if metadata.get("source") == "slash_command" and metadata.get("model_visible") is not True:
         return False
     return True
-
-
-def _active_blueprint_state(state: dict[str, Any]) -> dict[str, Any] | None:
-    blueprint = state.get("project_blueprint") if isinstance(state, dict) else None
-    if isinstance(blueprint, dict) and str(blueprint.get("status") or "") == "active":
-        return blueprint
-    return None
-
-
-def _stale_blueprint_flow_state_patch(state: dict[str, Any]) -> dict[str, Any]:
-    """Clear draft/intake state that cannot own turns after the blueprint is active."""
-    if not isinstance(state, dict):
-        return {}
-    patch: dict[str, Any] = {}
-    for key in (
-        "pending_plan",
-        "pending_plan_preview_checklist",
-        "active_plan_checklist",
-        "active_plan_id",
-    ):
-        if key in state and state.get(key) is not None:
-            patch[key] = None
-    active_blueprint = _active_blueprint_state(state)
-    pending_blueprint = pending_blueprint_plan(state)
-    if not active_blueprint:
-        draft = state.get("pending_blueprint_draft")
-        if (
-            not isinstance(pending_blueprint, dict)
-            and isinstance(draft, dict)
-            and str(draft.get("status") or "") == "pending_review"
-        ):
-            for key in (
-                "pending_blueprint_draft",
-                "pending_blueprint_review",
-                "pending_blueprint_section_review",
-                "pending_video_blueprint_request",
-                "blueprint_partial_plan_doc",
-                "blueprint_progress",
-                "blueprint_generation_progress",
-                "blueprint_section_results",
-                "blueprint_window_progress",
-            ):
-                if state.get(key) is not None:
-                    patch[key] = None
-            mode_defaults = {"project_mode": "single_node"}
-            for key, value in mode_defaults.items():
-                if state.get(key) != value:
-                    patch[key] = value
-            if state.get("project_sub_mode") is not None:
-                patch["project_sub_mode"] = None
-            return patch
-        return patch
-
-    for key in (
-        "pending_video_blueprint_request",
-        "pending_blueprint_draft",
-        "pending_blueprint_review",
-        "pending_blueprint_section_review",
-        "blueprint_window_progress",
-        "blueprint_partial_plan_doc",
-    ):
-        if state.get(key) is not None:
-            patch[key] = None
-
-    return patch
-
-
-def _state_with_semantic_blueprint(project_id: str, state: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(state, dict):
-        state = {}
-    summary = summarize_blueprint_for_state(project_id)
-    if not summary:
-        return state
-    next_state = dict(state)
-    next_state["semantic_blueprint"] = summary
-    return next_state
 
 
 def _guide_loaded_trace_payload(tool_name: str, result: Any) -> dict[str, Any] | None:
@@ -426,7 +344,6 @@ def _agent_review_state_payload(tool_args: dict[str, Any], result: Any) -> dict[
             "checksum": review_subject.get("checksum"),
             "node_count": review_subject.get("node_count"),
             "media_node_count": review_subject.get("media_node_count"),
-            "blueprint_status": review_subject.get("blueprint_status"),
         },
         "summary": _compact_cached_guide_summary(result.get("summary"), 240),
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -453,107 +370,6 @@ async def _load_agent_settings() -> dict:
             "vision_context_max_images": None,
             "vision_context_max_dimension": None,
         }
-
-# Tools that produce a real artifact and deserve a canvas node.
-# Anything outside this set (queries, list, get, save_fact, system.status, etc.)
-# does NOT auto-create a node, even if its namespace is drama/media/node.
-
-_STEP_REF_RE = re.compile(r"<由\s*step\s*(\d+)\s*产出>")
-
-
-def _plan_step_node_type(step: dict[str, Any]) -> str:
-    if not isinstance(step, dict) or step.get("tool") != "node.create":
-        return ""
-    inp = step.get("input") or {}
-    if not isinstance(inp, dict):
-        return ""
-    fields = inp.get("fields") if isinstance(inp.get("fields"), dict) else {}
-    node_type = inp.get("type") or fields.get("type")
-    return node_type if isinstance(node_type, str) else ""
-
-
-def _strip_video_output_steps_from_plan_doc(plan_doc: dict[str, Any]) -> dict[str, Any]:
-    """Keep visual-preproduction plans in text/image space."""
-    if not isinstance(plan_doc, dict):
-        return plan_doc
-
-    def scrub_text(value: Any) -> Any:
-        if not isinstance(value, str):
-            return value
-        replacements = {
-            "生成每个段落的视频提示词和视频节点。": "生成每个段落的视觉素材和说明。",
-            "生成每个段落的视频提示词和视频节点": "生成每个段落的视觉素材和说明",
-            "视频提示词和视频节点": "视觉素材和说明",
-            "视频提示词和视频成片": "视觉素材和说明",
-            "、视频提示词和视频节点": "、视觉素材说明",
-            "和视频节点": "",
-        }
-        out = value
-        for old, new in replacements.items():
-            out = out.replace(old, new)
-        if out == "生成视频":
-            out = "生成视觉素材"
-        return out
-
-    plan_doc["video_output_disabled"] = True
-    plan_doc["scope"] = plan_doc.get("scope") or "visual_preproduction"
-    plan_doc["summary"] = (
-        "按视觉预制作范围生成文本说明和图片素材。"
-    )
-    if isinstance(plan_doc.get("risks"), list):
-        plan_doc["risks"] = [
-            risk for risk in plan_doc["risks"]
-            if "视频 provider" not in str(risk) and "视频节点" not in str(risk)
-        ]
-    removed_steps: set[str] = set()
-
-    def keep_step(step: dict[str, Any]) -> bool:
-        tool = str(step.get("tool") or "")
-        if tool == "media.generate_video":
-            if step.get("step") is not None:
-                removed_steps.add(str(step.get("step")))
-            return False
-        if _plan_step_node_type(step) == "video":
-            if step.get("step") is not None:
-                removed_steps.add(str(step.get("step")))
-            return False
-        inp = step.get("input") or {}
-        node_id = inp.get("node_id") if isinstance(inp, dict) else None
-        if isinstance(node_id, str):
-            match = _STEP_REF_RE.search(node_id)
-            if match and match.group(1) in removed_steps:
-                if step.get("step") is not None:
-                    removed_steps.add(str(step.get("step")))
-                return False
-        return True
-
-    for phase in plan_doc.get("phases") or []:
-        if isinstance(phase, dict) and isinstance(phase.get("steps"), list):
-            phase["title"] = scrub_text(phase.get("title"))
-            phase["goal"] = scrub_text(phase.get("goal"))
-            phase["steps"] = [
-                step
-                for step in phase["steps"]
-                if not isinstance(step, dict) or keep_step(step)
-            ]
-    for section in plan_doc.get("sections") or []:
-        if (
-            isinstance(section, dict)
-            and section.get("type") == "tool_steps"
-            and isinstance(section.get("steps"), list)
-        ):
-            section["content"] = scrub_text(section.get("content"))
-            section["steps"] = [
-                step
-                for step in section["steps"]
-                if not isinstance(step, dict) or keep_step(step)
-            ]
-        elif isinstance(section, dict):
-            section["content"] = scrub_text(section.get("content"))
-    design_notes = plan_doc.get("design_notes")
-    if isinstance(design_notes, dict):
-        design_notes["content"] = scrub_text(design_notes.get("content"))
-    return plan_doc
 
 _NODE_PRODUCING_TOOLS: set[str] = {
     # Direct agent-visible ingest that still creates a canvas node.
@@ -589,7 +405,6 @@ _KIND_LABEL = {
 # 画布事件投递支持两类 sink：
 # 1) 无 project_id: 写入本地 queue，由 stream 主循环兼容路径（如旧子 agent 调用）drain。
 # 2) 有 project_id: 直达项目级订阅者（/api/chat/events + 实时 stream 合并）。
-import asyncio
 _canvas_event_queue: asyncio.Queue = asyncio.Queue()  # 兼容旧 sub-agent 路径
 _project_subscribers: dict[str, list[asyncio.Queue]] = {}
 
@@ -975,11 +790,6 @@ def _tool_confirmation_continuation_message(
     return "\n".join(lines)
 
 
-def _load_prompt(name: str) -> str:
-    path = _PROMPTS_DIR / name
-    return path.read_text(encoding="utf-8") if path.exists() else ""
-
-
 async def build_base_system(
     state: dict,
     model_configs: list[dict] | None = None,
@@ -1077,7 +887,7 @@ async def build_split_system_result(
     mode_state = state if isinstance(state, dict) else {}
     mode_context_active = bool(
         mode_state.get("project_mode") == "video_production"
-        or mode_state.get("pending_video_blueprint_request")
+        or mode_state.get("pending_video_request")
     )
     mode_reminder = (
         build_video_mode_system_reminder(
@@ -1376,16 +1186,6 @@ class AgentOrchestrator:
         return rounds[-30:]
 
     async def _compute_canvas_summary(self, project_id: str) -> dict:
-        def _input_data(node: Any) -> dict[str, Any]:
-            raw = getattr(node, "input_json", None)
-            if not raw:
-                return {}
-            try:
-                data = json.loads(raw) if isinstance(raw, str) else raw
-            except (json.JSONDecodeError, TypeError):
-                return {}
-            return data if isinstance(data, dict) else {}
-
         def _node_surface(node: Any) -> str:
             for raw in (getattr(node, "model_config_json", None), getattr(node, "input_json", None)):
                 if not raw:
@@ -1425,7 +1225,6 @@ class AgentOrchestrator:
             by_status: dict[str, int] = summary["by_status"]
             by_surface: dict[str, int] = summary["by_surface"]
             for n in _nodes:
-                input_data = _input_data(n)
                 node_type = str(getattr(n, "type", "") or "unknown")
                 status = str(getattr(n, "status", "") or "unknown")
                 surface = _node_surface(n)
@@ -1439,15 +1238,12 @@ class AgentOrchestrator:
                 surface_by_type[node_type] = surface_by_type.get(node_type, 0) + 1
                 surface_by_status[status] = surface_by_status.get(status, 0) + 1
                 if len(summary["node_refs"]) < 30:
-                    source_paths = input_data.get("source_blueprint_paths") or input_data.get("blueprint_source_paths")
                     summary["node_refs"].append({
                         "id": str(getattr(n, "id", "") or ""),
                         "type": node_type,
                         "title": str(getattr(n, "title", "") or "")[:120],
                         "status": status,
                         "surface": surface,
-                        "blueprint_node_id": input_data.get("blueprint_node_id"),
-                        "source_blueprint_paths": source_paths[:4] if isinstance(source_paths, list) else [],
                     })
             return summary
         except Exception:
@@ -1563,7 +1359,6 @@ class AgentOrchestrator:
             state = json.loads(project.state_json or "{}")
         if not isinstance(state, dict):
             state = {}
-        state = _state_with_semantic_blueprint(project_id, state)
         run_id = new_run_id()
         trace = AgentTrace(project_id, run_id)
         # 推送当前 task_graph 任务到前端
@@ -1618,25 +1413,16 @@ class AgentOrchestrator:
         run_token_totals = normalize_usage_totals(None)
         session_token_totals = normalize_usage_totals(state.get("agent_token_usage"))
 
-        async def _persist_blueprint_patch(patch: dict[str, Any]) -> None:
+        async def _persist_state_patch(patch: dict[str, Any]) -> None:
             state.update(patch)
             try:
                 await self.project_service.update_project_state(project_id, patch)
             except Exception:
-                logger.exception("persist blueprint generation state failed")
-
-        stale_blueprint_patch = _stale_blueprint_flow_state_patch(state)
-        if stale_blueprint_patch:
-            await _persist_blueprint_patch(stale_blueprint_patch)
-            trace.emit(
-                "stale_blueprint_flow_state_cleared",
-                transition_reason="stale_blueprint_flow_state",
-                cleared_keys=sorted(stale_blueprint_patch.keys()),
-            )
+                logger.exception("persist project state patch failed")
 
         expired_confirmation_patch, expired_confirmations = expired_pending_confirmation_patch(state)
         if expired_confirmation_patch:
-            await _persist_blueprint_patch(expired_confirmation_patch)
+            await _persist_state_patch(expired_confirmation_patch)
             for expired_confirmation in expired_confirmations:
                 trace.emit(
                     "confirmation_expired",
@@ -1671,7 +1457,7 @@ class AgentOrchestrator:
         if (
             is_interaction_input(decision_inputs)
             and str(decision_inputs.get("purpose") or decision_inputs.get("target") or "").strip()
-            == "video_blueprint_intake"
+            == "video_intake"
         ):
             stage = str(decision_inputs.get("stage") or "").strip() or "basic"
             state_patch = video_intake_state_patch_for_interaction(
@@ -1682,16 +1468,16 @@ class AgentOrchestrator:
                 decision_inputs,
             )
             if state_patch:
-                await _persist_blueprint_patch(state_patch)
-                pending_video_request = state_patch.get("pending_video_blueprint_request")
+                await _persist_state_patch(state_patch)
+                pending_video_request = state_patch.get("pending_video_request")
                 pending_stage = (
                     pending_video_request.get("stage")
                     if isinstance(pending_video_request, dict)
                     else stage
                 )
                 _trace_pre_loop_branch(
-                    "video_blueprint_intake_answer_synced",
-                    purpose="video_blueprint_intake",
+                    "video_intake_answer_synced",
+                    purpose="video_intake",
                     stage=pending_stage,
                     submitted_stage=stage,
                     fields_count=len(decision_inputs.get("values") or {})
@@ -1720,7 +1506,7 @@ class AgentOrchestrator:
                 )
                 saved_user = _message_with_attachments(message_to_save, attachments)
                 await self._save_message(project_id, "user", saved_user, user_metadata)
-                await _persist_blueprint_patch({"_pending_reset_confirm": None})
+                await _persist_state_patch({"_pending_reset_confirm": None})
                 trace.emit(
                     "confirmation_resolved",
                     transition_reason="reset_confirmation_cancelled",
@@ -1749,7 +1535,7 @@ class AgentOrchestrator:
                     reason=pending_reset.get("reason") or "用户确认重置项目",
                     _confirm_token=make_reset_confirm_token(project_id),
                 )
-                await _persist_blueprint_patch({"_pending_reset_confirm": None})
+                await _persist_state_patch({"_pending_reset_confirm": None})
                 if isinstance(result, dict) and result.get("ok"):
                     trace.emit(
                         "confirmation_resolved",
@@ -1826,7 +1612,7 @@ class AgentOrchestrator:
                 )
                 saved_user = _message_with_attachments(message_to_save, attachments)
                 await self._save_message(project_id, "user", saved_user, user_metadata)
-                await _persist_blueprint_patch({"_pending_tool_confirm": None})
+                await _persist_state_patch({"_pending_tool_confirm": None})
                 trace.emit(
                     "confirmation_resolved",
                     transition_reason="tool_confirmation_cancelled",
@@ -1849,7 +1635,7 @@ class AgentOrchestrator:
                 saved_user = _message_with_attachments(message_to_save, attachments)
                 await self._save_message(project_id, "user", saved_user, user_metadata)
                 if pending_target not in _CONFIRMABLE_DESTRUCTIVE_TOOLS:
-                    await _persist_blueprint_patch({"_pending_tool_confirm": None})
+                    await _persist_state_patch({"_pending_tool_confirm": None})
                     text = "待确认操作已经失效，请重新发起。"
                     await self._save_message(project_id, "assistant", text)
                     yield {"type": "text_delta", "content": text}
@@ -1873,7 +1659,7 @@ class AgentOrchestrator:
                     and pending_delete_scope not in {"all", "canvas", "clear_all"}
                     and not [str(item).strip() for item in (pending_delete_ids or []) if str(item).strip()]
                 ):
-                    await _persist_blueprint_patch({"_pending_tool_confirm": None})
+                    await _persist_state_patch({"_pending_tool_confirm": None})
                     text = "待确认操作缺少目标节点，请重新发起。"
                     await self._save_message(project_id, "assistant", text)
                     yield {"type": "text_delta", "content": text}
@@ -1897,7 +1683,7 @@ class AgentOrchestrator:
                     else call_input
                 )
                 result = await registry.call("canvas.delete", **target_kwargs)
-                await _persist_blueprint_patch({"_pending_tool_confirm": None})
+                await _persist_state_patch({"_pending_tool_confirm": None})
                 if isinstance(result, dict) and result.get("ok"):
                     trace.emit(
                         "confirmation_resolved",
@@ -1975,130 +1761,6 @@ class AgentOrchestrator:
                 target=pending_target,
             )
 
-        pending_revision = state.get("pending_blueprint_revision") if isinstance(state, dict) else None
-        if isinstance(pending_revision, dict):
-            revision_action, _revision_feedback = decision_action(
-                user_metadata,
-                "blueprint_revision",
-            )
-            if revision_action in {"cancel", "reject", "dismiss"}:
-                _trace_pre_loop_branch(
-                    "blueprint_revision_cancel",
-                    pending_kind="blueprint_revision",
-                    target_node_id=pending_revision.get("target_node_id"),
-                )
-                saved_user = _message_with_attachments(message_to_save, attachments)
-                await self._save_message(project_id, "user", saved_user, user_metadata)
-                await _persist_blueprint_patch({"pending_blueprint_revision": None})
-                trace.emit(
-                    "confirmation_resolved",
-                    transition_reason="blueprint_revision_cancelled",
-                    confirmation_kind="blueprint_revision",
-                    action="cancel",
-                    target_node_id=pending_revision.get("target_node_id"),
-                )
-                text = "已取消蓝图修订，当前蓝图保持不变。"
-                await self._save_message(project_id, "assistant", text)
-                yield {"type": "text_delta", "content": text}
-                trace.emit("run_complete", transition_reason="blueprint_revision_cancelled")
-                yield {"type": "done", "status": "completed"}
-                return
-            if revision_action in {"apply", "approve", "confirm"}:
-                _trace_pre_loop_branch(
-                    "blueprint_revision_confirm",
-                    pending_kind="blueprint_revision",
-                    target_node_id=pending_revision.get("target_node_id"),
-                )
-                saved_user = _message_with_attachments(message_to_save, attachments)
-                await self._save_message(project_id, "user", saved_user, user_metadata)
-                result = await apply_pending_blueprint_revision(project_id)
-                if isinstance(result, dict) and result.get("ok") and isinstance(result.get("blueprint"), dict):
-                    blueprint_index = result.get("blueprint")
-                    stale_nodes = result.get("stale_nodes") if isinstance(result.get("stale_nodes"), list) else []
-                    rematerialized = (
-                        result.get("rematerialized_node_ids")
-                        if isinstance(result.get("rematerialized_node_ids"), list)
-                        else []
-                    )
-                    affected_source_paths = (
-                        pending_revision.get("applied_source_paths")
-                        or pending_revision.get("affected_source_paths")
-                        or []
-                    )
-                    state["project_blueprint"] = blueprint_index
-                    state["pending_blueprint_revision"] = None
-                    trace.emit(
-                        "blueprint_revision_applied",
-                        transition_reason="blueprint_revision_confirmed",
-                        revision_version=blueprint_index.get("version"),
-                        target_node_id=pending_revision.get("target_node_id"),
-                        affected_source_paths=affected_source_paths,
-                        rematerialized_node_ids=rematerialized,
-                        stale_node_count=len(stale_nodes),
-                        stale_nodes=stale_nodes,
-                    )
-                    trace.emit(
-                        "confirmation_resolved",
-                        transition_reason="blueprint_revision_confirmed",
-                        confirmation_kind="blueprint_revision",
-                        action="confirm",
-                        target_node_id=pending_revision.get("target_node_id"),
-                        affected_source_paths=affected_source_paths,
-                        rematerialized_node_ids=rematerialized,
-                        stale_node_count=len(stale_nodes),
-                        stale_nodes=stale_nodes,
-                    )
-                    yield {
-                        "type": "blueprint_revision_applied",
-                        "project_id": project_id,
-                        "blueprint": blueprint_index,
-                        "view_model": result.get("view_model"),
-                        "rematerialized_node_ids": rematerialized,
-                        "stale_nodes": stale_nodes,
-                        "auto_applied": False,
-                    }
-                    if blueprint_index.get("theme_title"):
-                        yield {
-                            "type": "project_update",
-                            "project_id": project_id,
-                            "updates": {"title": blueprint_index.get("theme_title")},
-                        }
-                    text = _sanitize_user_visible_text(
-                        f"蓝图修订已应用，已重物化 {len(rematerialized)} 个目标剧情节点，"
-                        f"标记 {len(stale_nodes)} 个下游节点需要同步。"
-                    )
-                    await self._save_message(project_id, "assistant", text)
-                    yield {"type": "text_delta", "content": text}
-                    trace.emit("run_complete", transition_reason="blueprint_revision_confirmed")
-                    yield {"type": "done", "status": "completed"}
-                    return
-                text = _sanitize_user_visible_text(
-                    f"蓝图修订应用失败：{result.get('error', '未知错误') if isinstance(result, dict) else '未知错误'}"
-                )
-                await self._save_message(project_id, "assistant", text)
-                yield {"type": "text_delta", "content": text}
-                trace.emit(
-                    "confirmation_resolved",
-                    transition_reason="blueprint_revision_failed",
-                    confirmation_kind="blueprint_revision",
-                    action="confirm",
-                    target_node_id=pending_revision.get("target_node_id"),
-                    error_kind=result_error_kind(result),
-                )
-                trace.emit("run_complete", transition_reason="blueprint_revision_failed")
-                yield {"type": "done", "status": "failed"}
-                return
-            trace.emit(
-                "pending_blueprint_revision_continues_agent_loop",
-                transition_reason="latest_user_message_requires_model_decision",
-                target_node_id=pending_revision.get("target_node_id"),
-            )
-
-        # ── Stale blueprint state cleanup ──
-        for _k in ["pending_blueprint_revision", "pending_blueprint_section_review"]:
-            if isinstance(state.get(_k), dict):
-                pass  # Keep — model handles via tools
-
         # Append attachments to the persisted user message and the normalized
         # model-facing message separately. Confirmation continuations may
         # replace the model-facing message, while chat history keeps the user's
@@ -2139,7 +1801,6 @@ class AgentOrchestrator:
         )
 
         async def _rebuild_system_result(_state: dict, _summary: dict):
-            _state = _state_with_semantic_blueprint(project_id, _state)
             return await build_split_system_result(
                 _state,
                 project_id=project_id,
@@ -3215,7 +2876,7 @@ class AgentOrchestrator:
                                 next_skill_cache = dict(existing_skill_cache)
                                 next_skill_cache[skill_cache["skill"]] = skill_cache
                                 state[_SKILL_GUIDE_CACHE_KEY] = next_skill_cache
-                                await _persist_blueprint_patch({_SKILL_GUIDE_CACHE_KEY: next_skill_cache})
+                                await _persist_state_patch({_SKILL_GUIDE_CACHE_KEY: next_skill_cache})
                             trace.emit(
                                 "skill_loaded",
                                 iteration=iteration,
@@ -3236,7 +2897,7 @@ class AgentOrchestrator:
                                 next_cache = dict(existing_cache)
                                 next_cache[guide_cache["topic"]] = guide_cache
                                 state[_MENTOR_GUIDE_CACHE_KEY] = next_cache
-                                await _persist_blueprint_patch({_MENTOR_GUIDE_CACHE_KEY: next_cache})
+                                await _persist_state_patch({_MENTOR_GUIDE_CACHE_KEY: next_cache})
                         guide_trace = _guide_loaded_trace_payload(tool_name, raw_result)
                         if guide_trace:
                             trace.emit(
@@ -3258,7 +2919,7 @@ class AgentOrchestrator:
                                 lookup_by_category[lookup_category] = template_lookup
                             state["_last_template_lookup"] = template_lookup
                             state["_template_lookups_by_category"] = lookup_by_category
-                            await _persist_blueprint_patch({
+                            await _persist_state_patch({
                                 "_last_template_lookup": template_lookup,
                                 "_template_lookups_by_category": lookup_by_category,
                             })
@@ -3271,7 +2932,7 @@ class AgentOrchestrator:
                             )
                         review_payload = _agent_review_state_payload(tool_args, raw_result)
                         if review_payload:
-                            await _persist_blueprint_patch({"_last_agent_review": review_payload})
+                            await _persist_state_patch({"_last_agent_review": review_payload})
                             trace.emit(
                                 "agent_review_recorded",
                                 iteration=iteration,
@@ -3397,7 +3058,7 @@ class AgentOrchestrator:
                             intake = interaction_event.get("intake")
                         purpose = str((intake or {}).get("purpose") or result.get("purpose") or "").strip()
                         state_patch: dict[str, Any] = {}
-                        if purpose == "video_blueprint_intake":
+                        if purpose == "video_intake":
                             stage = str((intake or {}).get("stage") or result.get("stage") or "")
                             state_patch = video_intake_state_patch_for_interaction(
                                 state,
@@ -3596,66 +3257,6 @@ class AgentOrchestrator:
                     **tool_trace_fields(tool_output),
                 )
                 yield tool_done_event(tool_name, iteration + 1, tool_output, agent=tool_agent_name or None)
-
-                # Blueprint tree tools → emit blueprint_tree_changed SSE event
-                # so the frontend can incrementally update its tree cache.
-                if tool_name.startswith("blueprint.") and isinstance(result, dict) and result.get("ok"):
-                    tree_event: dict[str, Any] = {
-                        "type": "blueprint_tree_changed",
-                        "project_id": project_id,
-                        "tree_version": result.get("tree_version"),
-                    }
-                    if result.get("draft_mode"):
-                        tree_event["draft_mode"] = result.get("draft_mode")
-                    if "replacement" in result:
-                        tree_event["replacement"] = bool(result.get("replacement"))
-                    if tool_name == "blueprint.start_tree_draft":
-                        tree_event["action"] = "replace_tree"
-                        tree_event["node_id"] = "root"
-                        tree_event["patch"] = {"tree_summary": result.get("tree_summary") or {}}
-                    elif tool_name == "blueprint.append_tree_node":
-                        tree_event["action"] = "add_child"
-                        tree_event["parent_id"] = result.get("parent_id") or tool_args.get("parent_id", "root")
-                        tree_event["node"] = result.get("node", {})
-                    elif tool_name == "blueprint.update_tree_node":
-                        tree_event["action"] = "update_node"
-                        tree_event["node_id"] = result.get("node_id") or tool_args.get("node_id", "")
-                        tree_event["patch"] = result.get("patch", {})
-                        tree_event["node"] = result.get("node", {})
-                    elif tool_name in {"blueprint.propose_tree", "blueprint.finalize_tree_draft"}:
-                        tree_event["action"] = "replace_tree"
-                        tree_event["node_id"] = "root"
-                        tree_event["patch"] = {"tree_summary": result.get("tree_summary") or {}}
-                    elif tool_name == "blueprint.add_child":
-                        tree_event["action"] = "add_child"
-                        tree_event["parent_id"] = tool_args.get("parent_id", "root")
-                        tree_event["node"] = result.get("node", {})
-                    elif tool_name == "blueprint.update_node":
-                        tree_event["action"] = "update_node"
-                        tree_event["node_id"] = tool_args.get("node_id", "")
-                        tree_event["patch"] = result.get("patch", {})
-                    elif tool_name == "blueprint.delete_node":
-                        tree_event["action"] = "delete_node"
-                        tree_event["node_id"] = tool_args.get("node_id", "")
-                    elif tool_name == "blueprint.set_prompt":
-                        tree_event["action"] = "update_node"
-                        tree_event["node_id"] = tool_args.get("node_id", "")
-                        patch = result.get("patch")
-                        if not isinstance(patch, dict):
-                            patch = {}
-                        prompt_value = result.get("prompt")
-                        if isinstance(prompt_value, str):
-                            patch["prompt"] = prompt_value
-                        negative_prompt_value = result.get("negative_prompt")
-                        if isinstance(negative_prompt_value, str) and negative_prompt_value:
-                            patch["negative_prompt"] = negative_prompt_value
-                        status_value = result.get("status")
-                        if isinstance(status_value, str):
-                            patch["status"] = status_value
-                        if patch:
-                            tree_event["patch"] = patch
-                    if tree_event.get("action"):
-                        yield tree_event
 
                 # Emit canvas events for canvas-affecting tools. Deferred tools
                 # report their target in _deferred_tool so existing UI events
@@ -3878,97 +3479,6 @@ class AgentOrchestrator:
                     yield {"type": "project_switch", "project_id": result["id"], "title": result.get("title", "")}
                     yield {"type": "canvas_action", "action": "clear_all", "payload": {}}
                     project_switched = True
-
-                if tool_name == "blueprint.revise" and isinstance(result, dict) and result.get("ok"):
-                    if isinstance(result.get("blueprint"), dict):
-                        blueprint_index = result.get("blueprint")
-                        state["project_blueprint"] = blueprint_index
-                        state["pending_blueprint_revision"] = None
-                        stale_nodes = result.get("stale_nodes") if isinstance(result.get("stale_nodes"), list) else []
-                        rematerialized = result.get("rematerialized_node_ids") if isinstance(result.get("rematerialized_node_ids"), list) else []
-                        pending_revision = result.get("pending_revision") if isinstance(result.get("pending_revision"), dict) else {}
-                        trace.emit(
-                            "blueprint_revision_applied",
-                            iteration=iteration,
-                            tool_name=tool_name,
-                            transition_reason="blueprint_revise_tool_applied",
-                            revision_version=blueprint_index.get("version"),
-                            target_node_id=pending_revision.get("target_node_id"),
-                            affected_source_paths=pending_revision.get("applied_source_paths") or [],
-                            rematerialized_node_ids=rematerialized,
-                            stale_node_count=len(stale_nodes),
-                            stale_nodes=stale_nodes,
-                            auto_applied=bool(result.get("auto_applied")),
-                        )
-                        if result.get("auto_applied"):
-                            trace.emit(
-                                "confirmation_skipped",
-                                iteration=iteration,
-                                tool_name=tool_name,
-                                transition_reason="blueprint_revision_auto_applied",
-                                confirmation_kind="blueprint_revision",
-                                reason="low_risk_auto_apply",
-                                risk=(result.get("risk") if isinstance(result.get("risk"), dict) else {}),
-                            )
-                        event = {
-                            "type": "blueprint_revision_applied",
-                            "project_id": project_id,
-                            "blueprint": blueprint_index,
-                            "view_model": result.get("view_model"),
-                            "rematerialized_node_ids": rematerialized,
-                            "stale_nodes": stale_nodes,
-                            "auto_applied": bool(result.get("auto_applied")),
-                        }
-                        yield event
-                        if isinstance(blueprint_index, dict) and blueprint_index.get("theme_title"):
-                            yield {
-                                "type": "project_update",
-                                "project_id": project_id,
-                                "updates": {"title": blueprint_index.get("theme_title")},
-                            }
-                        assistant_text = _sanitize_user_visible_text(
-                            str(result.get("message") or "蓝图修订已应用。")
-                        )
-                        if assistant_text:
-                            full_response += assistant_text
-                            yield {"type": "text_delta", "content": assistant_text}
-                        stop_after_tool = True
-                    elif result.get("requires_user_confirm"):
-                        pending_revision = result.get("pending_revision") if isinstance(result.get("pending_revision"), dict) else {}
-                        state["pending_blueprint_revision"] = pending_revision
-                        _pending_meta["blueprintRevision"] = pending_revision
-                        affected = result.get("affected_source_paths") if isinstance(result.get("affected_source_paths"), list) else []
-                        risk = result.get("risk") if isinstance(result.get("risk"), dict) else {}
-                        trace.emit(
-                            "confirmation_created",
-                            iteration=iteration,
-                            tool_name=tool_name,
-                            transition_reason="blueprint_revision_requires_confirmation",
-                            confirmation_kind="blueprint_revision",
-                            action="confirm_or_revise",
-                            risk=risk,
-                            pending_revision_id=pending_revision.get("id"),
-                            revision_version=pending_revision.get("version"),
-                            target_node_id=pending_revision.get("target_node_id"),
-                            affected_source_paths=affected,
-                        )
-                        yield {
-                            "type": "blueprint_revision_proposed",
-                            "project_id": project_id,
-                            "pending_revision": pending_revision,
-                            "risk": risk,
-                            "affected_source_paths": affected,
-                        }
-                        assistant_text = _sanitize_user_visible_text(
-                            str(
-                                result.get("message")
-                                or f"已生成蓝图修订草稿，影响 {len(affected)} 处内容。确认后应用；需要调整可以直接说明。"
-                            )
-                        )
-                        if assistant_text:
-                            full_response += assistant_text
-                            yield {"type": "text_delta", "content": assistant_text}
-                        stop_after_tool = True
 
                 # Feed result back to LLM
                 _append_tool_result_messages(tool_call.id, tool_output)

@@ -50,8 +50,6 @@ def _is_blank_legacy_sixty_episode_project(project: Project, state: dict[str, An
     metadata = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
     if project.episode_count != 60 and metadata.get("episode_count") != 60:
         return False
-    if state.get("project_blueprint") or state.get("pending_blueprint_draft"):
-        return False
     outline = state.get("outline") if isinstance(state.get("outline"), dict) else {}
     if outline.get("episodes"):
         return False

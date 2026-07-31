@@ -25,7 +25,6 @@ from app.agent.workflow_structured_output import (
 from app.agent.workflow_audit import WorkflowAuditError, audit_workflow_spec
 from app.agent.workflow_review import build_workflow_semantic_review_evidence
 from app.agent.workflow_repeat_scope import (
-    workflow_instance_scope,
     workflow_item_metadata,
     workflow_repeat_group_id,
     workflow_repeat_index,
@@ -37,7 +36,6 @@ from app.mcp_tools import canvas_tools
 from app.mcp_tools.registry import register
 from app.mcp_tools.workflow_conditions import workflow_step_condition_skipped as _workflow_step_condition_skipped
 from app.mcp_tools.workflow_reference_matching import (
-    selector_key as _selector_key,
     workflow_alias_equal as _workflow_alias_equal,
     workflow_context_get as _workflow_context_get,
     workflow_tokens_from_value as _workflow_tokens_from_value,
@@ -3703,47 +3701,8 @@ def _workflow_item_workflow_meta(item: dict[str, Any] | None) -> dict[str, Any]:
     return workflow_item_metadata(item)
 
 
-def _workflow_item_scope(item: dict[str, Any] | None) -> dict[str, Any]:
-    return workflow_instance_scope(item)
-
-
-def _workflow_item_repeat_group(item: dict[str, Any] | None) -> str:
-    return workflow_repeat_group_id(item)
-
-
-def _workflow_scope_index_key(item: dict[str, Any] | None) -> str:
-    meta = _workflow_item_workflow_meta(item)
-    scope = _workflow_item_scope(item)
-    for value in (
-        meta.get("repeat_group_index"),
-        scope.get("index"),
-        scope.get("segment_index"),
-        scope.get("segment"),
-    ):
-        text = str(value or "").strip()
-        if text:
-            return text
-    return ""
-
-
 def _workflow_same_current_repeat_scope(target: dict[str, Any] | None, candidate: dict[str, Any] | None) -> bool:
     return workflow_same_repeat_scope(target, candidate)
-
-
-def _workflow_repeat_index_int(item: dict[str, Any] | None) -> int | None:
-    return workflow_repeat_index(item)
-
-
-def _workflow_same_or_previous_prompt_scope(target: dict[str, Any] | None, candidate: dict[str, Any] | None) -> bool:
-    target_group = _workflow_item_repeat_group(target)
-    candidate_group = _workflow_item_repeat_group(candidate)
-    if not target_group or not candidate_group or target_group != candidate_group:
-        return True
-    target_index = _workflow_repeat_index_int(target)
-    candidate_index = _workflow_repeat_index_int(candidate)
-    if target_index is not None and candidate_index is not None:
-        return candidate_index in {target_index, target_index - 1}
-    return _workflow_same_current_repeat_scope(target, candidate)
 
 
 def _workflow_dependency_node_matches_scope(
@@ -5361,117 +5320,6 @@ def _workflow_records_for_prompt_context(
         if current is None or preference(record) > preference(current):
             selected_by_step[identity] = record
     return list(selected_by_step.values())
-
-
-def _workflow_record_matches_prompt_source(record: dict[str, Any], marker: str) -> bool:
-    wanted = _selector_key(marker)
-    if not wanted:
-        return False
-    workflow = _workflow_metadata_from_node(record)
-    fields = record.get("input") if isinstance(record.get("input"), dict) else {}
-    tokens = [
-        workflow.get("step_id"),
-        workflow.get("template_step_id"),
-        workflow.get("source_node_id"),
-        fields.get("purpose"),
-        fields.get("stage"),
-        record.get("title"),
-    ]
-    return any(_selector_key(value) == wanted for value in tokens if value not in (None, ""))
-
-
-def _workflow_output_payload_from_record(record: dict[str, Any], node_universal: Any) -> dict[str, Any]:
-    candidates: list[Any] = [
-        record.get("output"),
-        record.get("outputs"),
-    ]
-    fields = record.get("input") if isinstance(record.get("input"), dict) else {}
-    candidates.extend([fields.get("content"), fields.get("prompt"), record.get("content"), record.get("prompt")])
-    for candidate in candidates:
-        if candidate in (None, "", [], {}):
-            continue
-        structured = node_universal._workflow_structured_value(candidate)
-        if isinstance(structured, dict):
-            return structured
-        if isinstance(candidate, str) and candidate.strip():
-            return {"content": candidate.strip()}
-    return {}
-
-
-def _workflow_int_value(value: Any) -> int | None:
-    if value in (None, "", [], {}):
-        return None
-    try:
-        parsed = int(float(str(value).strip()))
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _workflow_segment_duration_from_scope(scope: dict[str, Any]) -> int | None:
-    direct = _workflow_int_value(scope.get("duration_seconds") or scope.get("duration"))
-    if direct:
-        return direct
-    start = _workflow_int_value(scope.get("start_second"))
-    end = _workflow_int_value(scope.get("end_second"))
-    if start is not None and end is not None and end > start:
-        return end - start
-    return None
-
-
-def _workflow_direct_video_prompt_from_upstream(
-    *,
-    workflow: dict[str, Any],
-    fields: dict[str, Any],
-    upstream_nodes: list[dict[str, Any]],
-    node_universal: Any,
-) -> dict[str, Any] | None:
-    for upstream in upstream_nodes:
-        if not (
-            _workflow_record_matches_prompt_source(upstream, "video_prompt")
-            or _workflow_record_matches_prompt_source(upstream, "videoPrompt")
-        ):
-            continue
-        payload = _workflow_output_payload_from_record(upstream, node_universal)
-        prompt = str(
-            payload.get("prompt")
-            or payload.get("video_prompt")
-            or payload.get("full_text")
-            or payload.get("content")
-            or ""
-        ).strip()
-        if not prompt:
-            continue
-        instance_scope = workflow.get("instance_scope") if isinstance(workflow.get("instance_scope"), dict) else {}
-        input_facts = workflow.get("input_facts") if isinstance(workflow.get("input_facts"), dict) else {}
-        duration = (
-            _workflow_segment_duration_from_scope(instance_scope)
-            or _workflow_int_value(payload.get("duration_seconds") or payload.get("duration"))
-            or _workflow_int_value(fields.get("duration_seconds") or fields.get("duration"))
-            or _workflow_int_value(input_facts.get("durationSeconds") or input_facts.get("duration_seconds"))
-        )
-        aspect_ratio = str(
-            payload.get("aspect_ratio")
-            or payload.get("ratio")
-            or fields.get("aspect_ratio")
-            or input_facts.get("aspectRatio")
-            or input_facts.get("aspect_ratio")
-            or ""
-        ).strip()
-        suggested_fields: dict[str, Any] = {
-            "prompt": prompt,
-            "prompt_status": "completed",
-            "production_path": fields.get("production_path") or "text_to_video",
-        }
-        if duration:
-            suggested_fields["duration_seconds"] = duration
-        if aspect_ratio:
-            suggested_fields["aspect_ratio"] = aspect_ratio
-        for key in ("negative_prompt", "style", "resolution", "quality"):
-            if payload.get(key) not in (None, "", [], {}):
-                suggested_fields[key] = payload[key]
-        return suggested_fields
-    return None
 
 
 async def _run_runtime_llm_step(

@@ -1,6 +1,6 @@
 """Storyboard grid layout helpers.
 
-The model chooses shot density in the blueprint. These helpers only normalize
+The model chooses shot density in the workflow. These helpers only normalize
 that explicit choice so downstream nodes do not silently fall back to 4 panels.
 """
 from __future__ import annotations
@@ -62,4 +62,3 @@ def storyboard_layout_from_segment(segment: dict[str, Any], *, default: int = 4)
         if key in segment and segment.get(key) not in (None, "", [], {}):
             return normalize_storyboard_layout(segment.get(key), default=default)
     return default if default in VALID_STORYBOARD_LAYOUTS else 4
-

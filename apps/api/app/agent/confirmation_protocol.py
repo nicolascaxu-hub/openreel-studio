@@ -154,8 +154,6 @@ def is_pending_confirmation_expired(
 _PENDING_CONFIRMATION_KEYS: dict[str, str] = {
     "_pending_reset_confirm": "reset_project",
     "_pending_tool_confirm": "tool_confirmation",
-    "pending_blueprint_revision": "blueprint_revision",
-    "pending_blueprint_section_review": "blueprint_section_review",
 }
 
 

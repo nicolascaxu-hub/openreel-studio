@@ -20,9 +20,9 @@ def test_context_policy_keeps_chat_history_visible_without_state_continuation() 
 @pytest.mark.parametrize(
     "state",
     [
-        {"pending_video_blueprint_request": {"stage": "structure"}},
-        {"pending_blueprint_revision": {"status": "pending_review"}},
-        {"blueprint_generation_progress": {"status": "paused_for_section_review"}},
+        {"pending_video_request": {"stage": "structure"}},
+        {"pending_video_mode_choice": {"status": "pending"}},
+        {"_pending_reset_confirm": {"scope": "full"}},
     ],
 )
 def test_context_policy_tracks_state_continuation_without_chat_history_for_pending_state(state: dict) -> None:
@@ -34,35 +34,6 @@ def test_context_policy_ignores_legacy_active_execution_checklist() -> None:
 
     assert has_state_continuation_context(state) is False
     assert chat_history_visible_for_turn(state) is True
-
-def test_stale_blueprint_flow_state_patch_only_clears_draft_state() -> None:
-    state = {
-        "project_blueprint": {"id": "bp-1", "status": "active"},
-        "pending_video_blueprint_request": {"stage": "structure"},
-        "pending_blueprint_section_review": {"next_section_index": 2},
-        "blueprint_window_progress": {"status": "failed"},
-        "pending_plan": {"kind": "creative_blueprint", "id": "plan-old"},
-        "pending_plan_preview_checklist": [{"title": "旧蓝图待确认"}],
-        "pending_blueprint_draft": {"id": "draft-old"},
-        "pending_blueprint_review": {"id": "review-old"},
-        "pending_blueprint_revision": {"id": "rev-1"},
-        "active_plan_checklist": [{"title": "真实执行任务", "status": "pending"}],
-    }
-
-    patch = orchestrator_module._stale_blueprint_flow_state_patch(state)
-
-    assert patch == {
-        "pending_video_blueprint_request": None,
-        "pending_blueprint_section_review": None,
-        "blueprint_window_progress": None,
-        "pending_plan": None,
-        "pending_plan_preview_checklist": None,
-        "active_plan_checklist": None,
-        "pending_blueprint_draft": None,
-        "pending_blueprint_review": None,
-    }
-    assert "pending_blueprint_revision" not in patch
-    assert "project_blueprint" not in patch
 
 def test_project_reset_is_core_and_hides_internal_confirm_token() -> None:
     spec = registry.get("project.reset")
@@ -164,10 +135,10 @@ async def test_tool_execute_does_not_run_core_canvas_delete_after_structured_pen
     assert result["tool"] == "canvas.delete"
     assert captured == {}
 
-def test_reset_confirmation_text_names_blueprint_draft_tasks_panel_canvas_and_title() -> None:
+def test_reset_confirmation_text_names_tasks_panel_canvas_and_title() -> None:
     text = reset_confirmation_text()
 
-    for phrase in ("项目蓝图", "蓝图草稿", "任务", "面板", "画布", "未命名项目"):
+    for phrase in ("任务", "面板", "画布", "未命名项目"):
         assert phrase in text
     assert "聊天上下文" in text
     assert "trace" in text
@@ -206,11 +177,7 @@ def test_full_reset_context_keys_cover_model_visible_project_state() -> None:
         "active_plan_checklist",
         "pending_plan",
         "plan_history",
-        "pending_blueprint_draft",
-        "pending_blueprint_section_review",
-        "pending_blueprint_revision",
-        "blueprint_generation_progress",
-        "blueprint_window_progress",
+        "pending_video_request",
         "agent_token_usage",
         "_mentor_guides_loaded",
         "_skills_loaded",
@@ -225,16 +192,11 @@ def test_full_reset_context_keys_cover_model_visible_project_state() -> None:
 def test_full_reset_state_cleanup_removes_prompt_visible_project_context() -> None:
     state = {
         "metadata": {
-            "title": "旧蓝图标题",
+            "title": "旧项目标题",
             "genre": "国风动作",
             "description": "旧项目说明",
             "theme": "旧主题",
             "world_setting": "旧世界观",
-        },
-        "project_blueprint": {
-            "id": "bp-old",
-            "theme_title": "旧蓝图标题",
-            "short_summary": "旧剧情摘要",
         },
         "active_plan_checklist": [
             {"title": "旧任务：生成分镜", "status": "pending"}
@@ -259,9 +221,8 @@ def test_full_reset_state_cleanup_removes_prompt_visible_project_context() -> No
 
     for key in drama_tools._FULL_RESET_CONTEXT_KEYS:
         state.pop(key, None)
-    clear_blueprint_state(state)
     meta = state.get("metadata") or {}
-    meta["title"] = project_blueprint.UNTITLED_PROJECT_TITLE
+    meta["title"] = drama_tools.UNTITLED_PROJECT_TITLE
     for key in ("genre", "description", "logline", "theme", "world_setting"):
         meta[key] = ""
     state["metadata"] = meta
@@ -277,8 +238,7 @@ def test_full_reset_state_cleanup_removes_prompt_visible_project_context() -> No
     context_json = json.dumps(state, ensure_ascii=False)
 
     for leak in (
-        "旧蓝图标题",
-        "旧剧情摘要",
+        "旧项目标题",
         "旧任务：生成分镜",
         "旧计划摘要",
         "旧用户要求生成两人牵手图",
@@ -289,7 +249,7 @@ def test_full_reset_state_cleanup_removes_prompt_visible_project_context() -> No
     ):
         assert leak not in context
         assert leak not in context_json
-    assert project_blueprint.UNTITLED_PROJECT_TITLE in context
+    assert drama_tools.UNTITLED_PROJECT_TITLE in context
 
 
 def test_runtime_context_omits_canvas_summary_and_only_keeps_project_title() -> None:
@@ -338,10 +298,7 @@ async def test_canvas_summary_counts_nodes_by_surface() -> None:
                     type="image",
                     status="completed",
                     model_config_json=json.dumps({"surface": "project_panel"}),
-                    input_json=json.dumps({
-                        "blueprint_node_id": "scene_ref",
-                        "source_blueprint_paths": ["/root/children/1"],
-                    }),
+                    input_json=json.dumps({"source_node_id": "scene_ref"}),
                 ),
                 SimpleNamespace(
                     id="node-video",
@@ -372,8 +329,7 @@ async def test_canvas_summary_counts_nodes_by_surface() -> None:
     }
     assert summary["surface_details"]["draft_canvas"]["by_type"] == {"text": 1}
     assert summary["node_refs"][0]["id"] == "node-image"
-    assert summary["node_refs"][0]["blueprint_node_id"] == "scene_ref"
-    assert summary["node_refs"][0]["source_blueprint_paths"] == ["/root/children/1"]
+    assert set(summary["node_refs"][0]) == {"id", "type", "title", "status", "surface"}
 
 
 def test_runtime_context_omits_node_refs_and_prompt_body() -> None:
@@ -395,8 +351,8 @@ def test_runtime_context_omits_node_refs_and_prompt_body() -> None:
                     "title": "宫格分镜",
                     "status": "completed",
                     "surface": "project_panel",
-                    "blueprint_node_id": "storyboard_grid",
-                    "source_blueprint_paths": ["/root/children/2/children/0/children/1"],
+                    "source_node_id": "storyboard_grid",
+                    "source_paths": ["/root/children/2/children/0/children/1"],
                     "prompt": "LEAK_PROMPT_BODY",
                 }
             ],
@@ -418,7 +374,6 @@ def test_session_clear_state_patch_keeps_artifacts_but_drops_runtime_context() -
         "pinned": True,
     }
     state = {
-        "project_blueprint": {"id": "bp-1"},
         "active_plan_checklist": [{"title": "保留任务"}],
         "active_workflow": {"kind": "template", "template_id": "old"},
         "workflow_runtime": {"instances": {"old": {"steps": {"script": {"status": "completed"}}}}},
@@ -480,23 +435,12 @@ def test_session_clear_state_patch_keeps_artifacts_but_drops_runtime_context() -
         "agent_token_usage": None,
         "context_cleared_at": "2026-06-05T00:00:00",
     }
-    assert "project_blueprint" not in patch
     assert "active_plan_checklist" not in patch
     assert "workflow" not in patch
 
-def test_session_clear_preserves_blueprint_and_next_task_runtime_context() -> None:
+def test_session_clear_drops_runtime_context_and_preserves_project_artifacts() -> None:
     state = {
         "metadata": {"title": "旧项目"},
-        "project_blueprint": {
-            "id": "bp-1",
-            "status": "active",
-            "theme_title": "剑影竹风",
-            "version": 2,
-            "duration_seconds": 15,
-            "short_summary": "侠客在竹林完成一次反转突围。",
-            "file_markdown": "data/projects/p1/blueprint.md",
-            "file_json": "data/projects/p1/blueprint.json",
-        },
         "active_plan_checklist": [
             {
                 "step_id": "step-1",
@@ -538,7 +482,6 @@ def test_session_clear_preserves_blueprint_and_next_task_runtime_context() -> No
 
     context = runtime_context.build(next_state)
 
-    assert "剑影竹风" not in context
     assert "生成段落分镜" not in context
     assert "旧聊天里失败的图片生成" not in context
     assert "上一轮用户要生成两人牵手图" not in context
@@ -1027,39 +970,14 @@ async def test_orchestrator_stream_drains_queued_messages_before_final_done(monk
     assert events[-1] == {"type": "done", "status": "completed"}
 
 
-def test_project_get_state_display_hides_default_episode_count_without_blueprint() -> None:
+def test_project_get_state_display_returns_detached_state() -> None:
     from app.mcp_tools import project_tools
 
-    result = project_tools._project_state_for_status_display(
-        {
-            "metadata": {
-                "title": "未命名项目",
-                "episode_count": 1,
-            },
-            "outline": {"episodes": []},
-        }
-    )
+    state = {"metadata": {"title": "节点项目", "episode_count": 3}}
+    result = project_tools._project_state_for_status_display(state)
 
-    assert "episode_count" not in result["metadata"]
-
-
-def test_project_get_state_display_keeps_episode_count_with_blueprint() -> None:
-    from app.mcp_tools import project_tools
-
-    result = project_tools._project_state_for_status_display(
-        {
-            "metadata": {
-                "title": "蓝图项目",
-                "episode_count": 3,
-            },
-            "project_blueprint": {
-                "id": "bp-1",
-                "status": "active",
-            },
-        }
-    )
-
-    assert result["metadata"]["episode_count"] == 3
+    assert result == state
+    assert result is not state
 
 
 @pytest.mark.asyncio
@@ -1080,9 +998,8 @@ async def test_project_get_state_overlays_db_workflow_snapshot(monkeypatch) -> N
         async def get_project_state(self, project_id: str):
             assert project_id == "proj-1"
             return {
-                "metadata": {"title": "蓝图项目", "episode_count": 1},
+                "metadata": {"title": "节点项目", "episode_count": 1},
                 "workflow": {"nodes": [], "edges": []},
-                "project_blueprint": {"status": "materialized"},
             }
 
     async def fake_list_nodes(project_id: str):
@@ -1104,54 +1021,6 @@ async def test_project_get_state_overlays_db_workflow_snapshot(monkeypatch) -> N
         "nodes": [{"id": "node-1", "type": "image", "status": "idle"}],
         "edges": [{"id": "edge-1", "source": "node-1", "target": "node-2"}],
     }
-
-
-@pytest.mark.asyncio
-async def test_project_get_state_exposes_semantic_blueprint_draft(monkeypatch) -> None:
-    from app.mcp_tools import project_tools
-
-    class FakeSessionScope:
-        async def __aenter__(self):
-            return object()
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-    class FakeProjectService:
-        def __init__(self, session):
-            self.session = session
-
-        async def get_project_state(self, project_id: str):
-            return {"metadata": {"title": "未命名项目"}, "workflow": {"nodes": [], "edges": []}}
-
-    async def fake_list_nodes(project_id: str):
-        return []
-
-    async def fake_list_edges(project_id: str):
-        return []
-
-    monkeypatch.setattr(project_tools, "session_scope", lambda: FakeSessionScope())
-    monkeypatch.setattr(project_tools, "ProjectService", FakeProjectService)
-    monkeypatch.setattr(project_tools.canvas_tools, "list_nodes", fake_list_nodes)
-    monkeypatch.setattr(project_tools.canvas_tools, "list_edges", fake_list_edges)
-    monkeypatch.setattr(
-        project_tools,
-        "summarize_blueprint_for_state",
-        lambda project_id: {
-            "status": "drafting",
-            "title": "草稿蓝图",
-            "tree_version": 7,
-            "node_count": 5,
-            "needs_finalize": True,
-        },
-    )
-
-    result = await project_tools.project_get_state("proj-1")
-
-    assert result["semantic_blueprint"]["status"] == "drafting"
-    assert result["suggested_next"] == "continue_from_existing_legacy_blueprint"
-    assert "node.list" in result["model_feedback"]["how_to_fix"]
-    assert "blueprint.finalize_tree_draft" not in result["model_feedback"]["how_to_fix"]
 
 
 @pytest.mark.asyncio
@@ -1183,106 +1052,13 @@ async def test_build_messages_after_full_reset_excludes_archived_project_history
 
     assert "archived" in holder["statement"].lower()
     assert "项目已重置，可以开始新内容" in body
-    assert "重置前旧蓝图剧情" not in body
+    assert "重置前旧项目剧情" not in body
     assert "上一轮让两个人牵手" not in body
     assert messages[-1] == {"role": "user", "content": "你好"}
 
-def test_runtime_context_omits_pending_blueprint_refs_without_body_leakage() -> None:
-    leak = "LEAK_PENDING_BODY"
-    state = {
-        "metadata": {
-            "title": "蓝图项目",
-            "project_mode": "video_production",
-            "oversized": leak,
-        },
-        "pending_plan": {
-            "id": "plan-1",
-            "kind": "creative_blueprint",
-            "title": "待确认蓝图",
-            "status": "pending",
-            "summary": leak,
-            "plan_doc": {"sections": [{"content": leak}]},
-            "blueprint_checksum": "bp-check-1",
-        },
-        "pending_blueprint_draft": {
-            "id": "draft-1",
-            "version": 2,
-            "status": "pending_review",
-            "checksum": "draft-check-1",
-            "file_json": "data/projects/p1/draft.json",
-            "short_summary": leak,
-        },
-        "pending_blueprint_review": {
-            "id": "draft-1",
-            "version": 2,
-            "status": "pending_review",
-            "checksum": "draft-check-1",
-            "file_markdown": "data/projects/p1/draft.md",
-            "outline_document": leak,
-        },
-        "pending_blueprint_section_review": {
-            "next_section_index": 4,
-            "review_mode": "section_step_review",
-            "failed_generation": {"message": leak},
-            "window_progress": {"status": "failed", "failure_reason": leak, "windows": [{"content": leak}]},
-        },
-        "pending_blueprint_revision": {
-            "id": "rev-1",
-            "status": "pending_review",
-            "version": 3,
-            "checksum": "rev-check-1",
-            "source_paths": ["story.episodes[0].segments[0].plot"],
-            "draft_doc": {"content": leak},
-        },
-        "pending_video_blueprint_request": {
-            "stage": "structure",
-            "selected_mode": "grid",
-            "duration_seconds": 15,
-            "raw_request": leak,
-            "last_submitted_stage": "structure",
-            "basic_answer": "视频主题或核心事件：雨夜石桥决斗",
-            "structure_answer": "剧情大纲：少年剑客救人后反杀蒙面刺客",
-            "structure_answers": [
-                {"id": "plot_outline", "label": "剧情大纲", "value": "少年剑客救人后反杀蒙面刺客"},
-                {"id": "segment_seconds", "label": "分段", "value": "不分段/单段连续"},
-            ],
-        },
-        "blueprint_generation_progress": {
-            "status": "drafting",
-            "current_section": "segment_breakdown",
-            "sections": [
-                {"section_id": "requirements_digest", "status": "completed", "content": leak},
-                {"section_id": "segment_breakdown", "status": "pending", "content": leak},
-            ],
-        },
-        "blueprint_window_progress": {
-            "status": "failed",
-            "failed_window_index": 0,
-            "failure_reason": leak,
-            "windows": [{"content": leak}],
-        },
-    }
-
-    context = runtime_context.build(state)
-
-    assert "项目标题" in context
-    assert "蓝图项目" in context
-    assert "plan-1" not in context
-    assert "draft-check-1" not in context
-    assert "rev-check-1" not in context
-    assert "sections_total" not in context
-    assert "has_raw_request" not in context
-    assert "少年剑客救人后反杀蒙面刺客" not in context
-    assert "故事模板图" not in context
-    assert "selected_mode" not in context
-    assert leak not in context
-    assert "outline_document" not in context
-    assert "plan_doc" not in context
-    assert "draft_doc" not in context
-
 def test_runtime_context_does_not_auto_inject_memory_refs_or_bodies() -> None:
     user_secret = "用户之前要求继续生成牵手图"
-    project_secret = "旧项目剧情要求自动生成蓝图"
+    project_secret = "旧项目剧情要求自动生成视频"
     context = runtime_context.build(
         {"metadata": {"title": "记忆测试"}},
         user_facts=[
@@ -1340,122 +1116,8 @@ def test_reset_canvas_events_prefers_clear_all() -> None:
         {"type": "canvas_action", "action": "delete_node", "payload": {"id": "b"}},
     ]
 
-def test_clear_blueprint_state_removes_project_blueprint_keys() -> None:
-    state = {
-        "project_blueprint": {"id": "bp-1"},
-        "blueprint_progress": {"done": 1},
-        "pending_blueprint_intake": {"stage": "basic"},
-        "pending_blueprint_draft": {"section": "story"},
-        "pending_blueprint_revision": {"path": "story.episodes[0]"},
-        "pending_blueprint_confirmation": {"id": "plan-1", "status": "pending"},
-        "semantic_blueprint": {"status": "drafting"},
-        "blueprint_partial_plan_doc": {"id": "partial-1"},
-        "blueprint_generation_progress": {"current_section": "segment_breakdown"},
-        "blueprint_stale_nodes": ["node-1"],
-        "blueprint_history": [{"id": "bp-1"}],
-        "creative_blueprint_history": [{"id": "plan-1"}],
-        "metadata": {"title": "保留标题由 reset 负责"},
-    }
-
-    cleared = clear_blueprint_state(state)
-
-    assert "project_blueprint" in cleared
-    assert "blueprint_progress" in cleared
-    assert "pending_blueprint_intake" in cleared
-    assert "pending_blueprint_draft" in cleared
-    assert "pending_blueprint_revision" in cleared
-    assert "pending_blueprint_confirmation" in cleared
-    assert "semantic_blueprint" in cleared
-    assert "blueprint_partial_plan_doc" in cleared
-    assert "blueprint_generation_progress" in cleared
-    assert "blueprint_stale_nodes" in cleared
-    assert "blueprint_history" in cleared
-    assert "creative_blueprint_history" in cleared
-    assert "project_blueprint" not in state
-    assert "pending_blueprint_confirmation" not in state
-    assert "semantic_blueprint" not in state
-    assert "blueprint_partial_plan_doc" not in state
-    assert state["metadata"]["title"] == "保留标题由 reset 负责"
-
 def test_full_reset_context_keys_clear_reference_assets() -> None:
     assert "reference_assets" in drama_tools._FULL_RESET_CONTEXT_KEYS
-
-def test_full_reset_context_keys_clear_runtime_blueprint_residue() -> None:
-    for key in (
-        "pending_blueprint_confirmation",
-        "semantic_blueprint",
-        "blueprint_partial_plan_doc",
-        "_template_lookups_by_category",
-    ):
-        assert key in drama_tools._FULL_RESET_CONTEXT_KEYS
-
-def test_delete_blueprint_files_removes_data_and_storage_artifacts(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(project_blueprint.settings, "PROJECT_ROOT", str(tmp_path))
-    project_id = "reset-files-project"
-    expected_abs_paths: list[str] = []
-
-    for root in ("data", "storage"):
-        paths = project_blueprint.blueprint_paths(project_id, root=root)
-        for key in (
-            "json_abs",
-            "markdown_abs",
-            "draft_json_abs",
-            "draft_markdown_abs",
-            "revision_json_abs",
-            "revision_markdown_abs",
-            "view_model_abs",
-        ):
-            path = Path(paths[key])
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(f"{key}\n", encoding="utf-8")
-            expected_abs_paths.append(str(path))
-
-    deleted = project_blueprint.delete_blueprint_files(project_id)
-
-    assert set(deleted) == set(expected_abs_paths)
-    assert all(not Path(path).exists() for path in expected_abs_paths)
-
-def test_delete_blueprint_files_report_surfaces_delete_errors(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(project_blueprint.settings, "PROJECT_ROOT", str(tmp_path))
-    project_id = "reset-file-error-project"
-    paths = project_blueprint.blueprint_paths(project_id)
-    json_path = Path(paths["json_abs"])
-    json_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text("{}\n", encoding="utf-8")
-    original_unlink = Path.unlink
-
-    def fake_unlink(self: Path, *args, **kwargs):
-        if self == json_path:
-            raise PermissionError("denied")
-        return original_unlink(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "unlink", fake_unlink)
-
-    report = project_blueprint.delete_blueprint_files_report(project_id)
-
-    assert report["deleted"] == []
-    assert report["errors"] == [
-        {
-            "path": str(json_path),
-            "error": "denied",
-            "error_kind": "PermissionError",
-        }
-    ]
-    assert json_path.exists()
-
-def test_reset_success_text_reports_blueprint_file_delete_errors() -> None:
-    from app.agent.reset_flow import reset_success_text
-
-    text = reset_success_text(
-        {
-            "deleted_node_ids": [],
-            "blueprint_file_delete_errors": [{"path": "/tmp/blueprint.json", "error": "denied"}],
-        },
-        "full",
-    )
-
-    assert "1 个蓝图文件" in text
-    assert "权限" in text
 
 def test_permission_policy_allows_node_creation_without_plan() -> None:
     decision = decide_tool_permission(

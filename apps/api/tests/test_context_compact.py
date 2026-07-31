@@ -62,7 +62,7 @@ def test_auto_compact_threshold() -> None:
 
 def test_compact_summary_prompt_marks_summary_as_background_only() -> None:
     prompt = context_compact.build_compact_summary_prompt([
-        {"role": "user", "content": "上一轮让我继续生成蓝图"},
+        {"role": "user", "content": "上一轮让我继续生成节点"},
         {"role": "assistant", "content": "已生成一部分"},
     ])
 
@@ -616,7 +616,7 @@ def test_deferred_full_skill_result_keeps_guide_content_visible_when_compacted(t
 
 
 def test_compact_messages_wraps_background_boundary() -> None:
-    messages = context_compact.compact_messages("用户偏好国风动漫；有待确认蓝图。")
+    messages = context_compact.compact_messages("用户偏好国风动漫；有待确认方案。")
 
     assert len(messages) == 2
     assert messages[0]["role"] == "user"

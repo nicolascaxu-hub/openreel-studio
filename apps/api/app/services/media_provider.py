@@ -236,8 +236,8 @@ async def _get_active_provider(kind: str) -> MediaProvider | None:
         result = await session.exec(
             select(MediaProvider)
             .where(MediaProvider.kind == kind)
-            .where(MediaProvider.is_active == True)
-            .where(MediaProvider.enabled == True)
+            .where(MediaProvider.is_active.is_(True))
+            .where(MediaProvider.enabled.is_(True))
             .order_by(MediaProvider.created_at, MediaProvider.id)
         )
         provider = result.first()
@@ -246,7 +246,7 @@ async def _get_active_provider(kind: str) -> MediaProvider | None:
         fallback = await session.exec(
             select(MediaProvider)
             .where(MediaProvider.kind == kind)
-            .where(MediaProvider.enabled == True)
+            .where(MediaProvider.enabled.is_(True))
             .order_by(MediaProvider.created_at, MediaProvider.id)
         )
         return fallback.first()
@@ -258,7 +258,7 @@ async def _get_provider_by_name(kind: str, name: str) -> MediaProvider | None:
             select(MediaProvider)
             .where(MediaProvider.kind == kind)
             .where(MediaProvider.name == name)
-            .where(MediaProvider.enabled == True)
+            .where(MediaProvider.enabled.is_(True))
         )
         return result.first()
 
@@ -272,7 +272,7 @@ async def _get_provider_by_name_or_model(kind: str, name_or_model: str) -> Media
             select(MediaProvider)
             .where(MediaProvider.kind == kind)
             .where(MediaProvider.model_name == name_or_model)
-            .where(MediaProvider.enabled == True)
+            .where(MediaProvider.enabled.is_(True))
         )
         return result.first()
 
@@ -742,15 +742,6 @@ def _string_set(value: Any) -> set[str]:
     return set()
 
 
-def _int_set(value: Any) -> set[int]:
-    out: set[int] = set()
-    for item in _string_set(value):
-        coerced = _coerce_int(item)
-        if coerced is not None:
-            out.add(coerced)
-    return out
-
-
 def _has_value(value: Any) -> bool:
     if value is None:
         return False
@@ -1157,15 +1148,6 @@ def _lookup_path(data: Any, path: str) -> Any:
             return None
         return None
     return current
-
-
-def _first_path_text(data: dict[str, Any], paths: tuple[str, ...]) -> str | None:
-    for path in paths:
-        value = _lookup_path(data, path)
-        text = str(value or "").strip()
-        if text:
-            return text
-    return None
 
 
 def _first_text(*values: Any) -> str | None:
@@ -2749,18 +2731,6 @@ async def _call_raw_http(
         "raw": data_dict,
         "endpoint": endpoint,
     }
-
-
-# Image provider calls are single-shot. The model must repair the original node
-# after a failed call; backend code must not silently lower resolution or quality.
-def _downgrade_size(current: str) -> str | None:
-    """Compatibility hook: automatic resolution downgrade is disabled."""
-    return None
-
-
-def _is_retryable_error(error_kind: str | None, http_code: int | None) -> bool:
-    """Compatibility hook: provider image calls do not auto-retry."""
-    return False
 
 
 # ---- provider preset params ----

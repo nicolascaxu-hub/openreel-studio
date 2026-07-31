@@ -492,13 +492,6 @@ def _parse_json_object(raw: str) -> dict | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _parse_json_action(raw: str) -> dict | None:
-    obj = _parse_json_object(raw)
-    if isinstance(obj, dict) and "action" in obj:
-        return obj
-    return None
-
-
 def _parse_subagent_final_result(raw: str) -> dict[str, Any] | None:
     obj = _parse_json_object(raw)
     if obj is None:
@@ -578,90 +571,6 @@ def _coerce_tool_arguments(raw: Any) -> dict[str, Any]:
     return {}
 
 
-def _iter_blueprint_nodes(node: dict[str, Any] | None, parent_id: str | None = None):
-    if not isinstance(node, dict):
-        return
-    yield node, parent_id
-    for child in node.get("children") or []:
-        if isinstance(child, dict):
-            yield from _iter_blueprint_nodes(child, str(node.get("id") or "root"))
-
-
-def _compact_blueprint_text(value: Any, limit: int = 260) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "...<truncated>"
-
-
-def _current_blueprint_review_evidence(project_id: str) -> dict[str, Any]:
-    """Summarize draft/pending/active blueprint state for read-only reviews.
-
-    `agent.review` often runs before blueprint approval, when workflow nodes are
-    expected to be empty. Supplying the semantic tree prevents the reviewer from
-    mistaking a valid pre-approval draft for missing project content.
-    """
-    if not project_id:
-        return {"available": False, "reason": "missing_project_id"}
-    try:
-        from app.agent.blueprint_tree import blueprint_root, read_blueprint
-
-        doc = read_blueprint(project_id)
-        path = blueprint_root(project_id)
-    except Exception as exc:
-        return {"available": False, "reason": f"read_failed:{type(exc).__name__}"}
-
-    root = doc.get("root") if isinstance(doc.get("root"), dict) else {}
-    nodes: list[dict[str, Any]] = []
-    for node, parent_id in _iter_blueprint_nodes(root):
-        fields = node.get("fields") if isinstance(node.get("fields"), dict) else {}
-        prompt = str(node.get("prompt") or fields.get("prompt") or "").strip()
-        is_media = node.get("type") in {"image", "video", "audio"}
-        nodes.append({
-            "id": node.get("id"),
-            "type": node.get("type"),
-            "title": node.get("title"),
-            "parent_id": parent_id,
-            "materialize": node.get("materialize"),
-            "prompt_len": len(prompt),
-            "prompt_preview": _compact_blueprint_text(prompt, 1400 if is_media else 420),
-            "prompt_source": fields.get("prompt_source"),
-            "prompt_template": fields.get("prompt_template"),
-            "template_selection_reason": _compact_blueprint_text(fields.get("template_selection_reason"), 180),
-            "references": node.get("references") or fields.get("references") or [],
-            "depends_on": node.get("depends_on") or fields.get("depends_on") or [],
-            "content_preview": _compact_blueprint_text(
-                node.get("content") or node.get("description") or fields.get("content") or fields.get("description"),
-            ),
-        })
-
-    media_nodes = [node for node in nodes if node.get("type") in {"image", "video", "audio"}]
-    checksum = ""
-    try:
-        checksum = uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            json.dumps(root, ensure_ascii=False, sort_keys=True, default=str),
-        ).hex[:16]
-    except Exception:
-        checksum = ""
-    return {
-        "available": True,
-        "file_path": str(path),
-        "status": doc.get("status"),
-        "title": doc.get("title") or root.get("title"),
-        "summary": _compact_blueprint_text(doc.get("summary") or root.get("content"), 500),
-        "tree_version": doc.get("tree_version"),
-        "checksum": checksum,
-        "node_count": max(0, len(nodes) - 1),
-        "media_node_count": len(media_nodes),
-        "nodes": nodes[:80],
-        "pre_approval_note": (
-            "If status is drafting or pending_review, workflow node count may be 0 by design; "
-            "review this semantic tree instead of requiring materialized nodes."
-        ),
-    }
-
-
 def _agent_review_timeout_seconds(_legacy_max_steps: Any = None) -> float:
     return REVIEW_TIMEOUT_MAX_SECONDS
 
@@ -676,25 +585,6 @@ def _effective_subagent_step_limit(
     if role == WORKFLOW_SPEC_ROLE_NAME:
         requested = max(requested, int(preset.get("max_steps") or DEFAULT_MAX_STEPS))
     return max(1, min(requested, MAX_SUBAGENT_STEPS))
-
-
-def _review_subject_from_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
-    current_graph = evidence.get("current_canvas_graph") if isinstance(evidence.get("current_canvas_graph"), dict) else {}
-    return {
-        "canvas_status": current_graph.get("status"),
-        "checksum": current_graph.get("checksum"),
-        "node_count": current_graph.get("node_count"),
-        "media_node_count": current_graph.get("media_node_count"),
-    }
-
-
-def _review_inputs_summary(review_inputs: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "review_profile": review_inputs.get("review_profile"),
-        "review_goal": review_inputs.get("review_goal"),
-        "focus": review_inputs.get("focus"),
-        "guide_topics": review_inputs.get("guide_topics"),
-    }
 
 
 def _clip_text(value: Any, limit: int) -> str:
@@ -1032,10 +922,6 @@ def _filter_readonly_tools(tool_names: list[str]) -> list[str]:
     return out
 
 
-def _denied_readwrite_tools(tool_names: list[str]) -> list[str]:
-    return [name for name in tool_names if not _is_readonly_tool(name)]
-
-
 def _filter_tools_for_preset(preset: dict[str, Any], tool_names: list[str]) -> list[str]:
     strict_allowlist = bool(preset.get("strict_allowed_tools"))
     if bool(preset.get("readonly", True)) and not strict_allowlist:
@@ -1111,24 +997,6 @@ def _subagent_tool_description_block(tool_names: list[str]) -> str:
     if not payload:
         return "(无工具,直接输出最终 JSON)"
     return "\n".join(f"- `{item['name']}` — {item['description']}" for item in payload)
-
-
-def _subagent_tool_schema_block(tool_names: list[str]) -> str:
-    from app.mcp_tools.registry import registry
-
-    payload: list[dict[str, Any]] = []
-    for name in tool_names:
-        spec = registry.get(name)
-        if not spec:
-            continue
-        payload.append({
-            "name": spec.name,
-            "description": (spec.description or spec.name).splitlines()[0][:240],
-            "input_schema": spec.schema or {},
-        })
-    if not payload:
-        return ""
-    return "\n\n## 工具参数\n" + json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def _subagent_openai_tools(tool_names: list[str]) -> list[dict[str, Any]]:
@@ -1319,10 +1187,6 @@ def _build_subagent_prompt_package(
         "cache_key": cache_key,
         "diagnostics": diagnostics,
     }
-
-
-def _build_subagent_task_message(task: str, inputs: dict | None) -> str:
-    return _build_subagent_task_message_for_role("default", task, inputs)
 
 
 def _subagent_review_context_block(role: str, inputs: dict | None) -> str:
@@ -1917,19 +1781,6 @@ def _append_subagent_model_content(
     })
     if role == IMAGE_EDITOR_ROLE_NAME:
         _prune_image_editor_model_content(transcript, image_editor_state)
-
-
-def _build_subagent_system(
-    preset: dict[str, Any],
-    task: str,
-    inputs: dict | None,
-) -> str:
-    _ = (task, inputs)
-    return "\n\n".join(
-        str(section.get("text") or "").rstrip()
-        for section in _build_subagent_system_sections(preset)
-        if section.get("text")
-    )
 
 
 def _coerce_result_ref_list(value: Any) -> list[str]:
@@ -2602,11 +2453,6 @@ async def _node_for_subagent_scope(project_id: str, node_id: str) -> tuple[str, 
             details={"node_id": node_id},
         )
     return resolved, str(node.get("type") or ""), None
-
-
-async def _node_type_for_subagent_scope(project_id: str, node_id: str) -> tuple[str, dict[str, Any] | None]:
-    _, node_type, error = await _node_for_subagent_scope(project_id, node_id)
-    return node_type, error
 
 
 def _requested_node_create_types(tool_input: dict[str, Any]) -> list[str]:

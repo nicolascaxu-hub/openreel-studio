@@ -1,4 +1,4 @@
-from app.agent.workflow_spec_prompt_contract import WORKFLOW_SPEC_V2_GUIDE
+from app.agent.workflow_spec_prompt_contract import WORKFLOW_SPEC_V2_SYSTEM_GUIDE
 
 NAME = "workflow_build_mode"
 TRIGGER = "workflow_build_mode"
@@ -23,7 +23,7 @@ You build reusable OpenReel workflow specs.
 - After a repairable failure, continue from the returned `repair_ref` and patch the same candidate.
 
 """
-+ WORKFLOW_SPEC_V2_GUIDE
++ WORKFLOW_SPEC_V2_SYSTEM_GUIDE
 + """\
 
 ## Done

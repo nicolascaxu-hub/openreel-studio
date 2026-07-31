@@ -3,13 +3,10 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from app.agent import parallel_executor
-from app.agent.parallel_executor import execute_parallel
 from app.agent import slash_commands
 from app.agent.slash_commands import slash_command_events
 from app.api.chat_events import event_to_sse, normalize_chat_event, validate_chat_event
 from app.api.routes_chat import _to_sse
-from app.mcp_tools.registry import registry
 
 
 def test_proposed_plan_event_is_typed() -> None:
@@ -217,70 +214,6 @@ def test_subagent_round_event_is_typed() -> None:
     }
 
 
-def test_blueprint_events_are_typed() -> None:
-    event = normalize_chat_event(
-        {
-            "type": "blueprint_section_completed",
-            "project_id": "project-1",
-            "section_id": "segment_breakdown",
-            "title": "分段剧情",
-            "status": "completed",
-            "summary_text": "分段剧情已生成。",
-            "display_blocks": [{"type": "paragraph", "text": "第一段雨夜交锋。"}],
-            "blueprint_ref": {"id": "bp-1", "version": 1},
-            "debug_json_path": "data/projects/project-1/blueprint_draft.json",
-        }
-    )
-
-    assert event == {
-        "type": "blueprint_section_completed",
-        "project_id": "project-1",
-        "section_id": "segment_breakdown",
-        "title": "分段剧情",
-        "status": "completed",
-        "summary_text": "分段剧情已生成。",
-        "display_blocks": [{"type": "paragraph", "text": "第一段雨夜交锋。"}],
-        "blueprint_ref": {"id": "bp-1", "version": 1},
-        "debug_json_path": "data/projects/project-1/blueprint_draft.json",
-    }
-
-
-def test_blueprint_tree_events_are_typed() -> None:
-    event = normalize_chat_event(
-        {
-            "type": "blueprint_tree_changed",
-            "project_id": "project-1",
-            "tree_version": 7,
-            "action": "update_node",
-            "node_id": "seg-1",
-            "patch": {"status": "rendering"},
-        }
-    )
-
-    assert event == {
-        "type": "blueprint_tree_changed",
-        "project_id": "project-1",
-        "tree_version": 7,
-        "action": "update_node",
-        "node_id": "seg-1",
-        "patch": {"status": "rendering"},
-    }
-
-    replace_event = normalize_chat_event(
-        {
-            "type": "blueprint_tree_changed",
-            "project_id": "project-1",
-            "tree_version": 8,
-            "action": "replace_tree",
-            "node_id": "root",
-            "patch": {"tree_summary": {"node_count": 5}},
-        }
-    )
-
-    assert replace_event["action"] == "replace_tree"
-    assert replace_event["patch"]["tree_summary"]["node_count"] == 5
-
-
 def test_tool_done_event_keeps_tool_output_envelope() -> None:
     event = normalize_chat_event(
         {
@@ -312,9 +245,9 @@ def test_interaction_input_event_preserves_structured_payload() -> None:
             "status": "awaiting_user",
             "summary_text": "请补充视频主题、风格和类型。",
             "intake": {
-                "purpose": "video_blueprint_intake",
+                "purpose": "video_intake",
                 "stage": "basic",
-                "title": "补充蓝图基础信息",
+                "title": "补充视频基础信息",
                 "questions": [
                     {
                         "id": "topic",
@@ -331,62 +264,10 @@ def test_interaction_input_event_preserves_structured_payload() -> None:
     )
 
     assert event["type"] == "interaction_input_requested"
-    assert event["intake"]["purpose"] == "video_blueprint_intake"
+    assert event["intake"]["purpose"] == "video_intake"
     assert event["intake"]["stage"] == "basic"
     assert "presentation" not in event["intake"]
     assert event["intake"]["questions"][0]["id"] == "topic"
-
-
-def test_parallel_events_are_typed() -> None:
-    assert normalize_chat_event(
-        {
-            "type": "parallel_start",
-            "total_steps": 2,
-            "waves": 1,
-            "project_id": "project-1",
-        }
-    ) == {
-        "type": "parallel_start",
-        "total_steps": 2,
-        "waves": 1,
-        "project_id": "project-1",
-    }
-    assert normalize_chat_event(
-        {
-            "type": "step_completed",
-            "step_index": 0,
-            "tool": "tmp.echo",
-            "title": "测试",
-            "result": {"ok": True},
-            "progress": "1/1",
-        }
-    ) == {
-        "type": "step_completed",
-        "step_index": 0,
-        "tool": "tmp.echo",
-        "title": "测试",
-        "result": {"ok": True},
-        "progress": "1/1",
-    }
-    assert normalize_chat_event({"type": "step_failed", "error": "boom"}) == {
-        "type": "step_failed",
-        "error": "boom",
-    }
-    assert normalize_chat_event({"type": "parallel_done", "completed": 1, "total": 1}) == {
-        "type": "parallel_done",
-        "completed": 1,
-        "total": 1,
-    }
-
-
-def test_parallel_step_completed_rejects_missing_tool() -> None:
-    with pytest.raises(ValidationError):
-        validate_chat_event(
-            {
-                "type": "step_completed",
-                "step_index": 0,
-            }
-        )
 
 
 def test_event_to_sse_serializes_normalized_json() -> None:
@@ -475,43 +356,3 @@ async def test_to_sse_mirrors_sanitized_event_summaries(monkeypatch) -> None:
         "tool": "node.run",
     }
     assert "SECRET_RESULT_BODY" not in json.dumps(mirrors, ensure_ascii=False)
-
-
-@pytest.mark.asyncio
-async def test_execute_parallel_yields_typed_events(monkeypatch) -> None:
-    async def fake_tool(project_id: str, value: str) -> dict:
-        return {"ok": True, "project_id": project_id, "value": value}
-
-    monkeypatch.setattr(parallel_executor.event_stream, "emit", lambda *args, **kwargs: {})
-    registry.register(
-        "tmp.parallel_echo",
-        fake_tool,
-        description="Temporary parallel echo tool",
-    )
-    try:
-        events = [
-            event
-            async for event in execute_parallel(
-                [
-                    {
-                        "tool": "tmp.parallel_echo",
-                        "title": "并行测试",
-                        "input": {"value": "hello"},
-                    }
-                ],
-                "project-1",
-            )
-        ]
-    finally:
-        registry.unregister("tmp.parallel_echo")
-
-    assert events[0] == {
-        "type": "parallel_start",
-        "total_steps": 1,
-        "waves": 1,
-        "project_id": "project-1",
-    }
-    assert events[1]["type"] == "step_completed"
-    assert events[1]["tool"] == "tmp.parallel_echo"
-    assert events[1]["progress"] == "1/1"
-    assert events[-1] == {"type": "parallel_done", "completed": 1, "total": 1}

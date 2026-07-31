@@ -296,11 +296,12 @@ def test_subagent_project_id_injection_matches_tool_signature() -> None:
 
 def test_readonly_role_system_prompt_forbids_mutation() -> None:
     preset = agent_tools._resolve_role("debugger", None)
-    system = agent_tools._build_subagent_system(
+    system = agent_tools._build_subagent_prompt_package(
+        "debugger",
         preset,
         "检查失败节点",
         {"node_id": "node-1"},
-    )
+    )["system"]
 
     assert "只读子 Agent" in system
     assert "禁止调用任何写入、执行、生成、删除、批准、重置或配置变更工具" in system
@@ -308,11 +309,12 @@ def test_readonly_role_system_prompt_forbids_mutation() -> None:
 
 def test_image_editor_system_prompt_uses_native_tool_protocol() -> None:
     preset = agent_tools._resolve_role("image_editor", None)
-    system = agent_tools._build_subagent_system(
+    system = agent_tools._build_subagent_prompt_package(
+        "image_editor",
         preset,
         "裁剪节点12并提交",
         {"node_id": "12"},
-    )
+    )["system"]
 
     assert "image_editor 子 Agent" in system
     assert "直接调用白名单工具" in system
@@ -429,7 +431,11 @@ def test_subagent_openai_tools_exports_whitelist_as_native_tools() -> None:
 
 
 def test_subagent_task_message_carries_dynamic_task_and_inputs() -> None:
-    message = agent_tools._build_subagent_task_message("裁剪节点12并提交", {"node_id": "12"})
+    message = agent_tools._build_subagent_task_message_for_role(
+        "default",
+        "裁剪节点12并提交",
+        {"node_id": "12"},
+    )
 
     assert "## 任务" in message
     assert "裁剪节点12并提交" in message
@@ -724,15 +730,15 @@ async def test_rejected_image_editor_preview_file_is_deleted(monkeypatch, tmp_pa
 
 def test_reviewer_is_general_readonly_checker() -> None:
     preset = agent_tools._resolve_role("reviewer", None)
-    system = agent_tools._build_subagent_system(
+    system = agent_tools._build_subagent_prompt_package(
+        "reviewer",
         preset,
         "检查节点图是否可执行。",
         {"review_goal": "检查节点图", "work_summary": "已建人物和场景节点"},
-    )
+    )["system"]
 
     assert preset["readonly"] is True
     assert {"project.get_state", "task.list", "node.list", "node.get", "skill.project_mentor"} <= set(preset["allowed_tools"])
-    assert "blueprint.get" not in preset["allowed_tools"]
     assert "通用只读审查" in preset["description"]
     assert "审查范围可以是节点图、视频流程、提示词、工具选择、trace 摘要、前端问题、配置或其他工程事项" in system
     assert "project.get_state、node.list、node.get" in system
@@ -860,7 +866,6 @@ async def test_agent_review_loads_review_skill_key_before_subagent(tmp_path, mon
     assert inputs["review_skill"]["ok"] is True
     assert "必须检查主体、动作和镜头" in inputs["review_skill"]["content"]
     assert inputs["custom_checklist"] == ["检查是否复述剧情"]
-    assert "current_blueprint_tree" not in inputs["evidence"]
 
 
 @pytest.mark.asyncio

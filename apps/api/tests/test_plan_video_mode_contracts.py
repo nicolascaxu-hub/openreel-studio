@@ -2,7 +2,6 @@ import pytest
 
 from app.agent import slash_commands
 from app.agent.video_mode import build_video_mode_system_reminder
-from app.mcp_tools import node_universal
 
 
 def test_video_mode_reminder_is_coarse_state_only():
@@ -39,25 +38,3 @@ async def test_project_management_slash_command_is_removed(monkeypatch):
     assert slash["ok"] is False
     assert slash["error"] == "unknown_command"
     assert events[-1]["status"] == "failed"
-
-
-@pytest.mark.asyncio
-async def test_node_creation_guide_only_exposes_generic_types(monkeypatch):
-    async def fake_read_state(project_id: str):
-        return {"project_mode": "single_node", "guide_loaded": {}}
-
-    async def fake_write_patch(project_id: str, patch: dict):
-        return None
-
-    monkeypatch.setattr(node_universal, "_read_project_state", fake_read_state)
-    monkeypatch.setattr(node_universal, "_write_project_state_patch", fake_write_patch)
-
-    ok = await node_universal.node_get_creation_guide("proj-1", "image")
-    bad = await node_universal.node_get_creation_guide("proj-1", "unsupported")
-
-    assert ok["ok"] is True
-    assert ok["type"] == "image"
-    assert ok["required_fields"] == ["prompt", "aspect_ratio", "resolution"]
-    assert ok["call_example"]["args"]["fields"]["resolution"] == "1080x1920"
-    assert bad["ok"] is False
-    assert bad["valid_types"] == ["text", "image", "video", "audio"]

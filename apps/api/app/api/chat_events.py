@@ -134,50 +134,6 @@ class ProposedPlanEvent(ChatEvent):
     project_id: str | None = None
 
 
-class BlueprintStreamEvent(ChatEvent):
-    type: Literal[
-        "blueprint_draft_started",
-        "blueprint_section_started",
-        "blueprint_section_delta",
-        "blueprint_section_completed",
-        "blueprint_section_needs_revision",
-        "blueprint_draft_saved",
-        "blueprint_validation_completed",
-        "blueprint_proposed",
-        "blueprint_approved",
-        "blueprint_revision_proposed",
-        "blueprint_revision_applied",
-        "blueprint_cleared",
-    ]
-    project_id: str | None = None
-    section_id: str | None = None
-    title: str | None = None
-    section_index: int | None = None
-    window_index: int | None = None
-    window_count: int | None = None
-    status: str | None = None
-    summary_text: str | None = None
-    failure_reason: str | None = None
-    display_blocks: list[dict[str, Any]] | None = None
-    view_model_patch: dict[str, Any] | None = None
-    blueprint_ref: dict[str, Any] | None = None
-    debug_json_path: str | None = None
-    validation: dict[str, Any] | None = None
-
-
-class BlueprintTreeChangedEvent(ChatEvent):
-    type: Literal["blueprint_tree_changed"]
-    project_id: str | None = None
-    tree_version: int | None = None
-    draft_mode: str | None = None
-    replacement: bool | None = None
-    action: str
-    parent_id: str | None = None
-    node_id: str | None = None
-    node: dict[str, Any] | None = None
-    patch: dict[str, Any] | None = None
-
-
 class InteractionInputEvent(ChatEvent):
     type: Literal["interaction_input_requested"]
     project_id: str | None = None
@@ -268,35 +224,6 @@ class QueuedTurnStartedEvent(ChatEvent):
     queued_remaining: int | None = None
 
 
-class ParallelStartEvent(ChatEvent):
-    type: Literal["parallel_start"]
-    total_steps: int
-    waves: int
-    project_id: str
-
-
-class StepFailedEvent(ChatEvent):
-    type: Literal["step_failed"]
-    error: str
-    step_index: int | None = None
-    tool: str | None = None
-
-
-class StepCompletedEvent(ChatEvent):
-    type: Literal["step_completed"]
-    step_index: int
-    tool: str
-    title: str = ""
-    result: Any = None
-    progress: str = ""
-
-
-class ParallelDoneEvent(ChatEvent):
-    type: Literal["parallel_done"]
-    completed: int
-    total: int
-
-
 _EVENT_MODELS: dict[str, type[ChatEvent]] = {
     "text_delta": TextDeltaEvent,
     "agent_round": AgentRoundEvent,
@@ -314,19 +241,6 @@ _EVENT_MODELS: dict[str, type[ChatEvent]] = {
     "subscribed": SubscribedEvent,
     "proposed_plan": ProposedPlanEvent,
     "interaction_input_requested": InteractionInputEvent,
-    "blueprint_draft_started": BlueprintStreamEvent,
-    "blueprint_section_started": BlueprintStreamEvent,
-    "blueprint_section_delta": BlueprintStreamEvent,
-    "blueprint_section_completed": BlueprintStreamEvent,
-    "blueprint_section_needs_revision": BlueprintStreamEvent,
-    "blueprint_draft_saved": BlueprintStreamEvent,
-    "blueprint_validation_completed": BlueprintStreamEvent,
-    "blueprint_proposed": BlueprintStreamEvent,
-    "blueprint_approved": BlueprintStreamEvent,
-    "blueprint_revision_proposed": BlueprintStreamEvent,
-    "blueprint_revision_applied": BlueprintStreamEvent,
-    "blueprint_cleared": BlueprintStreamEvent,
-    "blueprint_tree_changed": BlueprintTreeChangedEvent,
     "checklist_updated": ChecklistUpdatedEvent,
     "confirm_required": ConfirmRequiredEvent,
     "mode_updated": ModeUpdatedEvent,
@@ -340,10 +254,6 @@ _EVENT_MODELS: dict[str, type[ChatEvent]] = {
     "queued": QueuedEvent,
     "merged_messages": MergedMessagesEvent,
     "queued_turn_started": QueuedTurnStartedEvent,
-    "parallel_start": ParallelStartEvent,
-    "step_failed": StepFailedEvent,
-    "step_completed": StepCompletedEvent,
-    "parallel_done": ParallelDoneEvent,
 }
 
 

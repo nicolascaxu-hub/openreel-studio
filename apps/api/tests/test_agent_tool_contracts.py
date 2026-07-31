@@ -1,21 +1,21 @@
 from agent_plan_contract_helpers import *  # noqa: F401,F403
 
 def test_confirmation_protocol_reads_only_structured_decision_metadata() -> None:
-    assert decision_action(None, "blueprint_revision") == ("", "")
-    assert decision_action({"message": "确认"}, "blueprint_revision") == ("", "")
+    assert decision_action(None, "node_update") == ("", "")
+    assert decision_action({"message": "确认"}, "node_update") == ("", "")
 
     metadata = _decision_metadata(
-        "blueprint_revision",
+        "node_update",
         "confirm",
         feedback="应用这个修订",
     )
     decision = decision_from_user_metadata(metadata)
 
-    assert decision.kind == "blueprint_revision"
+    assert decision.kind == "node_update"
     assert decision.action == "confirm"
     assert decision.feedback == "应用这个修订"
-    assert decision_action(metadata, "blueprint_revision") == ("confirm", "应用这个修订")
-    assert decision_action(metadata, "blueprint_section_review") == ("", "")
+    assert decision_action(metadata, "node_update") == ("confirm", "应用这个修订")
+    assert decision_action(metadata, "node_delete") == ("", "")
 
 def test_build_pending_confirmation_uses_explicit_protocol_shape() -> None:
     confirmation = build_pending_confirmation(
@@ -54,14 +54,7 @@ def test_expired_pending_confirmation_patch_clears_only_expired_protocol_keys() 
             "expires_at": 90,
             "ts": 10,
         },
-        "pending_blueprint_revision": {
-            "status": "pending_review",
-            "version": 2,
-            "expires_at": 120,
-        },
-        "pending_blueprint_section_review": {
-            "next_section_index": 3,
-        },
+        "pending_video_request": {"stage": "structure"},
         "pending_plan": {
             "id": "plan-1",
             "expires_at": 1,
@@ -85,29 +78,6 @@ def test_expired_pending_confirmation_patch_clears_only_expired_protocol_keys() 
             "target_node_id": None,
         }
     ]
-
-def test_blueprint_revision_skip_confirmations_gate_only_allows_low_risk_patch() -> None:
-    from app.agent import blueprint_revision
-
-    low = blueprint_revision._risk_for_revision_ops(
-        [{"op": "replace", "path": "story.episodes[0].segments[0].plot", "value": "新段落"}],
-        ["story.episodes[0].segments[0].plot"],
-    )
-    medium = blueprint_revision._risk_for_revision_ops(
-        [{"op": "replace", "path": "story.global_outline", "value": "新主线"}],
-        ["story.global_outline"],
-    )
-    high = blueprint_revision._risk_for_revision_ops(
-        [{"op": "remove", "path": "characters[0]"}],
-        ["characters[0]"],
-    )
-
-    assert low["risk"] == "low"
-    assert low["requires_confirmation"] is False
-    assert medium["risk"] == "medium"
-    assert medium["requires_confirmation"] is True
-    assert high["risk"] == "high"
-    assert high["requires_confirmation"] is True
 
 def test_generate_plan_keeps_node_first_core_surface() -> None:
     visible = _visible_tools("generate_plan")
@@ -135,12 +105,12 @@ def test_memory_auto_summarization_ignores_assistant_drafts() -> None:
 
     payload = memory_summarization_messages([
         {"role": "assistant", "content": "白衣剑修与黑袍魔修在断崖大战。"},
-        {"role": "tool", "content": "{\"draft\":\"未确认蓝图\"}"},
-        {"role": "user", "content": "已提交：视频蓝图基础信息\n- 主题：两个修士大战"},
+        {"role": "tool", "content": "{\"draft\":\"未确认方案\"}"},
+        {"role": "user", "content": "已提交：视频基础信息\n- 主题：两个修士大战"},
     ])
 
     assert payload == [
-        {"role": "user", "content": "已提交：视频蓝图基础信息\n- 主题：两个修士大战"}
+        {"role": "user", "content": "已提交：视频基础信息\n- 主题：两个修士大战"}
     ]
 
 def test_prompt_namespace_hints_match_core_agent_surface() -> None:
@@ -157,7 +127,7 @@ def test_prompt_namespace_hints_match_core_agent_surface() -> None:
         "tool",
         "vision",
     }
-    assert not {"blueprint", "scene", "shot", "asset", "plan"} & namespaces
+    assert not {"scene", "shot", "asset", "plan"} & namespaces
 
 def test_agent_tool_surface_matches_node_first_contract() -> None:
     visible = _visible_tools(None)
@@ -203,28 +173,7 @@ def test_agent_tool_surface_matches_node_first_contract() -> None:
     assert registry.tool_exposure("tool.describe") == "core"
     assert registry.tool_exposure("tool.execute") == "core"
     assert registry.tool_exposure("vision.view_image") == "core"
-    assert registry.tool_exposure("blueprint.get") == "unregistered"
-    assert registry.tool_exposure("blueprint.propose_tree") == "unregistered"
     assert registry.tool_exposure("node.draw_character") == "unregistered"
-
-    retired_blueprint_tools: set[str] = {
-        "blueprint.get",
-        "blueprint.revise",
-        "blueprint.start_tree_draft",
-        "blueprint.append_tree_node",
-        "blueprint.update_tree_node",
-        "blueprint.finalize_tree_draft",
-        "blueprint.propose_tree",
-        "blueprint.add_child",
-        "blueprint.delete_node",
-        "blueprint.list_children",
-        "blueprint.set_prompt",
-        "blueprint.update_node",
-    }
-    for name in retired_blueprint_tools:
-        assert registry.get(name) is None, name
-        assert registry.tool_exposure(name) == "unregistered", name
-        assert name not in visible
 
     deferred_control = {
         "drama.parse_uploaded_script",
@@ -496,7 +445,7 @@ async def test_interaction_request_input_accepts_up_to_six_questions() -> None:
 async def test_interaction_request_input_filters_collected_video_intake_questions(monkeypatch) -> None:
     async def fake_read_project_state(project_id: str) -> dict:
         return {
-            "pending_video_blueprint_request": {
+            "pending_video_request": {
                 "collected_facts": {
                     "aspect_ratio": "16:9",
                     "duration_seconds": "15秒",
@@ -509,7 +458,7 @@ async def test_interaction_request_input_filters_collected_video_intake_question
     mixed = await interaction_tools.request_input(
         project_id="project-1",
         title="补充篮球短片信息",
-        purpose="video_blueprint_intake",
+        purpose="video_intake",
         stage="basic",
         questions=[
             {
@@ -541,7 +490,7 @@ async def test_interaction_request_input_filters_collected_video_intake_question
     duplicate_only = await interaction_tools.request_input(
         project_id="project-1",
         title="确认画幅",
-        purpose="video_blueprint_intake",
+        purpose="video_intake",
         stage="basic",
         questions=[
             {
@@ -702,7 +651,7 @@ def test_interaction_request_input_description_is_generic_card_contract() -> Non
     assert "presentation" not in schema_props
     assert "segment_seconds" not in description
     assert "15秒以内默认不分段" not in description
-    assert "purpose='video_blueprint_intake'" not in description
+    assert "purpose='video_intake'" not in description
     assert "批准" in description
 
 
@@ -760,22 +709,6 @@ async def test_agent_can_request_context_compaction_via_deferred_tool() -> None:
     result = await tool_meta_tools.tool_search(query="compact memory", category="memory")
     names = {item["name"] for item in result["tools"]}
     assert "memory.compact_context" in names
-
-def test_legacy_blueprint_tools_are_not_agent_tools() -> None:
-    visible = _visible_tools(None)
-    retired = {
-        "blueprint.get",
-        "blueprint.revise",
-        "blueprint.start_tree_draft",
-        "blueprint.append_tree_node",
-        "blueprint.update_tree_node",
-        "blueprint.finalize_tree_draft",
-        "blueprint.clear",
-        "blueprint.save_from_plan",
-    }
-    assert not retired & visible
-    for name in retired:
-        assert registry.tool_exposure(name) == "unregistered"
 
 def test_low_frequency_tools_are_deferred_and_reset_is_core() -> None:
     visible = _visible_tools(None)
@@ -836,7 +769,7 @@ def test_single_image_prompt_documents_reference_image_to_image_path() -> None:
     assert "node.list(limit=0)" in prompt_text
     assert "active skill" in prompt_text
     assert "prompt rules" in prompt_text
-    assert "蓝图" not in prompt_text
+    assert "旧规划" not in prompt_text
 
 def test_prompt_rules_prioritize_latest_user_message_over_historical_failures() -> None:
     prompt_text = "\n".join([core_rules.PROMPT, task_loop.PROMPT])

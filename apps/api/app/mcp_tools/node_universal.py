@@ -9,18 +9,14 @@ Agent 只看到节点原语(node.create / get / update / delete / list / run),
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
-import mimetypes
 import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
-from urllib.parse import unquote
 
-from app.agent.blueprint_revision import create_pending_revision_from_node_patch
 from app.agent.prompt_dump import dump_llm_request, new_run_id
 from app.agent.workflow_structured_output import (
     WorkflowStructuredOutputError,
@@ -62,7 +58,6 @@ def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
 
 NODE_RUN_TIMEOUT_SECONDS = _env_int("DRAMA_NODE_RUN_TIMEOUT_SECONDS", 600, minimum=30)
 IMAGE_RENDER_TIMEOUT_SECONDS = _env_int("DRAMA_IMAGE_RENDER_TIMEOUT_SECONDS", 300, minimum=60)
-TEXT_REFERENCE_IMAGE_MAX_BYTES = _env_int("DRAMA_TEXT_REFERENCE_IMAGE_MAX_BYTES", 8 * 1024 * 1024, minimum=1024)
 STALE_RUNNING_SECONDS = max(
     NODE_RUN_TIMEOUT_SECONDS,
     IMAGE_RENDER_TIMEOUT_SECONDS,
@@ -113,11 +108,6 @@ async def _model_visible_node(node: dict[str, Any], project_id: str = "") -> dic
     if node.get("display_id") is not None:
         payload["_canvas_display_id"] = node.get("display_id")
     return payload
-
-
-async def _model_visible_result(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    id_map = await _node_public_id_map(project_id)
-    return publicize_node_refs(payload, id_map)
 
 
 _NODE_DEPENDENCIES: dict[str, list[str]] = {
@@ -255,40 +245,6 @@ _NODE_FIELD_SCHEMA: dict[str, dict] = {
         "description": "通用纯音频节点。模型必须自己写最终音频 prompt；TTS 语音可写 voice/speed/instructions，音乐可写 style/instrumental；后端只按 prompt/fields 调已配置的 audio provider。",
     },
 }
-
-
-def _prompt_guidance_for_type(node_type: str) -> dict[str, Any] | None:
-    if node_type == "image":
-        return {
-            "required_before_prompt": [
-                "先理解图片用途:人物/场景/宫格分镜/单张分镜/首尾帧/故事模板。",
-                "按当前 skill 的要求自己写最终图片 prompt；用户自定义写法只放进 skill。",
-                "创建 image 节点必须写 fields.aspect_ratio 和精确像素 fields.resolution；不要写 1k/2k/4k 这种档位。16:9 常用 1920x1080；9:16 常用 1080x1920。",
-            ],
-            "record_fields": [
-                "fields.prompt_source",
-            ],
-            "fallback": (
-                "没有用户自定义 skill 时按默认视频制作 skill 写 prompt，并记录 "
-                "fields.prompt_source='skill_or_model_written'。"
-            ),
-        }
-    if node_type == "video":
-        return {
-            "required_before_prompt": [
-                "先确认视频路径:T2V/I2V/宫格分镜/单张分镜/首尾帧/故事模板/参考图/修复。",
-                "有已生成图片 references/depends_on 时，先看图或读取视觉分析，再写最终视频 prompt；看不了图时明确说明看不了，不要假装看过。",
-                "按当前 skill 的视频提示词要求自己写最终 video prompt；用户自定义写法只放进 skill。",
-            ],
-            "record_fields": [
-                "fields.prompt_source",
-            ],
-            "fallback": (
-                "没有用户自定义 skill 时按默认视频制作 skill 写 prompt，并记录 "
-                "fields.prompt_source='skill_or_model_written'。"
-            ),
-        }
-    return None
 
 
 def _node_dependencies_for_context(
@@ -1076,36 +1032,6 @@ def _apply_defaults(node_type: str, fields: dict) -> dict:
     return fields
 
 
-def _reference_input_for_state_asset(asset: dict[str, Any]) -> str:
-    rel_path = str(asset.get("rel_path") or "").strip()
-    if rel_path:
-        return rel_path
-    source_path = str(asset.get("source_path") or "").strip()
-    if source_path:
-        return source_path
-    asset_id = str(asset.get("asset_id") or "").strip()
-    if asset_id:
-        return f"asset:{asset_id}"
-    node_id = str(asset.get("node_id") or "").strip()
-    if node_id:
-        return f"node:{node_id}"
-    url = str(asset.get("url") or "").strip()
-    if url:
-        return url
-    return ""
-
-
-def _add_reference_lookup(lookup: dict[str, str], key: Any, value: str) -> None:
-    text = str(key or "").strip()
-    if not text or not value:
-        return
-    lookup[text] = value
-    if text.startswith("@"):
-        lookup[text.lstrip("@")] = value
-    else:
-        lookup[f"@{text}"] = value
-
-
 def _looks_like_bare_workflow_node_id(text: str) -> bool:
     if not text or text.startswith(("node:", "asset:", "http://", "https://")):
         return False
@@ -1256,7 +1182,6 @@ def _reference_candidate(item: Any) -> Any:
         or item.get("local_path")
         or item.get("node_id")
         or item.get("asset_id")
-        or item.get("blueprint_node_id")
         or item.get("ref_id")
         or item.get("mention")
         or item.get("id")
@@ -1298,7 +1223,7 @@ def _reference_lookup_key(value: Any) -> str:
         return ""
     if text.startswith("@"):
         text = text[1:].strip()
-    for prefix in ("node:", "asset:", "blueprint:"):
+    for prefix in ("node:", "asset:"):
         if text.startswith(prefix):
             text = text[len(prefix):].strip()
     return text
@@ -1350,7 +1275,6 @@ async def _image_node_reference_images_for_video(
             node.title,
             data.get("id"),
             data.get("title"),
-            data.get("blueprint_node_id"),
             *(data.get("aliases") if isinstance(data.get("aliases"), list) else []),
         ):
             _add_node_reference_lookup(lookup, key, node)
@@ -1617,75 +1541,6 @@ async def _image_output_from_reference(project_id: str, ref: str) -> tuple[dict[
     return None, f"source_image 无法解析为可用图片: {text}"
 
 
-def _project_storage_path_from_media_url(project_id: str, url: str) -> Path | None:
-    text = unquote(str(url or "").strip())
-    if not text.startswith("/"):
-        return None
-    media_prefix = f"/api/media/{project_id}/"
-    upload_prefix = f"/api/uploads/{project_id}/file/"
-    root = _storage_root() / project_id
-    if text.startswith(media_prefix):
-        rel = text[len(media_prefix):].lstrip("/")
-        return root / "generated_images" / rel
-    if text.startswith(upload_prefix):
-        rel = text[len(upload_prefix):].lstrip("/")
-        return root / rel
-    return None
-
-
-def _image_data_url_from_path(path: Path) -> tuple[str | None, str | None]:
-    try:
-        resolved = path.expanduser().resolve()
-    except OSError as exc:
-        return None, f"参考图路径无法解析: {path} ({exc})"
-    if not resolved.exists() or not resolved.is_file():
-        return None, f"参考图文件不存在: {path}"
-    try:
-        size = resolved.stat().st_size
-    except OSError as exc:
-        return None, f"参考图文件无法读取: {path} ({exc})"
-    if size > TEXT_REFERENCE_IMAGE_MAX_BYTES:
-        return None, f"参考图文件过大，已跳过: {path}"
-    mime = mimetypes.guess_type(str(resolved))[0] or "image/png"
-    try:
-        data = base64.b64encode(resolved.read_bytes()).decode("ascii")
-    except OSError as exc:
-        return None, f"参考图文件无法读取: {path} ({exc})"
-    return f"data:{mime};base64,{data}", None
-
-
-def _llm_image_url_from_source_value(project_id: str, value: str) -> tuple[str | None, str | None]:
-    text = str(value or "").strip()
-    if not text:
-        return None, None
-    if text.startswith("upload:"):
-        text = _storage_relative_upload_reference(text)
-    if text.startswith(("http://", "https://", "data:image/")):
-        return text, None
-
-    path = _project_storage_path_from_media_url(project_id, text)
-    if path is None and text.startswith(("generated_images/", "uploads/")):
-        path = _storage_root() / project_id / text
-    if path is None:
-        raw_path = Path(text).expanduser()
-        if raw_path.is_absolute():
-            path = raw_path
-        elif "/" in text or "\\" in text:
-            path = _storage_root() / project_id / text
-
-    if path is not None:
-        data_url, warning = _image_data_url_from_path(path)
-        if data_url:
-            return data_url, None
-        if text.startswith(("/api/media/", "/api/uploads/")):
-            return text, warning
-        return None, warning
-
-    if text.startswith(("/api/media/", "/api/uploads/")):
-        return text, None
-    return None, f"参考图无法解析为可发送图片: {text}"
-
-
 async def _llm_image_url_from_reference(project_id: str, ref: str) -> tuple[str | None, str | None]:
     from app.agent.vision_context import source_to_image_url
 
@@ -1846,144 +1701,13 @@ async def _write_project_state_patch(project_id: str, patch: dict) -> None:
         await svc.update_project_state(project_id, patch)
 
 
-async def node_list_creatable_types(project_id: str) -> dict:
-    """看当前项目状态下能建哪些 type,以及每种 type 的依赖前置。"""
-    state = await _read_project_state(project_id)
-    mode = state.get("project_mode")
-    sub_mode = state.get("project_sub_mode")
-    if not mode:
-        items = []
-        for t in sorted(NODE_TYPES):
-            schema = _NODE_FIELD_SCHEMA.get(t, {})
-            preferred_mode, preferred_sub_mode = _preferred_mode_for_node_type(state, t)
-            deps = [] if preferred_mode == "single_node" else _node_dependencies_for_context(t, state)
-            items.append({
-                "type": t,
-                "description": schema.get("description", ""),
-                "required_fields": schema.get("required", []),
-                "optional_fields": schema.get("optional", []),
-                "depends_on": deps,
-                "default_project_mode": preferred_mode,
-                "default_project_sub_mode": preferred_sub_mode,
-                "default_surface": _surface_for_project_mode(preferred_mode),
-                "is_image_node": t in _SUBJECT_BY_TYPE,
-            })
-        return {
-            "ok": True,
-            "project_mode": None,
-            "project_sub_mode": None,
-            "mode_inference": "node.create 会按节点类型和蓝图/任务状态自动选择 single_node 或 video_production。",
-            "surface_rule": (
-                "无蓝图/无任务的单产物节点默认草稿画布(draft_canvas);"
-                "有蓝图/视频任务或视频链路节点默认工程面板(project_panel)。"
-            ),
-            "creatable_types": items,
-            "next_step": "根据当前用户目标和 node.create schema 直接创建 text/image/video/audio 节点；缺少阻塞信息时先向用户提问。",
-        }
-    allowed = sorted(_MODE_ALLOWED_TYPES.get(mode, set()))
-    items = []
-    for t in allowed:
-        schema = _NODE_FIELD_SCHEMA.get(t, {})
-        deps = [] if mode == "single_node" else _node_dependencies_for_context(t, state)
-        items.append({
-            "type": t,
-            "description": schema.get("description", ""),
-            "required_fields": schema.get("required", []),
-            "optional_fields": schema.get("optional", []),
-            "depends_on": deps,
-            "is_image_node": t in _SUBJECT_BY_TYPE,
-        })
-    return {
-        "ok": True,
-        "project_mode": mode,
-        "project_sub_mode": sub_mode,
-        "node_surface": _surface_for_project_mode(mode),
-        "surface_rule": (
-            "video_production/skill_freeform 创建工程面板节点(project_panel);"
-            "single_node 创建草稿画布节点(draft_canvas)。"
-        ),
-        "creatable_types": items,
-        "next_step": "根据当前用户目标和 node.create schema 直接创建 text/image/video/audio 节点；缺少阻塞信息时先向用户提问。",
-    }
-
-
-async def node_get_creation_guide(project_id: str, type: str) -> dict:
-    """创建任何创作类节点前必调:返回 text/image/video/audio 字段 schema。
-
-    调用后,本会话内允许 node.create(type=同 type)。下一轮新对话需重新拉(防 LLM 用旧记忆)。
-    """
-    if type not in NODE_TYPES:
-        return {
-            "ok": False,
-            "error": f"未知节点类型 {type!r},允许:{', '.join(NODE_TYPES)}",
-            "error_kind": "unknown_node_type",
-            "valid_types": list(NODE_TYPES),
-            "hint": "公开节点 type 只允许 text / image / video / audio；制作方法、分组关系、质量参数和提示词策略写在 fields/content/prompt/references 中。",
-        }
-    state = await _read_project_state(project_id)
-    state, inferred_mode = await _ensure_project_mode_for_type(project_id, state, type)
-    mode = state.get("project_mode")
-    if type not in _MODE_ALLOWED_TYPES.get(mode, set()):
-        return {
-            "ok": False,
-            "error": f"当前模式 {mode!r} 不允许创建 {type!r}",
-            "error_kind": "type_not_allowed_in_mode",
-            "allowed_in_mode": sorted(_MODE_ALLOWED_TYPES.get(mode, set())),
-        }
-
-    schema = _NODE_FIELD_SCHEMA.get(type, {})
-    defaults = _DEFAULT_FIELDS_BY_TYPE.get(type, {})
-    deps = [] if mode == "single_node" else _node_dependencies_for_context(type, state)
-
-    # 把 type 标记为本会话已 loaded
-    guide_loaded = state.get("guide_loaded") or {}
-    guide_loaded[type] = True
-    await _write_project_state_patch(project_id, {"guide_loaded": guide_loaded})
-
-    # 拼示例
-    example_fields = {k: f"<{k}>" for k in schema.get("required", [])}
-    example_fields.update(defaults)
-    if type == "image":
-        example_fields["aspect_ratio"] = "9:16"
-        example_fields["resolution"] = "1080x1920"
-
-    return {
-        "ok": True,
-        "type": type,
-        "mode_inferred": inferred_mode,
-        "project_mode": mode,
-        "project_sub_mode": state.get("project_sub_mode"),
-        "node_surface": _surface_for_project_mode(mode),
-        "surface_rule": (
-            "当前 mode 决定 node.create 的展示位置:"
-            "single_node → 草稿画布(draft_canvas);"
-            "video_production/skill_freeform → 工程面板(project_panel)。"
-        ),
-        "description": schema.get("description", ""),
-        "required_fields": schema.get("required", []),
-        "optional_fields": schema.get("optional", []),
-        "default_values": defaults,
-        "depends_on": deps,
-        "is_image_node": type in _SUBJECT_BY_TYPE,
-        "prompt_guidance": _prompt_guidance_for_type(type),
-        "call_example": {
-            "tool": "node.create",
-            "args": {"project_id": project_id, "type": type, "fields": example_fields},
-        },
-        "next_step": (
-            f"已记录 {type} 的指南本会话内有效。现在按 schema 填 fields 调 node.create(type={type!r})。"
-            + (" image/video/audio 必须由模型写入可执行 prompt；后端不会自动合成。" if type in {"image", "video", "audio"} else "")
-        ),
-    }
-
-
 async def _check_mode_and_guide_gate(
     project_id: str,
     target_type: str,
     fields: dict[str, Any] | None = None,
 ) -> tuple[bool, dict | None]:
     """node.create 入口的轻量 gate:
-    1. 后端按节点类型/蓝图/任务状态自动推断 mode
+    1. 后端按节点类型/任务状态自动推断 mode
     2. mode 允许这个 type
 
     返回 (ok, error_payload_or_None)
@@ -3009,11 +2733,7 @@ def _patch_repairs_failed_node(node: dict, patch: dict) -> bool:
 
 
 async def _node_update_one(node_id: str, patch: dict | str | None, project_id: str = "") -> dict:
-    """局部修改节点。
-
-    - 通用字段(title / status / position / prompt 等)直接落 WorkflowNode 表
-    - 蓝图绑定字段先生成 blueprint revision；非蓝图节点只做通用字段 patch
-    """
+    """局部修改节点字段并直接写入 WorkflowNode。"""
     if not node_id:
         return {"ok": False, "error": "node_id is required", "error_kind": "missing_node_id"}
     if patch is None:
@@ -3049,10 +2769,6 @@ async def _node_update_one(node_id: str, patch: dict | str | None, project_id: s
     patch, patch_error = _normalize_node_update_patch(node, patch)
     if patch_error is not None:
         return patch_error
-
-    revision_result = await create_pending_revision_from_node_patch(node=node, patch=patch)
-    if revision_result is not None:
-        return revision_result
 
     # 通用字段落画布；业务含义由模型写入 fields/content/prompt，不在后端派发。
     canvas_patch = dict(patch)

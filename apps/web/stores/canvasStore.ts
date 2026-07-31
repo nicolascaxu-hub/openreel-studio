@@ -17,7 +17,7 @@ import {
 } from "@/lib/nodeDisplay"
 
 export type LayoutStrategy = "vertical" | "horizontal" | "grid" | "timeline" | "iteration" | "tree"
-export type NodeSurface = "project_panel" | "draft_canvas" | "workflow_runtime"
+type NodeSurface = "project_panel" | "draft_canvas" | "workflow_runtime"
 
 export interface LayoutHint {
   strategy?: LayoutStrategy
@@ -841,11 +841,6 @@ function surfaceFromRawNode(raw: {
   if (fromInput) return fromInput
 
   return "project_panel"
-}
-
-export function getCanvasNodeSurface(node: Node): NodeSurface {
-  const data = node.data as { surface?: unknown }
-  return normalizeSurface(data?.surface) ?? "project_panel"
 }
 
 function normalizedPrompt(value: unknown): string | undefined {

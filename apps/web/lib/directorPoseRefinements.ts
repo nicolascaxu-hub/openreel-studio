@@ -420,15 +420,13 @@ const rightExplain = () => directorArmChain("right", [.48, -.45, .75], [.40, .20
 const rightRelaxed = () => directorArmChain("right", [.10, -.99, .06], [.03, -1, .02])
 const leftRelaxed = () => directorArmChain("left", [-.10, -.99, .06], [-.03, -1, .02])
 
-export type DirectorPoseModuleFactory = () => DirectorPoseJointValues
-
 /**
  * Reusable, region-scoped motion modules. A module owns only its body region,
  * so swapping an arm gesture cannot rewrite the torso or legs and changing a
  * stance cannot alter the hands. The final preset materializer still expands
  * every composition into the complete 52-joint state.
  */
-export const DIRECTOR_POSE_MODULES = Object.freeze({
+const DIRECTOR_POSE_MODULES = Object.freeze({
   torso: Object.freeze({
     neutral: () => ({ pelvis: [0, 0, 0], spine: [0, 0, 0], spineMiddle: [0, 0, 0], chest: [0, 0, 0] } satisfies DirectorPoseJointValues),
     forwardLean: () => ({ pelvis: [5, 0, 0], spine: [7, 0, 0], spineMiddle: [5, 0, 0], chest: [3, 0, 0] } satisfies DirectorPoseJointValues),
@@ -694,5 +692,3 @@ export const DIRECTOR_POSE_REFINEMENTS: Readonly<Record<string, DirectorPoseJoin
     ...lungeLegs(),
   },
 }
-
-export const DIRECTOR_POSE_REFINEMENT_IDS = Object.freeze(Object.keys(DIRECTOR_POSE_REFINEMENTS))

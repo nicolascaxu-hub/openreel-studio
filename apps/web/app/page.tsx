@@ -7,7 +7,6 @@ import { useProjectStore, type ProjectRecord } from "@/stores/projectStore"
 import { useChatStore } from "@/stores/chatStore"
 import { useCanvasStore } from "@/stores/canvasStore"
 import { useViewModeStore } from "@/stores/viewModeStore"
-import { useBlueprintStore } from "@/stores/blueprintStore"
 import { SettingsModal } from "@/components/settings/SettingsModal"
 import { ProjectSessionSidebar } from "@/components/project/ProjectSessionSidebar"
 import { WorkspaceViewTabs, workspaceViewDescription, type WorkspaceView } from "@/components/workspace/WorkspaceViewTabs"
@@ -45,7 +44,6 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null)
   const loadHistory = useChatStore((s) => s.loadHistory)
   const loadNodes = useCanvasStore((s) => s.loadNodes)
-  const loadBlueprint = useBlueprintStore((s) => s.load)
   const viewMode = useViewModeStore((s) => s.mode)
 
   const [chatWidth, setChatWidth] = useState<number>(CHAT_DEFAULT)
@@ -104,7 +102,6 @@ export default function HomePage() {
       .then(async (p) => {
         if (cancelled) return
         setProject(p)
-        void loadBlueprint(p.id)
         try {
           const [historyRes, nodesRes] = await Promise.all([
             api.getProjectMessages(p.id),
@@ -144,7 +141,7 @@ export default function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [setProject, loadBlueprint, loadHistory, loadNodes])
+  }, [setProject, loadHistory, loadNodes])
 
   useEffect(() => {
     if (!viewModeReadyRef.current) {

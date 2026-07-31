@@ -164,7 +164,7 @@ def test_runtime_context_does_not_duplicate_latest_user_goal() -> None:
     assert "继续之前的提示词相关优化" not in text
     assert len(text) < 200
 
-def test_runtime_context_does_not_inject_video_blueprint_first_card() -> None:
+def test_runtime_context_does_not_inject_video_intake_first_card() -> None:
     text = runtime_context.build(
         {
             "metadata": {"title": "未命名项目"},
@@ -178,7 +178,6 @@ def test_runtime_context_does_not_inject_video_blueprint_first_card() -> None:
     assert "做一个15秒的视频" not in text
     assert "首张视频信息卡优先问缺失入口字段" not in text
     assert "start_tree_draft" not in text
-    assert "项目蓝图" not in text
 
 def test_split_prompt_cache_ignores_latest_user_and_mentor_guides() -> None:
     invalidate_cache()
@@ -231,7 +230,7 @@ def test_split_prompt_cache_ignores_dynamic_runtime_state() -> None:
         project_id="cache-runtime-state",
         user_message="继续",
         state={
-            "pending_video_blueprint_request": {
+            "pending_video_request": {
                 "stage": "structure",
                 "collected_facts": {
                     "topic": "雨夜桥头决斗",
@@ -265,29 +264,6 @@ def test_split_prompt_cache_ignores_dynamic_runtime_state() -> None:
     assert "待补充创作信息" not in with_runtime_state.system
 
 
-def test_runtime_context_omits_semantic_blueprint_drafting_state_from_default_prompt() -> None:
-    result = assemble_split_result(PromptContext(
-        project_id="drafting-blueprint",
-        user_message="继续",
-        state={
-            "semantic_blueprint": {
-                "status": "drafting",
-                "title": "修士对决",
-                "tree_version": 7,
-                "node_count": 5,
-                "needs_finalize": True,
-                "root_children": [
-                    {"id": "video_1", "type": "video", "title": "视频片段"},
-                ],
-            }
-        },
-    ))
-
-    assert "状态:drafting(semantic blueprint file)" not in result.runtime
-    assert "blueprint.finalize_tree_draft" not in result.runtime
-    assert "蓝图阶段协议" not in result.runtime
-    assert "蓝图阶段协议" not in result.system
-
 def test_always_prompt_sections_are_contracts_not_manuals() -> None:
     result = assemble_split_result(PromptContext(
         project_id="test",
@@ -314,7 +290,6 @@ def test_working_loop_stays_domain_neutral_with_core_prompt() -> None:
     assert "Tools mutate state" in working_loop.PROMPT
     assert "prompt rules" in working_loop.PROMPT
     assert "Before tools, write one progress sentence" in working_loop.PROMPT
-    assert "blueprint.start_tree_draft" not in working_loop.PROMPT
     assert "finalize_tree_draft" not in working_loop.PROMPT
     assert "agent.review" not in working_loop.PROMPT
     assert "video_workflow" not in working_loop.PROMPT
@@ -899,13 +874,13 @@ def test_repeated_tool_error_fallback_beats_existing_pending_plan() -> None:
     assert "node_not_found" in text
     assert "方案已提交" not in text
 
-def test_video_blueprint_intake_state_patch_starts_basic_stage() -> None:
+def test_video_intake_state_patch_starts_basic_stage() -> None:
     patch = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
-    assert patch["pending_video_blueprint_request"]["stage"] == "basic"
+    assert patch["pending_video_request"]["stage"] == "basic"
     assert "selected_video_mode" not in patch
-    assert patch["pending_video_blueprint_request"]["duration_seconds"] == 15
+    assert patch["pending_video_request"]["duration_seconds"] == 15
 
-def test_video_blueprint_intake_persists_uploaded_reference_images() -> None:
+def test_video_intake_persists_uploaded_reference_images() -> None:
     first = video_intake_state_patch_for_interaction(
         {},
         "制作一个15秒的视频，参考 @水墨",
@@ -918,7 +893,7 @@ def test_video_blueprint_intake_persists_uploaded_reference_images() -> None:
         }],
         "basic",
     )
-    pending = first["pending_video_blueprint_request"]
+    pending = first["pending_video_request"]
     assert pending["reference_images"][0]["mention"] == "@水墨"
     assert pending["reference_images"][0]["rel_path"] == "uploads/style.png"
 
@@ -934,7 +909,7 @@ def test_video_blueprint_intake_persists_uploaded_reference_images() -> None:
         }],
         "structure",
     )
-    refs = second["pending_video_blueprint_request"]["reference_images"]
+    refs = second["pending_video_request"]["reference_images"]
     assert [ref["mention"] for ref in refs] == ["@水墨", "@角色参考"]
     assert [ref["rel_path"] for ref in refs] == ["uploads/style.png", "uploads/character.png"]
 
@@ -962,7 +937,7 @@ def test_video_intake_preserves_model_delegation_as_collected_facts() -> None:
         "basic",
         basic_intake,
     )
-    facts = first["pending_video_blueprint_request"]["collected_facts"]
+    facts = first["pending_video_request"]["collected_facts"]
     assert facts["topic"] == "model_decide"
     assert facts["production_basis"] == "model_decide"
     assert facts["aspect_ratio"] == "model_decide"
@@ -986,7 +961,7 @@ def test_video_intake_preserves_model_delegation_as_collected_facts() -> None:
         "structure",
         structure_intake,
     )
-    facts = second["pending_video_blueprint_request"]["collected_facts"]
+    facts = second["pending_video_request"]["collected_facts"]
     assert facts["plot_outline"] == "model_decide"
     assert facts["episode_count"] == "model_decide"
     assert facts["segment_seconds"] == "model_decide"
@@ -1026,7 +1001,7 @@ def test_runtime_context_omits_recent_review_records_and_template_lookup() -> No
                 "updated_at": "2026-06-12T10:00:00",
             },
             "_last_agent_review": {
-                "review_profile": "视频蓝图检查",
+                "review_profile": "视频检查",
                 "review_skill_key": "my_storyboard_check",
                 "status": "pass",
                 "safe_to_submit": True,
@@ -1034,7 +1009,7 @@ def test_runtime_context_omits_recent_review_records_and_template_lookup() -> No
                 "updated_at": "2026-06-12T10:01:00",
             },
         },
-        latest_user_message="提交蓝图",
+        latest_user_message="提交项目",
     )
 
     assert "最近检查记录" not in text
@@ -1042,44 +1017,15 @@ def test_runtime_context_omits_recent_review_records_and_template_lookup() -> No
     assert "my_storyboard_check" not in text
     assert "safe_to_submit" not in text
 
-def test_legacy_blueprint_runtime_context_is_not_injected_or_leaked() -> None:
-    text = runtime_context.build({
-        "metadata": {"title": "旧蓝图兼容"},
-        "pending_plan": {
-            "kind": "blueprint_tree",
-            "id": "plan-1",
-            "title": "15秒篮球短片",
-            "summary": "pending",
-            "tree_nodes": [
-                {
-                    "id": "storyboard_grid",
-                    "type": "image",
-                    "title": "宫格分镜",
-                    "level": 2,
-                    "prompt": "LEAK_FULL_STORYBOARD_PROMPT",
-                }
-            ],
-        }
-    })
-
-    assert "项目标题" in text
-    assert "待确认蓝图" not in text
-    assert "legacy_pending_tree:true" not in text
-    assert "video_workflow" not in text
-    assert "blueprint_tree_guide" not in text
-    assert "brief/text -> 人物图" not in text
-    assert "storyboard_grid" not in text
-    assert "LEAK_FULL_STORYBOARD_PROMPT" not in text
-
-def test_video_blueprint_flow_then_asks_outline_episode_segments() -> None:
+def test_video_intake_flow_then_asks_outline_episode_segments() -> None:
     state = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
 
     patch = video_intake_state_patch_for_interaction(state, "动作打斗，国风动漫，动作短片，16:9", [], "structure")
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert pending["stage"] == "structure"
     assert "动作打斗" in pending["basic_answer"]
 
-def test_video_blueprint_flow_basic_intake_uses_structured_duration_default() -> None:
+def test_video_intake_flow_basic_intake_uses_structured_duration_default() -> None:
     state = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
 
     patch = video_intake_state_patch_for_interaction(
@@ -1090,11 +1036,11 @@ def test_video_blueprint_flow_basic_intake_uses_structured_duration_default() ->
         {"values": {"duration_seconds": 30}},
     )
 
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert pending["stage"] == "structure"
     assert pending["duration_seconds"] == 30
 
-def test_video_blueprint_flow_basic_stage_does_not_set_mode_from_structured_default() -> None:
+def test_video_intake_flow_basic_stage_does_not_set_mode_from_structured_default() -> None:
     state = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
 
     patch = video_intake_state_patch_for_interaction(
@@ -1104,13 +1050,13 @@ def test_video_blueprint_flow_basic_stage_does_not_set_mode_from_structured_defa
         "basic",
         {"values": {"production_mode": "frames"}},
     )
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert pending["stage"] == "basic"
     assert "selected_mode" not in pending
     assert "selected_video_mode" not in patch
     assert "project_sub_mode" not in patch
 
-def test_video_blueprint_basic_answer_values_are_persisted_without_mode_selection() -> None:
+def test_video_intake_basic_answer_values_are_persisted_without_mode_selection() -> None:
     state = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
 
     patch = video_intake_state_patch_for_interaction(
@@ -1120,7 +1066,7 @@ def test_video_blueprint_basic_answer_values_are_persisted_without_mode_selectio
         "basic",
         {
             "kind": "interaction_input",
-            "purpose": "video_blueprint_intake",
+            "purpose": "video_intake",
             "stage": "basic",
             "values": {
                 "topic": "雨夜石桥决斗",
@@ -1160,7 +1106,7 @@ def test_video_blueprint_basic_answer_values_are_persisted_without_mode_selectio
         },
     )
 
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert pending["stage"] == "basic"
     assert pending["last_submitted_stage"] == "basic"
     assert pending["duration_seconds"] == 30
@@ -1175,7 +1121,7 @@ def test_video_blueprint_basic_answer_values_are_persisted_without_mode_selectio
     assert "project_sub_mode" not in patch
 
 
-def test_video_blueprint_intake_aliases_basis_to_production_basis() -> None:
+def test_video_intake_aliases_basis_to_production_basis() -> None:
     state = video_intake_state_patch_for_interaction({}, "做一个15秒视频", [], "basic")
 
     patch = video_intake_state_patch_for_interaction(
@@ -1185,7 +1131,7 @@ def test_video_blueprint_intake_aliases_basis_to_production_basis() -> None:
         "basic",
         {
             "kind": "interaction_input",
-            "purpose": "video_blueprint_intake",
+            "purpose": "video_intake",
             "stage": "basic",
             "values": {
                 "basis": "先做分镜图再生产视频",
@@ -1201,12 +1147,12 @@ def test_video_blueprint_intake_aliases_basis_to_production_basis() -> None:
         },
     )
 
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert pending["collected_facts"]["production_basis"] == "先做分镜图再生产视频"
     assert "basis" not in pending["collected_facts"]
 
 
-def test_video_blueprint_flow_structure_does_not_set_mode_from_structured_default() -> None:
+def test_video_intake_flow_structure_does_not_set_mode_from_structured_default() -> None:
     first = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
     second = video_intake_state_patch_for_interaction(first, "动作打斗，国风动漫，动作短片，16:9", [], "structure")
     state = {**first, **second}
@@ -1219,12 +1165,12 @@ def test_video_blueprint_flow_structure_does_not_set_mode_from_structured_defaul
         {"values": {"production_mode": "frames"}},
     )
 
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert "selected_mode" not in pending
     assert "selected_video_mode" not in patch
     assert "project_sub_mode" not in patch
 
-def test_video_blueprint_structure_answer_values_are_persisted_as_constraints_not_mode() -> None:
+def test_video_intake_structure_answer_values_are_persisted_as_constraints_not_mode() -> None:
     first = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
     second = video_intake_state_patch_for_interaction(first, "雨夜石桥决斗，国风动漫，动作短片，16:9", [], "structure")
     state = {**first, **second}
@@ -1236,7 +1182,7 @@ def test_video_blueprint_structure_answer_values_are_persisted_as_constraints_no
         "structure",
         {
             "kind": "interaction_input",
-            "purpose": "video_blueprint_intake",
+            "purpose": "video_intake",
             "stage": "structure",
             "values": {
                 "plot_outline": "少年剑客救人后反杀蒙面刺客",
@@ -1275,17 +1221,17 @@ def test_video_blueprint_structure_answer_values_are_persisted_as_constraints_no
         },
     )
 
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert pending["stage"] == "structure"
     assert pending["last_submitted_stage"] == "structure"
     assert "剧情大纲：少年剑客救人后反杀蒙面刺客" in pending["structure_answer"]
     assert pending["structure_answers"][2]["value"] == "不分段/单段连续"
-    assert "start/append/finalize 蓝图草稿工具" in pending["mode_selection_policy"]
+    assert "节点字段和 fields.references" in pending["mode_selection_policy"]
     assert "selected_mode" not in pending
     assert "selected_video_mode" not in patch
     assert "project_sub_mode" not in patch
 
-def test_video_blueprint_flow_structure_stage_does_not_set_story_template_default() -> None:
+def test_video_intake_flow_structure_stage_does_not_set_story_template_default() -> None:
     first = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
     second = video_intake_state_patch_for_interaction(first, "动作打斗，国风动漫，动作短片，16:9", [], "structure")
     state = {**first, **second}
@@ -1297,14 +1243,14 @@ def test_video_blueprint_flow_structure_stage_does_not_set_story_template_defaul
         "structure",
         {"values": {"production_mode": "story_template"}},
     )
-    pending = patch["pending_video_blueprint_request"]
+    pending = patch["pending_video_request"]
     assert pending["stage"] == "structure"
     assert "selected_mode" not in pending
     assert "selected_video_mode" not in patch
     assert "project_sub_mode" not in patch
 
 @pytest.mark.asyncio
-async def test_orchestrator_video_blueprint_basic_intake_emits_structured_event(monkeypatch) -> None:
+async def test_orchestrator_video_intake_basic_intake_emits_structured_event(monkeypatch) -> None:
     holder = {"state": {}, "saved": [], "trace": []}
 
     class FakeProjectService:
@@ -1333,11 +1279,11 @@ async def test_orchestrator_video_blueprint_basic_intake_emits_structured_event(
             arguments=json.dumps(
                 {
                     "stage": "basic",
-                    "purpose": "video_blueprint_intake",
+                    "purpose": "video_intake",
                     "title": "补充视频基础信息",
                     "description": "先确认主题、风格、类型、时长和画幅。",
                     "submit_label": "继续填写剧情结构",
-                    "summary_text": "请补充视频主题、风格和类型，用于后续生成项目蓝图。",
+                    "summary_text": "请补充视频主题、风格和类型，用于后续创建项目节点。",
                     "assistant_text": "可以做。先补充视频主题、风格和类型，我再继续写详细大纲。",
                     "questions": [
                         {
@@ -1448,7 +1394,7 @@ async def test_orchestrator_video_blueprint_basic_intake_emits_structured_event(
     intake_event = next(event for event in events if event.get("type") == "interaction_input_requested")
     event_types = [event.get("type") for event in events]
     assert intake_event["project_id"] == "project-1"
-    assert intake_event["intake"]["purpose"] == "video_blueprint_intake"
+    assert intake_event["intake"]["purpose"] == "video_intake"
     assert intake_event["intake"]["stage"] == "basic"
     assert "presentation" not in intake_event["intake"]
     assert [question["id"] for question in intake_event["intake"]["questions"]] == [
@@ -1465,7 +1411,7 @@ async def test_orchestrator_video_blueprint_basic_intake_emits_structured_event(
     assert "先选一下视频制作方式" not in assistant_text
     assert holder["saved"][1][2]["interactionInput"]["stage"] == "basic"
     assert "presentation" not in holder["saved"][1][2]["interactionInput"]
-    assert holder["state"]["pending_video_blueprint_request"]["stage"] == "basic"
+    assert holder["state"]["pending_video_request"]["stage"] == "basic"
 
 
 @pytest.mark.asyncio

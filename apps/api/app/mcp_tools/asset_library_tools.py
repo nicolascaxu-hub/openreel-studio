@@ -507,15 +507,6 @@ async def assets_get_library_path(project_id: str) -> dict[str, Any]:
     return {"configured": True, "using_default": not bool(raw_lib), **lib}
 
 
-def _project_episode_dir(lib: dict[str, Any], project_title: str, episode: int) -> Path:
-    root = lib.get("project_root")
-    if not root:
-        root = effective_asset_library({}, ensure_dirs=True)["project_root"]
-    base = Path(root) / _slug(project_title) / "episodes" / f"ep{int(episode):02d}"
-    base.mkdir(parents=True, exist_ok=True)
-    return base
-
-
 async def assets_save_to_project(
     project_id: str,
     episode: int,

@@ -7,11 +7,6 @@ from pathlib import Path
 
 from sqlmodel import select
 
-from app.agent.project_blueprint import (
-    UNTITLED_PROJECT_TITLE,
-    clear_blueprint_state,
-    delete_blueprint_files_report,
-)
 from app.config import settings
 from app.db.models import Character, Episode, Message, Project, WorkflowEdge, WorkflowNode
 from app.db.session import session_scope
@@ -19,6 +14,9 @@ from app.prompts import resolve_prompt
 from app.prompts._section import WorkerContext
 from app.services.llm_service import LLMService
 from app.services.node_public_ids import public_node_id_from_model
+
+
+UNTITLED_PROJECT_TITLE = "未命名项目"
 
 
 _FULL_RESET_CONTEXT_KEYS = (
@@ -47,7 +45,7 @@ _FULL_RESET_CONTEXT_KEYS = (
     "selected_video_mode",
     "pending_video_mode_choice",
     "pending_video_brief",
-    "pending_video_blueprint_request",
+    "pending_video_request",
     "active_plan_checklist",
     "active_plan_id",
     "pending_plan",
@@ -59,23 +57,7 @@ _FULL_RESET_CONTEXT_KEYS = (
     "_pending_reset_confirm",
     "_pending_tool_confirm",
     "agent_token_usage",
-    "pending_blueprint_intake",
-    "pending_blueprint_review",
-    "pending_blueprint_draft",
-    "pending_blueprint_revision",
-    "pending_blueprint_section_review",
-    "pending_blueprint_confirmation",
-    "project_blueprint",
-    "semantic_blueprint",
-    "blueprint_partial_plan_doc",
     "reference_assets",
-    "blueprint_progress",
-    "blueprint_generation_progress",
-    "blueprint_section_results",
-    "blueprint_window_progress",
-    "blueprint_stale_nodes",
-    "blueprint_history",
-    "creative_blueprint_history",
 )
 
 
@@ -115,16 +97,6 @@ async def _archive_project_chat_messages(session, project_id: str) -> int:
         message.archived = True
         session.add(message)
     return len(messages)
-
-
-def _project_episode_duration_seconds(project: Project, state: dict) -> int | None:
-    metadata = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
-    raw = metadata.get("duration_per_episode") or getattr(project, "duration_per_episode", None)
-    try:
-        duration = int(raw)
-    except (TypeError, ValueError):
-        return None
-    return duration if duration > 0 else None
 
 
 def _extract_single_character(data: object, requirements: list[str] | str | None = None) -> dict:
@@ -1238,7 +1210,9 @@ async def reset_project(
     Orchestrator 据此发画布事件:cleared_all=True → canvas_action:clear_all,
     否则 deleted_node_ids 逐个 → canvas_action:delete_node。
     """
-    import hashlib, hmac, time
+    import hashlib
+    import hmac
+    import time
 
     if scope not in {"failed", "full"}:
         return {"error": f"scope must be 'failed' or 'full', got {scope!r}"}
@@ -1258,9 +1232,6 @@ async def reset_project(
                     or state.get("outline")
                     or state.get("segments")
                     or state.get("scenes")
-                    or state.get("project_blueprint")
-                    or state.get("blueprint_progress")
-                    or state.get("pending_blueprint_intake")
                     or has_resettable_context
                     or project.title != UNTITLED_PROJECT_TITLE
                 )
@@ -1369,7 +1340,6 @@ async def reset_project(
             if key in state:
                 state.pop(key, None)
                 cleared_keys.append(key)
-        cleared_keys.extend(clear_blueprint_state(state))
         # 主题向字段:metadata 内容字段 + story_bible 全部清空(保留 metadata 的容量类
         # 字段如 episode_count/duration/format/budget_level,免得用户连排版偏好都丢)
         meta = state.get("metadata") or {}
@@ -1442,10 +1412,6 @@ async def reset_project(
             task_graph.clear_project(project_id)
         except Exception:
             pass
-        blueprint_file_cleanup = delete_blueprint_files_report(project_id)
-        deleted_blueprint_files = list(blueprint_file_cleanup.get("deleted") or [])
-        blueprint_file_delete_errors = list(blueprint_file_cleanup.get("errors") or [])
-
         return {
             "ok": True,
             "scope": "full",
@@ -1455,9 +1421,6 @@ async def reset_project(
             "cleared_all": True,
             "state_keys_cleared": cleared_keys,
             "new_theme_applied": applied_theme,
-            "blueprint_cleared": True,
-            "deleted_blueprint_files": deleted_blueprint_files,
-            "blueprint_file_delete_errors": blueprint_file_delete_errors,
             "archived_messages": archived_messages,
             "title": applied_theme.get("title") or UNTITLED_PROJECT_TITLE,
         }

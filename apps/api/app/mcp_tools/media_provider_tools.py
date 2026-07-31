@@ -50,7 +50,7 @@ def _provider_to_dict(p: MediaProvider) -> dict[str, Any]:
 async def media_list_providers(kind: str | None = None) -> dict[str, Any]:
     """List all configured media providers, optionally filtered by kind (image/video/audio)."""
     async with session_scope() as session:
-        q = select(MediaProvider).where(MediaProvider.enabled == True)
+        q = select(MediaProvider).where(MediaProvider.enabled.is_(True))
         if kind:
             q = q.where(MediaProvider.kind == kind)
         result = await session.exec(q.order_by(MediaProvider.kind, MediaProvider.name))
@@ -101,7 +101,7 @@ async def media_add_provider(
             actives = await session.exec(
                 select(MediaProvider)
                 .where(MediaProvider.kind == kind)
-                .where(MediaProvider.is_active == True)
+                .where(MediaProvider.is_active.is_(True))
             )
             for p in actives.all():
                 p.is_active = False
@@ -193,7 +193,7 @@ async def media_set_active(provider_id: str) -> dict[str, Any]:
         actives = await session.exec(
             select(MediaProvider)
             .where(MediaProvider.kind == provider.kind)
-            .where(MediaProvider.is_active == True)
+            .where(MediaProvider.is_active.is_(True))
         )
         for p in actives.all():
             p.is_active = False
@@ -218,8 +218,8 @@ async def media_get_active(kind: str) -> dict[str, Any]:
         result = await session.exec(
             select(MediaProvider)
             .where(MediaProvider.kind == kind)
-            .where(MediaProvider.is_active == True)
-            .where(MediaProvider.enabled == True)
+            .where(MediaProvider.is_active.is_(True))
+            .where(MediaProvider.enabled.is_(True))
         )
         provider = result.first()
     if not provider:

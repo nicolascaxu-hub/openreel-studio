@@ -125,9 +125,9 @@ def _project_defaults(state: dict[str, Any], node_type: str) -> tuple[dict[str, 
     containers: list[tuple[str, Any]] = [
         (name, state.get(name)) for name in _PROJECT_DEFAULT_CONTAINERS
     ]
-    pending = state.get("pending_video_blueprint_request")
+    pending = state.get("pending_video_request")
     if isinstance(pending, dict):
-        containers.append(("pending_video_blueprint_request.collected_facts", pending.get("collected_facts")))
+        containers.append(("pending_video_request.collected_facts", pending.get("collected_facts")))
 
     for source_name, raw in containers:
         if not isinstance(raw, dict):

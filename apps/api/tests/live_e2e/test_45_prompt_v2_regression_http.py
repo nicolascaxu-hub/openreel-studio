@@ -204,7 +204,7 @@ async def test_prompt_v2_video_intake_and_reset_flow_keep_prompt_dumps_and_trace
     assert "node.run" not in _tool_names(third)
     assert "project.reset" not in _tool_names(third)
     third_text = _text(third)
-    assert "蓝图" in third_text or "剧情大纲" in third_text or "确认" in third_text
+    assert "剧情大纲" in third_text or "确认" in third_text or "节点" in third_text
 
     third_prompt = _prompt_snapshot(await _latest_prompt_dump(api_client, project_id))
     third_trace = await _latest_trace(api_client, project_id)
@@ -227,7 +227,6 @@ async def test_prompt_v2_video_intake_and_reset_flow_keep_prompt_dumps_and_trace
     names = _tool_names(image_events)
     assert "project.reset" not in names
     assert "plan.propose" not in names
-    assert "blueprint.draft_video" not in names
     assert "video" not in names
     image_text = _text(image_events)
     assert image_text.strip()
@@ -235,7 +234,6 @@ async def test_prompt_v2_video_intake_and_reset_flow_keep_prompt_dumps_and_trace
     reset_events = await send_chat_request(api_client, project_id, "重置项目")
     _done(reset_events)
     assert any(event.get("type") == "confirm_required" and event.get("action") == "reset_project" for event in reset_events)
-    assert "blueprint.draft_video" not in _tool_names(reset_events)
 
     confirm_events = await send_chat_request(api_client, project_id, "确认")
     _done(confirm_events)

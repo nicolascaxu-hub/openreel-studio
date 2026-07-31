@@ -102,10 +102,6 @@ export interface PlanPhaseSummary {
   step_count: number
 }
 
-export interface PlanPhase extends PlanPhaseSummary {
-  steps: PlanStep[]
-}
-
 export interface PlanDoc {
   id: string
   kind?: string
@@ -118,7 +114,6 @@ export interface PlanDoc {
   trigger_reason?: string
   created_at?: string
   source_request?: string
-  blueprint?: Record<string, unknown> | null
   approval_role?: string
   ui_surface?: string
   execution_state_source?: string | null

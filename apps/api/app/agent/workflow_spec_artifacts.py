@@ -105,32 +105,6 @@ def _repair_path(project_id: str, repair_ref: str) -> Path:
     return path
 
 
-def _list_len(value: Any) -> int:
-    return len(value) if isinstance(value, list) else 0
-
-
-def _dict_len(value: Any) -> int:
-    return len(value) if isinstance(value, dict) else 0
-
-
-def _workflow_input_ids(workflow: dict[str, Any]) -> list[str]:
-    inputs = workflow.get("inputs")
-    if isinstance(inputs, dict):
-        return [str(key) for key in inputs.keys() if str(key).strip()][:16]
-    if isinstance(inputs, list):
-        result: list[str] = []
-        for item in inputs:
-            if isinstance(item, dict):
-                value = item.get("id") or item.get("name") or item.get("key")
-            else:
-                value = item
-            text = str(value or "").strip()
-            if text:
-                result.append(text)
-        return result[:16]
-    return []
-
-
 def workflow_spec_preview(workflow: dict[str, Any], *, normalized: dict[str, Any] | None = None) -> dict[str, Any]:
     del normalized
     spec = parse_workflow_spec(workflow)

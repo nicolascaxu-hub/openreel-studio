@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import UnionType
 from typing import Any, Awaitable, Callable, Union, get_args, get_origin, get_type_hints
 
@@ -53,28 +54,6 @@ UNREGISTERED_CANVAS_CRUD_TOOL_NAMES: tuple[str, ...] = (
     "canvas.delete_node",
     "canvas.cleanup_test_nodes",
     "canvas.layout_nodes",
-)
-
-UNREGISTERED_BLUEPRINT_WRITE_TOOL_NAMES: tuple[str, ...] = (
-    "blueprint.get",
-    "blueprint.revise",
-    "blueprint.save_from_plan",
-    "blueprint.render_view_model",
-    "blueprint.apply_pending_revision",
-    "blueprint.clear",
-)
-
-UNREGISTERED_BLUEPRINT_TREE_TOOL_NAMES: tuple[str, ...] = (
-    "blueprint.start_tree_draft",
-    "blueprint.append_tree_node",
-    "blueprint.update_tree_node",
-    "blueprint.finalize_tree_draft",
-    "blueprint.propose_tree",
-    "blueprint.add_child",
-    "blueprint.update_node",
-    "blueprint.delete_node",
-    "blueprint.list_children",
-    "blueprint.set_prompt",
 )
 
 UNREGISTERED_DEPRECATED_ALIAS_TOOL_NAMES: tuple[str, ...] = (
@@ -763,8 +742,7 @@ class ToolRegistry:
         "project.update_state",
         *AGENT_HIDDEN_PROJECT_MODE_TOOL_NAMES,
         # low-level project wrappers are unregistered. Project CRUD uses REST;
-        # state reset uses project.reset; blueprint/version behavior is
-        # handled by dedicated internal helpers.
+        # state reset uses project.reset.
         # memory 低频/低层
         # low-level memory mutation/summarization wrappers are unregistered.
         # Orchestrator calls summarization directly; Agent-facing memory stays
@@ -773,7 +751,7 @@ class ToolRegistry:
         # Old plan control wrappers are unregistered. Explicit Plan Mode is
         # handled by deterministic slash commands plus read-only tool policy.
         # task.get/list_pending are folded into task.list and unregistered.
-        # session focus tools have been replaced by blueprint/task/runtime
+        # session focus tools have been replaced by task/runtime
         # context and unregistered.
         # Low-level agent wrappers are unregistered. Keep high-level
         # deferred collaboration wrappers and direct Python helpers.
@@ -806,10 +784,6 @@ class ToolRegistry:
         # task.create/delete remain registered for explicit deferred cleanup and
         # backend compatibility, but are no longer part of the default core
         # tool surface.
-        # 一次性蓝图提交、低层编辑和 prompt 注入工具已移入内部/测试路径。
-        # 蓝图生成由 start/append/finalize 增量原语和 revise 高层原语驱动。
-        *UNREGISTERED_BLUEPRINT_TREE_TOOL_NAMES,
-        # blueprint write/cleanup wrappers have been internalized and unregistered.
     }
 
     # Stable core tool surface for the Agent Loop. The node-first path discovers
@@ -1206,15 +1180,6 @@ def _base_description(spec: ToolSpec) -> str:
     if current:
         return " ".join(current.split())
     return f"{spec.name} 的工具能力"
-
-
-def _cannot_description(spec: ToolSpec) -> str:
-    text = (
-        _STANDARD_CANNOT_BY_NAME.get(spec.name)
-        or _STANDARD_CANNOT_BY_NAMESPACE.get(spec.namespace)
-        or "执行 schema、权限和当前用户意图以外的动作，不能替代隐藏或已注销工具"
-    )
-    return text.removeprefix("不能").strip()
 
 
 _READ_ONLY_TAGS = {"read", "query", "guide"}
@@ -2141,9 +2106,6 @@ _register_builtins()
 # Flat single-file modules under skills/*.py are also loaded for backwards
 # compatibility.
 # ─────────────────────────────────────────────────────────────────────────
-
-from pathlib import Path
-
 
 def parse_skill_md(text: str) -> dict[str, Any]:
     """Tiny YAML-frontmatter parser (key: value lines + simple lists).

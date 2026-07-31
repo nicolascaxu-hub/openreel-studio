@@ -16,7 +16,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from app.agent.blueprint_confirmation_state import pending_blueprint_plan
 from app.agent.vision_context import (
     image_token_estimate,
     message_text_for_compare,
@@ -231,35 +230,6 @@ def _summarize_workflow_input_values(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _summarize_project_state(result: dict[str, Any]) -> dict[str, Any]:
-    pending_blueprint = pending_blueprint_plan(result)
-    blueprint = result.get("project_blueprint")
-    if isinstance(blueprint, dict):
-        blueprint_summary: dict[str, Any] = {
-            "status": blueprint.get("status"),
-            "title": blueprint.get("title") or blueprint.get("name"),
-            "selected_video_mode": blueprint.get("selected_video_mode") or blueprint.get("video_mode"),
-        }
-    else:
-        semantic_blueprint = result.get("semantic_blueprint")
-        if isinstance(semantic_blueprint, dict):
-            blueprint_summary = {
-                "status": semantic_blueprint.get("status"),
-                "title": semantic_blueprint.get("title"),
-                "tree_version": semantic_blueprint.get("tree_version"),
-                "node_count": semantic_blueprint.get("node_count"),
-                "source": "semantic_blueprint_file",
-                "needs_finalize": bool(semantic_blueprint.get("needs_finalize")),
-            }
-            fields = semantic_blueprint.get("fields") if isinstance(semantic_blueprint.get("fields"), dict) else {}
-            if fields:
-                blueprint_summary["fields"] = {
-                    key: fields.get(key)
-                    for key in ("episode_count", "segment_seconds", "production_basis")
-                    if fields.get(key) not in (None, "", [], {})
-                }
-        else:
-            blueprint_summary = {"status": "none"}
-
     token_summary = result.get("agent_token_usage_summary")
     if not isinstance(token_summary, dict):
         token_summary = {}
@@ -269,13 +239,9 @@ def _summarize_project_state(result: dict[str, Any]) -> dict[str, Any]:
         "project_mode": result.get("project_mode"),
         "project_sub_mode": result.get("project_sub_mode"),
         "selected_video_mode": result.get("selected_video_mode"),
-        "blueprint": blueprint_summary,
         "pending": {
-            "pending_blueprint_confirmation": bool(pending_blueprint),
-            "pending_blueprint_tree_version": pending_blueprint.get("tree_version") if isinstance(pending_blueprint, dict) else None,
             "pending_reset_confirm": bool(result.get("_pending_reset_confirm")),
-            "pending_blueprint_review": bool(result.get("pending_blueprint_review")),
-            "pending_blueprint_section_review": bool(result.get("pending_blueprint_section_review")),
+            "pending_video_request": bool(result.get("pending_video_request")),
         },
         "agent_token_usage_summary": token_summary,
     }
@@ -1630,11 +1596,10 @@ def build_compact_summary_prompt(messages: list[dict]) -> str:
     return (
         "Summarize this conversation for continuity as BACKGROUND ONLY. "
         "Preserve: stable user preferences, durable decisions, completed work, "
-        "open questions, and project-state references such as blueprint/task/node ids when visible. "
+        "open questions, and project-state references such as task/node ids when visible. "
         "Do not turn old user messages into the next instruction. "
-        "Do not treat this summary as the project blueprint; active/draft blueprint, "
-        "pending blueprint revision, task checklist, nodes, and project files live in project state/tools. "
-        "Never imply that /clear or compaction deleted blueprint or task state. "
+        "Task checklist, nodes, and project files live in project state/tools. "
+        "Never imply that /clear or compaction deleted canvas nodes or task state. "
         "If a task is pending, say that it must be verified from project state before action. "
         "Be concise but complete enough to continue working.\n\n"
         f"{conversation_text}"

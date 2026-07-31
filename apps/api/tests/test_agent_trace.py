@@ -221,9 +221,9 @@ def test_prompt_dump_after_full_reset_contains_only_reset_visible_context(tmp_pa
 
     assert "未命名项目" in record_text
     assert "项目已重置，可以开始新内容" in record_text
-    assert "重置前旧蓝图剧情" not in record_text
+    assert "重置前旧项目剧情" not in record_text
     assert "上一轮让两个人牵手" not in record_text
-    assert "旧蓝图标题" not in record_text
+    assert "旧项目标题" not in record_text
 
 
 def test_visible_tool_names_normalizes_registry_names() -> None:

@@ -10,7 +10,7 @@ from app.api.routes_chat import ChatRequest, _request_message, _request_user_met
 def test_chat_route_keeps_interaction_message_and_metadata_separate() -> None:
     decision_inputs = {
         "kind": "interaction_input",
-        "purpose": "video_blueprint_intake",
+        "purpose": "video_intake",
         "stage": "structure",
         "values": {"plot_outline": "少年剑客救人后反杀蒙面刺客"},
         "questions": [
@@ -42,8 +42,8 @@ def test_chat_route_keeps_interaction_message_and_metadata_separate() -> None:
 def test_interaction_agent_payload_is_typed_json_not_prompt_prose() -> None:
     decision_inputs = {
         "kind": "interaction_input",
-        "target": "video_blueprint_intake",
-        "purpose": "video_blueprint_intake",
+        "target": "video_intake",
+        "purpose": "video_intake",
         "stage": "structure",
         "title": "剧情结构",
         "values": {

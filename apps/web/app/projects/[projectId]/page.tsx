@@ -8,7 +8,6 @@ import { useProjectStore, type ProjectRecord } from "@/stores/projectStore"
 import { useChatStore } from "@/stores/chatStore"
 import { useCanvasStore } from "@/stores/canvasStore"
 import { useViewModeStore } from "@/stores/viewModeStore"
-import { useBlueprintStore } from "@/stores/blueprintStore"
 import { ProjectSessionSidebar } from "@/components/project/ProjectSessionSidebar"
 import { WorkspaceViewTabs, workspaceViewDescription, type WorkspaceView } from "@/components/workspace/WorkspaceViewTabs"
 import { StudioHeader } from "@/components/workspace/StudioHeader"
@@ -30,7 +29,6 @@ export default function ProjectWorkspacePage() {
   const { currentProject, setProject } = useProjectStore()
   const loadHistory = useChatStore((s) => s.loadHistory)
   const loadNodes = useCanvasStore((s) => s.loadNodes)
-  const loadBlueprint = useBlueprintStore((s) => s.load)
   const viewMode = useViewModeStore((s) => s.mode)
   const [mobilePane, setMobilePane] = useState<MobilePane>("chat")
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("canvas")
@@ -102,8 +100,6 @@ export default function ProjectWorkspacePage() {
       .then(([project, historyRes, nodesRes]) => {
         if (cancelled) return
         setProject(project as unknown as ProjectRecord)
-        const record = project as unknown as ProjectRecord
-        void loadBlueprint(record.id)
         if (typeof window !== "undefined") {
           window.localStorage.setItem(LS_KEY, projectId)
         }
@@ -135,7 +131,7 @@ export default function ProjectWorkspacePage() {
     return () => {
       cancelled = true
     }
-  }, [loadHistory, loadNodes, loadBlueprint, projectId, setProject])
+  }, [loadHistory, loadNodes, projectId, setProject])
 
   useEffect(() => {
     if (!viewModeReadyRef.current) {

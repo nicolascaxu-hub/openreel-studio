@@ -13,7 +13,7 @@ This skill explains OpenReel Studio project rules and points to the right local
 guide when the model needs more than workflow/prompt skills.
 
 Default production is node-first: the model works on one visible canvas with
-`text`, `image`, `video`, and `audio` nodes. It does not create a separate blueprint or
+`text`, `image`, `video`, and `audio` nodes. It does not create a separate planning object or
 maintain separate canvas/panel state before work appears.
 
 ## Topics
@@ -47,7 +47,7 @@ maintain separate canvas/panel state before work appears.
   calls `node.run` internally for visible product nodes.
 - Canvas state is the creative truth source visible to the model. Drafts,
   grouping, method choice, review notes, and assumptions are node fields or text
-  nodes, not a separate blueprint object.
+  nodes, not a separate planning object.
 - Dependencies are expressed with `parent_node_id` and `fields.references`;
   backend-created edges appear automatically. Use `{ref, role}` when needed:
   `visual_reference` for generation reference, `source_image` when an image node
@@ -90,4 +90,4 @@ meta tools for discovering and running low-frequency deferred capabilities.
 
 Give the next concrete action, relevant files, and the rule that justifies it.
 When a question is about production, prefer the node/canvas path unless the user
-explicitly asks about legacy blueprint internals.
+explicitly asks about removed planning internals.

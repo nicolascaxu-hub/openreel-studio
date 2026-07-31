@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # Repository root = two levels above this file (apps/api/app/config.py -> repo root)
@@ -22,6 +23,15 @@ def _resolve_sqlite_url(url: str) -> str:
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=tuple(
+            str(path)
+            for path in ((REPO_ROOT / ".env.local"), (REPO_ROOT / ".env"))
+            if path.exists()
+        ),
+        extra="ignore",
+    )
+
     APP_NAME: str = "OpenReel Studio"
     APP_ENV: str = "development"
     APP_HOST: str = "0.0.0.0"
@@ -62,15 +72,6 @@ class Settings(BaseSettings):
         if not path.is_absolute():
             path = Path(self.PROJECT_ROOT).expanduser().resolve() / path
         return path.resolve()
-
-    class Config:
-        # Only load env files that actually exist (.env mechanism is deprecated;
-        # API keys are managed via config/runtime.jsonc ConfigStore)
-        env_file = tuple(
-            str(p) for p in ((REPO_ROOT / ".env.local"), (REPO_ROOT / ".env")) if p.exists()
-        )
-        extra = "ignore"
-
 
 @lru_cache
 def get_settings() -> Settings:

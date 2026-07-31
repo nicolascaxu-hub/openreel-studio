@@ -88,10 +88,6 @@ def _versions_root(template_id: str, *, root: Path | None = None) -> Path:
     return path
 
 
-def _manifest_path(template_id: str, *, root: Path | None = None) -> Path:
-    return _template_root(template_id, root=root) / "manifest.json"
-
-
 def _version_path(template_id: str, version_id: str, *, root: Path | None = None) -> Path:
     safe_version = _safe_version_id(version_id)
     versions_root = _versions_root(template_id, root=root).resolve()
@@ -193,23 +189,6 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
-
-
-def _load_manifest(template_id: str) -> dict[str, Any]:
-    manifest = _load_json(_manifest_path(template_id))
-    if manifest.get("kind") != "workflow_template":
-        raise WorkflowTemplateStoreError("invalid workflow template manifest")
-    return manifest
-
-
-def _load_version_payload(template_id: str, version_id: str) -> dict[str, Any]:
-    version = _load_json(_version_path(template_id, version_id))
-    if version.get("kind") != "workflow_template_version":
-        raise WorkflowTemplateStoreError("invalid workflow template version")
-    workflow = version.get("workflow")
-    if not isinstance(workflow, dict):
-        raise WorkflowTemplateStoreError("workflow template version has no workflow object")
-    return version
 
 
 def _active_version_id(manifest: dict[str, Any], version_id: str = "") -> str:

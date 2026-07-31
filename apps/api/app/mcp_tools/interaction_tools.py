@@ -161,7 +161,7 @@ async def request_input(
     clean_purpose = _clean_text(purpose, default="general")
     collected_facts: dict[str, Any] = {}
     omitted_collected_questions: list[dict[str, Any]] = []
-    if clean_purpose == "video_blueprint_intake":
+    if clean_purpose == "video_intake":
         normalized_questions, collected_facts, omitted_collected_questions = await _filter_video_intake_collected_questions(
             project_id,
             normalized_questions,
@@ -174,7 +174,7 @@ async def request_input(
                 "error_kind": "intake_questions_already_collected",
                 "collected_facts": collected_facts,
                 "collected_questions": omitted_collected_questions,
-                "hint": "不要重复询问已确认问题；继续构建蓝图草稿或提出新的缺失问题。",
+                "hint": "不要重复询问已确认问题；继续创建节点或提出新的缺失问题。",
             }
     intake = {
         "purpose": clean_purpose,
