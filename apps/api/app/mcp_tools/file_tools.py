@@ -664,20 +664,6 @@ def write_image_base64_cache(
     }
 
 
-def read_image_base64_data_url(project_id: str, base64_rel_path: str) -> str:
-    target = _safe_path(project_id, base64_rel_path)
-    if not target.exists() or not target.is_file():
-        raise FileNotFoundError(base64_rel_path)
-    payload = json.loads(target.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("encoding") != "base64":
-        raise ValueError("invalid base64 image cache")
-    encoded = str(payload.get("base64") or "").strip()
-    if not encoded:
-        raise ValueError("empty base64 image cache")
-    mime = str(payload.get("mime_type") or "image/png").strip() or "image/png"
-    return f"data:{mime};base64,{encoded}"
-
-
 async def list_dir(
     project_id: str = "",
     rel_path: str = "",
@@ -758,40 +744,6 @@ async def read_text(
         offset=offset,
         limit=limit,
     )
-
-
-async def write_text(project_id: str, rel_path: str, content: str) -> dict:
-    target = _safe_path(project_id, rel_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    return {"path": rel_path, "size": target.stat().st_size}
-
-
-async def save_uploaded_file(
-    project_id: str, filename: str, content_b64: str, subdir: str = "uploads"
-) -> dict:
-    """Decode a base64-encoded blob and save under storage/<project>/<subdir>/."""
-    rel_path = f"{subdir}/{filename}"
-    target = _safe_path(project_id, rel_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    raw = base64.b64decode(content_b64)
-    target.write_bytes(raw)
-    return {
-        "path": rel_path,
-        "size": len(raw),
-        "mime_type": mimetypes.guess_type(filename)[0],
-    }
-
-
-async def delete_file(project_id: str, rel_path: str) -> dict:
-    target = _safe_path(project_id, rel_path)
-    if not target.exists():
-        return {"ok": False, "error": "Not found"}
-    if target.is_dir():
-        shutil.rmtree(target)
-    else:
-        target.unlink()
-    return {"ok": True, "path": rel_path}
 
 
 async def extract_text_from_upload(

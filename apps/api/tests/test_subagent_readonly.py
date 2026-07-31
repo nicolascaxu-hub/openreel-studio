@@ -23,8 +23,6 @@ def test_subagent_roles_are_fixed_readonly_reviewers() -> None:
     assert agent_tools.ROLE_PRESETS["workflow_spec"]["strict_allowed_tools"] is True
     assert agent_tools.ROLE_PRESETS["node_producer"]["readonly"] is False
     assert agent_tools.ROLE_PRESETS["image_editor"]["readonly"] is False
-    assert "image_generator" not in agent_tools.ROLE_PRESETS
-    assert "image_generator" not in agent_tools.AGENT_RUN_ROLE_NAMES
 
 
 def test_resolve_role_filters_custom_tools_to_readonly_only() -> None:
@@ -125,7 +123,6 @@ def test_workflow_spec_role_allows_only_template_selector_tools() -> None:
             "workflow.protocol_info",
             "workflow.template.resolve",
             "workflow.template.read",
-            "workflow.template.clone_to_artifact",
             "workflow.spec.start",
             "workflow.spec.append_steps",
             "workflow.spec.commit",
@@ -133,7 +130,6 @@ def test_workflow_spec_role_allows_only_template_selector_tools() -> None:
             "workflow.spec.apply_patch",
             "workflow.canvas.inspect",
             "workflow.spec.patch",
-            "workflow.materialize",
             "node.create",
             "project.reset",
         ],
@@ -152,14 +148,12 @@ def test_workflow_spec_role_allows_only_template_selector_tools() -> None:
     ]
     assert preset["denied_tools"] == [
         "workflow.protocol_info",
-        "workflow.template.clone_to_artifact",
         "workflow.spec.start",
         "workflow.spec.append_steps",
         "workflow.spec.commit",
         "workflow.spec.apply_patch",
         "workflow.canvas.inspect",
         "workflow.spec.patch",
-        "workflow.materialize",
         "node.create",
         "project.reset",
     ]
@@ -184,11 +178,8 @@ def test_workflow_spec_system_composes_system_prompt_from_skill_rules() -> None:
     assert "没有合适模板时返回 blocked" in system
     assert "input_fields" in system
     assert str(agent_tools.WORKFLOW_SPEC_MAX_OUTPUT_TOKENS) in system
-    assert "schema='openreel.workflow.authoring.v1'" not in system
     assert "workflow.spec.apply_patch" not in system
     assert "workflow.canvas.inspect" not in system
-    assert "patch_existing" not in system
-    assert "compile_new" not in system
     assert "不要为了查核心协议" not in system
     assert "不回传完整 skill/template" not in system
     assert "不提前写正文" not in system
@@ -199,27 +190,7 @@ def test_workflow_spec_system_composes_system_prompt_from_skill_rules() -> None:
     assert "reuse_existing" in task_message
     assert "selector 模式" in task_message
     assert "只选择已有 workflow 模板" in task_message
-    assert "patch_existing" not in task_message
-    assert "compile_new" not in task_message
-    assert "artifact_ref" not in task_message
-    assert "result.workflow 返回新 workflow" not in task_message
-    assert "workflow.spec.start/append_steps/commit" not in task_message
-    builder_package = agent_tools._build_subagent_prompt_package(
-        "workflow_spec",
-        preset,
-        "根据用户目标选择合适的视频 workflow 模板",
-        {"workflow_skill_name": "general_short_drama_workflow", "_workflow_spec_mode": "builder"},
-    )
-    builder_task_message = builder_package["task_message"]
-    assert "selector 模式" in builder_task_message
-    assert "builder 模式" not in builder_task_message
-    assert "patch_existing" not in builder_task_message
-    assert "compile_new" not in builder_task_message
-    assert "workflow.spec.apply_patch" not in builder_task_message
-    assert "workflow.canvas.inspect" not in builder_task_message
-    assert "Authoring quick map" not in builder_task_message
-    assert "workflow.spec.start/append_steps/commit" not in builder_task_message
-    assert "最终 JSON 只返回模板引用" in builder_task_message
+    assert "最终 JSON 只返回模板引用" in task_message
     assert "default_video" in task_message
     assert "返回 general_short_drama_workflow 的 template_id" in task_message
     assert "不会暴露给主 Agent" not in task_message
@@ -483,7 +454,6 @@ def test_node_producer_task_message_carries_scope_basis_and_lifecycle() -> None:
     assert "使用用户指定的人物图写法" in message
     assert "reference_node_ids" in message
     assert "fields.references" in message
-    assert "depends_on" in message
     assert "上游节点" in message
     assert "allow_create" not in message
     assert "basis_used" in message
@@ -786,9 +756,9 @@ def test_subagent_node_get_render_keeps_media_output_before_long_prompt() -> Non
             "id": "image-1",
             "type": "image",
             "status": "completed",
-            "input": {
-                "prompt": "长提示词" * 800,
-                "depends_on": ["script-1"],
+                "input": {
+                    "prompt": "长提示词" * 800,
+                    "references": [{"ref": "script-1", "role": "context"}],
             },
             "output": {
                 "stages": [
@@ -1209,15 +1179,6 @@ async def test_agent_run_does_not_expose_workflow_matcher_to_main_agent() -> Non
 
 
 @pytest.mark.asyncio
-async def test_agent_run_rejects_removed_image_generator() -> None:
-    result = await agent_tools.agent_run(project_id="project-1", agent="image_generator")
-
-    assert result["ok"] is False
-    assert "未知子 Agent" in result["error"]
-    assert "image_generator" not in {item["agent"] for item in result["available_agents"]}
-
-
-@pytest.mark.asyncio
 async def test_agent_run_workflow_spec_selector_blocks_inline_workflow(monkeypatch, tmp_path) -> None:
     captured = {}
 
@@ -1262,7 +1223,6 @@ async def test_agent_run_workflow_spec_selector_blocks_inline_workflow(monkeypat
     assert payload["validation"]["ok"] is False
     assert "只选择现有模板" in payload["blocked_reason"]
     assert captured["allowed_tools"] == agent_tools.WORKFLOW_SPEC_SELECTOR_TOOLS
-    assert captured["inputs"]["_workflow_spec_mode"] == "selector"
     assert not list(tmp_path.glob("project-1/workflow_specs/*.json"))
 
 
@@ -1315,28 +1275,35 @@ async def test_agent_run_workflow_spec_blocks_builder_inline_workflow(monkeypatc
     assert not list(tmp_path.glob("project-1/workflow_specs/*.json"))
     assert captured["role"] == "workflow_spec"
     assert captured["allowed_tools"] == agent_tools.WORKFLOW_SPEC_SELECTOR_TOOLS
-    assert captured["inputs"]["_workflow_spec_mode"] == "selector"
 
 
 @pytest.mark.asyncio
-async def test_agent_run_workflow_spec_rejects_half_authoring_workflow(monkeypatch, tmp_path) -> None:
+async def test_agent_run_workflow_spec_rejects_inline_workflow(monkeypatch, tmp_path) -> None:
     async def fake_subagent_run(**kwargs):
         return {
             "result": {
                 "status": "completed",
-                "decision": "compile_new",
+                "decision": "reuse_existing",
                 "workflow": {
+                    "schema": "openreel.workflow.v2",
                     "id": "bad_dynamic_workflow",
-                    "workflow_spec_version": "openreel.workflow.v1",
-                    "inputs": [{"id": "topic", "type": "text"}],
+                    "title": "不应由 selector 编写的流程",
+                    "inputs": {
+                        "topic": {"type": "text", "label": "主题", "required": True},
+                    },
                     "steps": [
-                        {"id": "plan", "title": "规划", "node_type": "text"},
+                        {
+                            "id": "plan",
+                            "title": "规划",
+                            "kind": "text",
+                            "prompt": {"task": "规划 {{ inputs.topic }}。"},
+                        },
                         {
                             "id": "segment_story",
                             "title": "分段剧情",
-                            "node_type": "text",
+                            "kind": "text",
                             "needs": ["plan"],
-                            "for_each": "plan.output.segments",
+                            "prompt": {"task": "根据 {{ steps.plan.output }} 写分段剧情。"},
                         },
                     ],
                 },
@@ -1728,7 +1695,7 @@ async def test_agent_review_blocks_missing_status_result(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_agent_review_blocks_timeout(monkeypatch) -> None:
     project_id = "project-1"
-    monkeypatch.setattr(agent_tools, "_agent_review_timeout_seconds", lambda max_steps: 0.01)
+    monkeypatch.setattr(agent_tools, "_agent_review_timeout_seconds", lambda: 0.01)
 
     async def fake_subagent_run(**kwargs):
         await asyncio.sleep(0.05)

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.agent.workflow_execution_plan import compile_private_execution_template
-from app.agent.workflow_spec import WorkflowSpecError, compile_workflow_spec
+from app.agent.workflow_spec import compile_workflow_spec
 from app.config import settings
 from app.mcp_tools import workflow_tools
 from app.services import workflow_plugins
@@ -70,7 +70,9 @@ def test_workflow_plugin_loader_exposes_node_types(plugin_project_root: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_workflow_protocol_info_exposes_custom_plugin_nodes(plugin_project_root: Path) -> None:
+async def test_workflow_protocol_info_exposes_custom_plugin_nodes(
+    plugin_project_root: Path,
+) -> None:
     _write_plugin(plugin_project_root, plugin_id="video.keyframe_extractor")
     workflow_plugins.reload_plugins()
 
@@ -99,7 +101,9 @@ async def test_workflow_python_plugin_runtime_executes(plugin_project_root: Path
 
     assert result["ok"] is True
     run_result = result["run_result"]
-    assert run_result["outputs"]["saved"]["local_url"].startswith("/api/media/project-1/generated_images/plugin_outputs/")
+    assert run_result["outputs"]["saved"]["local_url"].startswith(
+        "/api/media/project-1/generated_images/plugin_outputs/"
+    )
     assert run_result["logs"] == [{"level": "info", "message": "echo done"}]
 
 
@@ -144,7 +148,12 @@ def test_v2_preserves_structured_output_schema() -> None:
                     "output": {
                         "schema": {
                             "fields": [
-                                {"id": "segments", "label": "分段", "type": "array", "required": True},
+                                {
+                                    "id": "segments",
+                                    "label": "分段",
+                                    "type": "array",
+                                    "required": True,
+                                },
                             ]
                         }
                     },
@@ -156,20 +165,3 @@ def test_v2_preserves_structured_output_schema() -> None:
     step = compiled["steps"][0]
     assert step["output"]["shape"] == "object"
     assert step["output"]["schema"]["fields"][0]["id"] == "segments"
-
-
-def test_v2_rejects_deleted_advanced_runtime_fields() -> None:
-    with pytest.raises(WorkflowSpecError):
-        compile_workflow_spec({
-            "schema": "openreel.workflow.v2",
-            "id": "advanced_flow",
-            "title": "高级流程",
-            "steps": [{
-                "id": "advanced_step",
-                "title": "高级节点",
-                "kind": "text",
-                "prompt": {"task": "生成文本。"},
-                "settings": {"model_tier": "strong"},
-                "runtime_hidden": True,
-            }],
-        })

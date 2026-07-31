@@ -6,6 +6,7 @@ from typing import Any
 
 from app.db.models import Project
 from app.db.session import session_scope
+from app.services.project_service import ProjectService
 
 
 async def read_project_state(project_id: str) -> tuple[Project | None, dict[str, Any]]:
@@ -28,3 +29,11 @@ async def write_project_state(project_id: str, state: dict[str, Any]) -> None:
         project.state_json = json.dumps(state if isinstance(state, dict) else {}, ensure_ascii=False)
         session.add(project)
         await session.commit()
+
+
+async def patch_project_state(project_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    async with session_scope() as session:
+        project = await ProjectService(session).update_project_state(project_id, patch)
+    if not project:
+        return {"error": f"Project {project_id} not found"}
+    return {"ok": True, "project_id": project_id}

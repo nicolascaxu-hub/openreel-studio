@@ -500,12 +500,10 @@ def _dependency_refs_from_input(input_data: dict[str, Any]) -> list[dict[str, st
     if isinstance(fields, dict):
         containers.append(fields)
     for container in containers:
-        for key in ("depends_on", "references", "reference_images"):
-            value = container.get(key)
-            for ref in _coerce_list(value):
-                text, role = _reference_text_and_role(ref)
-                if text:
-                    refs.append({"ref": text, "role": role or ("visual_reference" if key == "reference_images" else "context")})
+        for ref in _coerce_list(container.get("references")):
+            text, role = _reference_text_and_role(ref)
+            if text:
+                refs.append({"ref": text, "role": role or "context"})
     return _dedupe_refs(refs)
 
 

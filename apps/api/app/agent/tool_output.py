@@ -123,10 +123,6 @@ def tool_result_message(tool_call_id: str, envelope: dict[str, Any]) -> dict[str
     }
 
 
-def tool_result_messages(tool_call_id: str, envelope: dict[str, Any]) -> list[dict[str, Any]]:
-    return [tool_result_message(tool_call_id, envelope), *tool_result_context_messages(tool_call_id, envelope)]
-
-
 def tool_result_context_messages(tool_call_id: str, envelope: dict[str, Any]) -> list[dict[str, Any]]:
     """Return model messages for a tool result.
 

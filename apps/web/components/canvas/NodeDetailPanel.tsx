@@ -436,7 +436,6 @@ interface ReferenceItem {
 
 interface ReferenceMentionCandidate {
   mention: string
-  aliases?: string[]
   label: string
   ref: string
   source: "node" | "reference"
@@ -817,17 +816,6 @@ function safeReferenceMentionLabel(value: string, fallback: string): string {
   return raw || fallback.trim() || "参考图"
 }
 
-function legacyReferenceMentionLabel(value: string, fallback: string): string {
-  const raw = (value || fallback || "参考图")
-    .replace(/^[@#]+/, "")
-    .replace(/\.(png|jpe?g|webp|gif|bmp|svg)$/i, "")
-    .replace(/[^\p{L}\p{N}_\-\u4e00-\u9fa5]+/gu, "")
-    .trim()
-  const base = raw || fallback || "参考图"
-  const label = /(图|图片|照片|参考)$/u.test(base) ? base : `${base}图片`
-  return label.slice(0, 18)
-}
-
 function basenameFromReferenceValue(value: string): string {
   const raw = value.replace(/^upload:/, "").trim()
   const withoutQuery = raw.split(/[?#]/)[0] || raw
@@ -853,10 +841,6 @@ function uniqueReferenceMention(base: string, used: Set<string>): string {
   return fallback
 }
 
-function referenceMentionCandidateKey(candidate: Pick<ReferenceMentionCandidate, "ref">): string {
-  return stripNodeReferenceMarker(candidate.ref).toLowerCase()
-}
-
 function buildReferenceMentionCandidates(
   node: NodeFull,
   draft: EditableNodeDraft,
@@ -868,8 +852,6 @@ function buildReferenceMentionCandidates(
   const candidates: ReferenceMentionCandidate[] = []
   const seenRefs = new Set<string>()
   const usedMentions = new Set<string>()
-  const usedLegacyMentions = new Set<string>()
-  const legacyMentionsByRef = new Map<string, string>()
 
   const addCandidate = (
     labelSource: string,
@@ -885,11 +867,6 @@ function buildReferenceMentionCandidates(
     const fallback = `参考图${candidates.length + 1}`
     const label = safeReferenceMentionLabel(labelSource, fallback)
     const mention = uniqueReferenceMention(label, usedMentions)
-    const legacyMention = uniqueReferenceMention(
-      legacyReferenceMentionLabel(labelSource, fallback),
-      usedLegacyMentions,
-    )
-    legacyMentionsByRef.set(key, legacyMention)
     candidates.push({
       mention,
       label,
@@ -934,25 +911,11 @@ function buildReferenceMentionCandidates(
     addCandidate(fallback, value, "reference", previewUrl)
   })
 
-  const canonicalMentions = new Set(candidates.map((candidate) => candidate.mention))
-  return candidates.map((candidate) => {
-    const legacyMention = legacyMentionsByRef.get(referenceMentionCandidateKey(candidate))
-    if (
-      !legacyMention
-      || legacyMention === candidate.mention
-      || canonicalMentions.has(legacyMention)
-    ) {
-      return candidate
-    }
-    return { ...candidate, aliases: [legacyMention] }
-  })
+  return candidates
 }
 
 function referenceMentionTokens(candidate: ReferenceMentionCandidate): string[] {
-  return Array.from(new Set([
-    candidate.mention,
-    ...(candidate.aliases || []),
-  ].map((item) => item.trim()).filter(Boolean)))
+  return [candidate.mention]
 }
 
 function referenceMentionOccurs(prompt: string, mention: string): boolean {
@@ -982,7 +945,8 @@ function referenceImageMentionsFromPrompt(
       .sort((left, right) => right.length - left.length)
       .find((mention) => referenceMentionOccurs(prompt, mention))
     if (!matchedMention) continue
-    const key = `${matchedMention}:${referenceMentionCandidateKey(candidate)}`
+    const candidateKey = stripNodeReferenceMarker(candidate.ref).toLowerCase()
+    const key = `${matchedMention}:${candidateKey}`
     if (seen.has(key)) continue
     seen.add(key)
     result.push({
@@ -990,7 +954,7 @@ function referenceImageMentionsFromPrompt(
       label: candidate.label,
       ref: candidate.ref,
       source: candidate.source,
-      index: refOrder.get(referenceMentionCandidateKey(candidate)),
+      index: refOrder.get(candidateKey),
     })
   }
   return result
@@ -1042,13 +1006,8 @@ function referenceValuesForMentions(node: NodeFull, draft: EditableNodeDraft): s
   const output = asObj(parseJson(node.output)) || {}
   const values = [
     draft.reference_images,
-    input.reference_images,
     input.references,
-    input.depends_on,
-    fields.reference_images,
     fields.references,
-    fields.depends_on,
-    output.reference_images,
     output.references,
   ].flatMap((item) => referenceValueStrings(item))
   return Array.from(new Set(values.map((item) => item.trim()).filter(Boolean)))
@@ -2292,21 +2251,16 @@ function pickEditablePromptText(nodePrompt: string, input: Record<string, unknow
 
 function pickReferences(input: Record<string, unknown>, output: Record<string, unknown>): unknown[] | undefined {
   const inputFields = asObj(input.fields) || {}
-  const hasInputReferenceFields = ["depends_on", "reference_images", "references", "reference_assets"].some((key) =>
+  const hasInputReferenceFields = ["references", "reference_assets"].some((key) =>
     hasOwnKey(input, key) || hasOwnKey(inputFields, key),
   )
   const inputValues = [
-    input.depends_on,
-    input.reference_images,
     input.references,
     input.reference_assets,
-    inputFields.depends_on,
-    inputFields.reference_images,
     inputFields.references,
     inputFields.reference_assets,
   ]
   const outputValues = [
-    output.reference_images,
     output.references,
     output.reference_assets,
   ]
@@ -2494,19 +2448,11 @@ function videoNativeAudioSettings(
   return { supported, defaultEnabled: supported && defaultEnabled }
 }
 
-function audioProviderModeFromFormat(apiFormat?: string | null): AudioProviderMode {
-  const format = String(apiFormat || "").trim().toLowerCase()
-  if (format === "audio_http_v1") return "unknown"
-  if (["openai_tts", "tts", "openai_speech", "openai_audio_speech"].includes(format)) return "tts"
-  if (["suno_compatible", "suno", "suno_api"].includes(format)) return "music"
-  return "unknown"
-}
-
 function audioProviderModeFromProvider(provider?: AudioProviderOption): AudioProviderMode {
   const protocolId = String(provider?.params?.audio_protocol_id || "").trim().toLowerCase()
   if (protocolId.includes("suno") || protocolId.includes("music")) return "music"
   if (protocolId.includes("speech") || protocolId.includes("tts")) return "tts"
-  return audioProviderModeFromFormat(provider?.api_format)
+  return "unknown"
 }
 
 function audioProviderTypeLabel(mode: AudioProviderMode): string {
@@ -2655,8 +2601,7 @@ function defaultLlmProviderName(
   const tierDefaults = defaults?.model_tier_defaults || {}
   const preferred = [
     assignments.text_generation,
-    assignments.outline_generation,
-    assignments.script_generation,
+    assignments.workflow_text_generation,
     tierDefaults.balanced,
     tierDefaults.strong,
     tierDefaults.small,
@@ -3163,28 +3108,6 @@ function hasOwnKey(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
 }
 
-function nodeRefIdFromUnknown(value: unknown): string {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    let text = String(value).trim()
-    if (!text) return ""
-    text = stripNodeReferenceMarker(text)
-    if (/^\d+$/.test(text)) return text
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ? text : ""
-  }
-  const obj = asObj(value)
-  if (!obj) return ""
-  for (const key of ["ref", "reference", "reference_input", "value"]) {
-    const ref = obj[key]
-    const nodeId = nodeRefIdFromUnknown(ref)
-    if (nodeId) return nodeId
-  }
-  for (const key of ["node_id", "nodeId", "source_node_id", "sourceNodeId"]) {
-    const nodeId = obj[key]
-    if (typeof nodeId === "string" && nodeId.trim()) return nodeId.trim()
-  }
-  return ""
-}
-
 function isPersistableReferenceImageValue(value: string): boolean {
   const text = value.trim()
   if (!text) return false
@@ -3204,32 +3127,36 @@ function isPersistableReferenceImageValue(value: string): boolean {
   return isImageSource(text)
 }
 
-function referenceListFromUnknown(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value
-  return value == null || value === "" ? [] : [value]
+function referenceRole(value: unknown): string {
+  const item = asObj(value)
+  return String(item?.role || item?.usage || item?.purpose || item?.kind || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll("-", "_")
 }
 
-function filterRemovedNodeReferences(value: unknown, removedNodeIds: Set<string>): unknown[] {
-  return referenceListFromUnknown(value).filter((item) => {
-    const nodeId = nodeRefIdFromUnknown(item)
-    return !nodeId || !removedNodeIds.has(nodeId)
-  })
-}
-
-function removeNodeReferencesFromContainer(
-  container: Record<string, unknown>,
-  removedNodeIds: Set<string>,
-): { next: Record<string, unknown>; changed: boolean } {
-  const next = { ...container }
-  let changed = false
-  for (const key of ["depends_on", "references", "reference_images"] as const) {
-    if (!hasOwnKey(container, key)) continue
-    const filtered = filterRemovedNodeReferences(container[key], removedNodeIds)
-    if (JSON.stringify(filtered) === JSON.stringify(referenceListFromUnknown(container[key]))) continue
-    next[key] = filtered
-    changed = true
+function editableReferenceKind(value: unknown): "image" | "video" | "audio" | null {
+  const role = referenceRole(value)
+  if (role.includes("audio")) return "audio"
+  if (role.includes("video")) return "video"
+  if (["context", "vision_context", "source_image", "direct_image", "output_image"].includes(role)) {
+    return null
   }
-  return { next, changed }
+  return "image"
+}
+
+function referenceStringsForKind(value: unknown, kind: "image" | "video" | "audio"): string[] {
+  const items = Array.isArray(value) ? value : []
+  return items
+    .filter((item) => editableReferenceKind(item) === kind)
+    .flatMap((item) => stringArrayFromUnknown([item]))
+}
+
+function canonicalMediaReference(ref: string, kind: "image" | "video" | "audio"): Record<string, string> {
+  return {
+    ref,
+    role: kind === "image" ? "visual_reference" : `${kind}_reference`,
+  }
 }
 
 function normalizeVideoAspectRatio(value: string): string {
@@ -3242,23 +3169,7 @@ function draftFromNode(node: NodeFull): EditableNodeDraft {
   const output = asObj(rawOutput) || {}
   const nodePrompt = typeof node.prompt === "string" ? node.prompt : ""
   const editablePromptDraft = pickEditablePromptText(nodePrompt, input, output)
-  const inputReferenceImages = stringArrayFromUnknown(input.reference_images)
-  const inputReferences = stringArrayFromUnknown(input.references)
-  const inputDependsOn = stringArrayFromUnknown(input.depends_on)
-  const hasInputReferenceImages = hasOwnKey(input, "reference_images")
-  const hasInputReferences = hasOwnKey(input, "references")
-  const hasInputDependsOn = hasOwnKey(input, "depends_on")
-  const referenceImages = (
-    hasInputReferenceImages && inputReferenceImages.length > 0
-      ? inputReferenceImages
-      : hasInputReferences && inputReferences.length > 0
-        ? inputReferences
-        : hasInputDependsOn && inputDependsOn.length > 0
-          ? inputDependsOn
-          : hasInputReferenceImages || hasInputReferences || hasInputDependsOn
-            ? []
-            : stringArrayFromUnknown(output.reference_images)
-  )
+  const referenceImages = referenceStringsForKind(input.references, "image")
 
   return {
     ...EMPTY_DRAFT,
@@ -3285,8 +3196,8 @@ function draftFromNode(node: NodeFull): EditableNodeDraft {
     instrumental: firstBool(true, input.instrumental, output.instrumental),
     custom_mode: firstBool(false, input.custom_mode, input.customMode, output.custom_mode, output.customMode),
     reference_images: Array.from(new Set(referenceImages.filter(isPersistableReferenceImageValue))),
-    reference_videos: Array.from(new Set(stringArrayFromUnknown(input.reference_videos))),
-    reference_audios: Array.from(new Set(stringArrayFromUnknown(input.reference_audios))),
+    reference_videos: Array.from(new Set(referenceStringsForKind(input.references, "video"))),
+    reference_audios: Array.from(new Set(referenceStringsForKind(input.references, "audio"))),
   }
 }
 
@@ -3353,8 +3264,9 @@ function payloadFromDraft(
 
   nextInput.title = title
   const currentFields = asObj(currentRaw.fields)
-  const currentFieldsHasReferenceImages = currentFields ? hasOwnKey(currentFields, "reference_images") : false
   const referenceImagesChanged = draftFieldChanged("reference_images")
+  const referenceVideosChanged = draftFieldChanged("reference_videos")
+  const referenceAudiosChanged = draftFieldChanged("reference_audios")
   const rawReferenceImages = node.type === "video"
     ? Array.from(new Set([
       ...draft.reference_images,
@@ -3366,46 +3278,40 @@ function payloadFromDraft(
     ? rawReferenceImages.slice(0, Math.max(0, referenceImageLimit))
     : rawReferenceImages
   const referenceMentions = referenceImageMentionsFromPrompt(prompt, referenceMentionCandidates, effectiveReferenceImages)
-  if (referenceImagesChanged) {
-    nextInput.reference_images = referenceImages
+  const currentReferenceItems = [
+    ...(Array.isArray(currentRaw.references) ? currentRaw.references : []),
+    ...(Array.isArray(currentFields?.references) ? currentFields.references : []),
+  ]
+  const retainedReferences = currentReferenceItems.filter((item) => editableReferenceKind(item) === null)
+  if (
+    referenceImagesChanged
+    || referenceVideosChanged
+    || referenceAudiosChanged
+    || currentReferenceItems.length > 0
+  ) {
+    nextInput.references = [
+      ...retainedReferences,
+      ...referenceImages.map((ref) => canonicalMediaReference(ref, "image")),
+      ...Array.from(new Set(draft.reference_videos.map((item) => item.trim()).filter(Boolean)))
+        .map((ref) => canonicalMediaReference(ref, "video")),
+      ...Array.from(new Set(draft.reference_audios.map((item) => item.trim()).filter(Boolean)))
+        .map((ref) => canonicalMediaReference(ref, "audio")),
+    ]
   }
   if (hasOwnKey(currentRaw, "reference_image_mentions") || referenceImagesChanged || promptChanged) {
     if (referenceMentions.length > 0) nextInput.reference_image_mentions = referenceMentions
     else delete nextInput.reference_image_mentions
   }
-  const previousEditableRefs = Array.from(new Set([
-    ...stringArrayFromUnknown(currentRaw.reference_images),
-    ...stringArrayFromUnknown(currentRaw.references),
-    ...stringArrayFromUnknown(currentRaw.depends_on),
-    ...(currentFields ? stringArrayFromUnknown(currentFields.reference_images) : []),
-    ...(currentFields ? stringArrayFromUnknown(currentFields.references) : []),
-    ...(currentFields ? stringArrayFromUnknown(currentFields.depends_on) : []),
-  ]))
-  const nextReferenceNodeIds = new Set(referenceImages.map(nodeRefIdFromUnknown).filter(Boolean))
-  const removedReferenceNodeIds = new Set(
-    previousEditableRefs
-      .map(nodeRefIdFromUnknown)
-      .filter((nodeId) => nodeId && !nextReferenceNodeIds.has(nodeId)),
-  )
-  if (removedReferenceNodeIds.size > 0) {
-    const cleaned = removeNodeReferencesFromContainer(nextInput, removedReferenceNodeIds)
-    Object.assign(nextInput, cleaned.next)
+  for (const key of ["depends_on", "reference_images", "reference_videos", "reference_audios", "media_references"]) {
+    delete nextInput[key]
   }
   if (currentFields) {
     const nextFields = { ...currentFields }
-    if (currentFieldsHasReferenceImages && referenceImagesChanged) {
-      nextFields.reference_images = referenceImages
+    for (const key of ["depends_on", "references", "reference_images", "reference_videos", "reference_audios", "media_references"]) {
+      delete nextFields[key]
     }
-    if ((referenceImagesChanged || promptChanged) && (hasOwnKey(currentFields, "reference_image_mentions") || referenceMentions.length > 0)) {
-      if (referenceMentions.length > 0) nextFields.reference_image_mentions = referenceMentions
-      else delete nextFields.reference_image_mentions
-    }
-    const cleanedFields = removedReferenceNodeIds.size > 0
-      ? removeNodeReferencesFromContainer(nextFields, removedReferenceNodeIds)
-      : { next: nextFields, changed: false }
-    if ((currentFieldsHasReferenceImages && referenceImagesChanged) || ((referenceImagesChanged || promptChanged) && (hasOwnKey(currentFields, "reference_image_mentions") || referenceMentions.length > 0)) || cleanedFields.changed) {
-      nextInput.fields = cleanedFields.next
-    }
+    delete nextFields.reference_image_mentions
+    nextInput.fields = nextFields
   }
 
   const textContent = draft.content.trim()
@@ -3468,12 +3374,6 @@ function payloadFromDraft(
       if (draft.generate_audio !== null) nextInput.generate_audio = draft.generate_audio
       else delete nextInput.generate_audio
     }
-    const referenceVideos = Array.from(new Set(draft.reference_videos.map((item) => item.trim()).filter(Boolean)))
-    if (referenceVideos.length > 0) nextInput.reference_videos = referenceVideos
-    else delete nextInput.reference_videos
-    const referenceAudios = Array.from(new Set(draft.reference_audios.map((item) => item.trim()).filter(Boolean)))
-    if (referenceAudios.length > 0) nextInput.reference_audios = referenceAudios
-    else delete nextInput.reference_audios
   }
 
   if (node.type === "audio") {
@@ -4310,7 +4210,6 @@ function filteredMentionCandidates(candidates: ReferenceMentionCandidate[], quer
       item.mention.toLowerCase().includes(normalized)
       || item.label.toLowerCase().includes(normalized)
       || item.ref.toLowerCase().includes(normalized)
-      || (item.aliases || []).some((alias) => alias.toLowerCase().includes(normalized))
     )
     .slice(0, 8)
 }
@@ -4372,7 +4271,7 @@ function PromptMentionEditor({
   const focusedRef = useRef(false)
   const [query, setQuery] = useState<{ start: number; end: number; query: string } | null>(null)
   const candidateKey = candidates
-    .map((item) => `${item.mention}:${(item.aliases || []).join(",")}:${item.ref}`)
+    .map((item) => `${item.mention}:${item.ref}`)
     .join("|")
   const visibleCandidates = useMemo(
     () => query ? filteredMentionCandidates(candidates, query.query) : [],

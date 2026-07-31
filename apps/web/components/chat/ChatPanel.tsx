@@ -659,8 +659,7 @@ type AssetLibraryListResult = {
     modified_at?: string
   }>
   error?: string
-  project_dir?: string
-  shared_root?: string
+  root?: string
   count?: number
 }
 
@@ -2125,25 +2124,48 @@ export function ChatPanel() {
   }
 
   const formatConfig = (r: Record<string, unknown>): string => {
-    const llm = (r.llm ?? []) as Array<{ task: string; model: string; source: string; temperature?: number; max_tokens?: number }>
-    const image = (r.image ?? []) as Array<{ name: string; model_name: string; is_active: boolean; api_format?: string }>
-    const video = (r.video ?? []) as Array<{ name: string; model_name: string; is_active: boolean }>
-    const keys = (r.api_keys ?? {}) as Record<string, boolean>
-    const summary = (r.summary ?? {}) as { active_image?: string | null; active_video?: string | null }
+    const llm = (r.llm_providers ?? []) as Array<{
+      name: string
+      provider: string
+      model_name: string
+      enabled: boolean
+    }>
+    const media = (r.media_providers ?? []) as Array<{
+      kind: string
+      name: string
+      model_name: string
+      is_active: boolean
+      enabled: boolean
+    }>
+    const assignments = (r.model_assignments ?? {}) as Record<string, string | null>
+    const image = media.filter((provider) => provider.kind === "image")
+    const video = media.filter((provider) => provider.kind === "video")
 
     const lines: string[] = ["**统一配置总览**\n"]
 
-    lines.push("**LLM 模型**")
-    for (const e of llm) {
-      const tag = e.source === "db" ? "已配置" : "默认"
-      lines.push(`- ${e.task} → \`${e.model}\` _(${tag})_`)
+    lines.push("**LLM Provider**")
+    if (llm.length === 0) {
+      lines.push("- _未配置_")
+    } else {
+      for (const provider of llm) {
+        const status = provider.enabled ? "启用" : "停用"
+        lines.push(`- \`${provider.name}\` → ${provider.provider}/${provider.model_name} _(${status})_`)
+      }
+    }
+
+    const mappedTasks = Object.entries(assignments).filter(([, provider]) => provider)
+    if (mappedTasks.length > 0) {
+      lines.push("\n**模型映射**")
+      for (const [task, provider] of mappedTasks) {
+        lines.push(`- ${task} → \`${provider}\``)
+      }
     }
 
     lines.push("\n**图片 Provider**")
     if (image.length === 0) {
-      lines.push("- _未配置 — 在聊天中说「添加 SiliconFlow flux-pro provider」即可_")
+      lines.push("- _未配置_")
     } else {
-      const active = summary.active_image ?? null
+      const active = image.find((provider) => provider.is_active)?.name ?? null
       lines.push(`- 激活: ${active ? `\`${active}\`` : "_无_"}`)
       for (const p of image) {
         const star = p.is_active ? "★ " : "  "
@@ -2153,9 +2175,9 @@ export function ChatPanel() {
 
     lines.push("\n**视频 Provider**")
     if (video.length === 0) {
-      lines.push("- _未配置 (P3 — 后端目前是 stub)_")
+      lines.push("- _未配置_")
     } else {
-      const active = summary.active_video ?? null
+      const active = video.find((provider) => provider.is_active)?.name ?? null
       lines.push(`- 激活: ${active ? `\`${active}\`` : "_无_"}`)
       for (const p of video) {
         const star = p.is_active ? "★ " : "  "
@@ -2163,11 +2185,7 @@ export function ChatPanel() {
       }
     }
 
-    lines.push("\n**API Keys**")
-    for (const [k, ok] of Object.entries(keys)) {
-      lines.push(`- ${k}: ${ok ? "OK 已配置" : "未配置"}`)
-    }
-    lines.push("\n_LLM 模型映射通过设置面板或配置 API 修改；API Key 在 .env.local 改后重启_")
+    lines.push("\n_配置来源：`config/runtime.jsonc`。可在设置面板中修改。_")
     return lines.join("\n")
   }
 
@@ -2186,7 +2204,7 @@ export function ChatPanel() {
             "- `/reset [failed|full|confirm|cancel]` — 清理失败节点或确认重置(后端确定性执行)\n" +
             "- `/doctor` — 项目诊断快照(后端确定性执行)\n" +
             "- `/status` — 系统状态(模型/工具/MCP)\n" +
-            "- `/config` — LLM/图片/视频/API Keys 配置总览\n" +
+            "- `/config` — 当前运行时模型与媒体配置总览\n" +
             "- `/model` — 当前模型映射\n" +
             "- `/mcp` — 外部 MCP server 连接状态\n" +
             "- `/clear` — 清空模型可见对话、任务和流程运行态，保留画布节点和资产\n\n" +
@@ -2219,9 +2237,9 @@ export function ChatPanel() {
         }
 
         case "/config": {
-          const { getRuntimeConfigSummary } = await import("@/lib/api")
-          const r = await getRuntimeConfigSummary<Record<string, unknown>>()
-          respondAssistant(formatConfig(r))
+          const { getRuntimeConfigFile } = await import("@/lib/api")
+          const result = await getRuntimeConfigFile<{ parsed?: Record<string, unknown> }>()
+          respondAssistant(formatConfig(result.parsed ?? {}))
           return true
         }
 

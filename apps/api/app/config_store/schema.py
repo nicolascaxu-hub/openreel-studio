@@ -116,15 +116,6 @@ class LlmProviderEntry(BaseModel):
     notes: Optional[str] = None
     params: dict = Field(default_factory=dict, description="其他模型私有元数据，原样保存在配置中")
 
-    @model_validator(mode="before")
-    @classmethod
-    def _drop_legacy_global_default(cls, value: Any) -> Any:
-        if isinstance(value, dict) and "is_default" in value:
-            next_value = dict(value)
-            next_value.pop("is_default", None)
-            return next_value
-        return value
-
     @field_validator("tier")
     @classmethod
     def _valid_tier(cls, v: str) -> str:
@@ -159,7 +150,7 @@ class MediaProviderEntry(BaseModel):
     base_url: str = Field(..., min_length=1)
     api_key: Optional[str] = None
     model_name: str = Field(..., min_length=1)
-    api_format: str = Field("openai", description="provider transport contract")
+    api_format: str = Field("universal_adapter", description="provider transport contract")
     is_active: bool = False
     enabled: bool = True
     notes: Optional[str] = None
@@ -175,7 +166,7 @@ class MediaProviderEntry(BaseModel):
     @field_validator("api_format")
     @classmethod
     def _valid_api_format(cls, v: str) -> str:
-        if v not in ("universal_adapter", "openai", "raw", "raw_post", "image_http_v1", "audio_http_v1", "suno_compatible", "openai_tts"):
+        if v not in ("universal_adapter", "raw", "image_http_v1", "audio_http_v1"):
             raise ValueError(
                 "api_format must be 'universal_adapter' or a supported image/audio format, "
                 f"got {v!r}"
@@ -183,9 +174,17 @@ class MediaProviderEntry(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _validate_video_adapter(self) -> "MediaProviderEntry":
-        if self.kind == "video" and self.api_format != "universal_adapter":
-            raise ValueError("video provider 只支持 api_format='universal_adapter'")
+    def _validate_transport(self) -> "MediaProviderEntry":
+        allowed = {
+            "image": {"universal_adapter", "image_http_v1", "raw"},
+            "video": {"universal_adapter"},
+            "audio": {"universal_adapter", "audio_http_v1"},
+        }[self.kind]
+        if self.api_format not in allowed:
+            raise ValueError(
+                f"{self.kind} provider 不支持 api_format={self.api_format!r}；"
+                f"可用值：{', '.join(sorted(allowed))}"
+            )
         return self
 
     @model_validator(mode="after")
@@ -260,44 +259,29 @@ class MediaProviderEntry(BaseModel):
 
 ALLOWED_MODEL_TIERS = ("strong", "balanced", "small")
 
-# 与 db.models.TASK_TYPES 保持一致；改动需同步那边
 ALLOWED_TASK_TYPES = (
     "agent_loop",
     "agent_review",
     "agent_compact",
     "agent_aux",
-    "planning",
-    "character_generation",
-    "outline_generation",
-    "script_generation",
+    "text_generation",
+    "workflow_text_generation",
     "script_review",
-    "storyboard_generation",
-    "image_understanding",
-    "image_prompt_generation",
-    "video_prompt_generation",
     "subagent_node_producer",
     "subagent_image_editor",
+    "subagent_workflow_spec",
 )
 DEFAULT_MODEL_TASK_TIERS: dict[str, str] = {
     "agent_loop": "strong",
     "agent_review": "small",
     "agent_compact": "balanced",
     "agent_aux": "small",
-    "planning": "balanced",
-    "character_generation": "balanced",
-    "outline_generation": "balanced",
-    "script_generation": "strong",
+    "text_generation": "balanced",
+    "workflow_text_generation": "balanced",
     "script_review": "small",
-    "storyboard_generation": "balanced",
-    "image_understanding": "balanced",
-    "image_prompt_generation": "balanced",
-    "video_prompt_generation": "strong",
     "subagent_node_producer": "balanced",
     "subagent_image_editor": "balanced",
-}
-LEGACY_TASK_TYPE_ALIASES = {
-    "intent_parse": "agent_loop",
-    "subagent_image_generator": "subagent_node_producer",
+    "subagent_workflow_spec": "balanced",
 }
 
 # app_settings 已知键和默认值；启动 bootstrap 时若文件缺失会补全
@@ -349,14 +333,6 @@ class RuntimeConfig(BaseModel):
                 raise ValueError(
                     f"media_providers[{kind}]: is_active 至多 1 条，当前 {len(actives)} 条"
                 )
-
-        normalized_assignments: dict[str, Optional[str]] = {}
-        for task, name in self.model_assignments.items():
-            normalized_task = LEGACY_TASK_TYPE_ALIASES.get(task, task)
-            if normalized_task in normalized_assignments and normalized_assignments[normalized_task] is not None:
-                continue
-            normalized_assignments[normalized_task] = name
-        self.model_assignments = normalized_assignments
 
         normalized_tier_defaults: dict[str, Optional[str]] = {
             tier: self.model_tier_defaults.get(tier)

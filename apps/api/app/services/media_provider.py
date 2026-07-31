@@ -676,33 +676,12 @@ def _protocol_provider_error(
     return message or "媒体生成任务失败", code
 
 
-_IMAGE_HTTP_V1_FORMATS = {"image_http_v1"}
 _IMAGE_HTTP_V1_PROTOCOL_VERSION = "openreel.image_provider.v1"
 _IMAGE_HTTP_V1_CATALOG_VERSION = "openreel.image_provider_catalog.v1"
 _IMAGE_HTTP_V1_CATALOG_FILE = Path("config") / "image_provider_protocols" / "catalog.json"
-_IMAGE_HTTP_V1_LEGACY_PROTOCOLS_BY_FORMAT = {
-    "openai": "openai_images_generations",
-}
-_AUDIO_HTTP_V1_FORMATS = {"audio_http_v1"}
 _AUDIO_HTTP_V1_PROTOCOL_VERSION = "openreel.audio_provider.v1"
 _AUDIO_HTTP_V1_CATALOG_VERSION = "openreel.audio_provider_catalog.v1"
 _AUDIO_HTTP_V1_CATALOG_FILE = Path("config") / "audio_provider_protocols" / "catalog.json"
-_AUDIO_HTTP_V1_LEGACY_PROTOCOLS_BY_FORMAT = {
-    "openai_tts": "openai_audio_speech",
-    "tts": "openai_audio_speech",
-    "openai_speech": "openai_audio_speech",
-    "openai_audio_speech": "openai_audio_speech",
-    "suno_compatible": "newapi_suno_music",
-    "suno": "suno_compatible_generate",
-    "suno_api": "suno_compatible_generate",
-}
-
-
-def _normalized_api_format(provider: MediaProvider) -> str:
-    fmt = str(provider.api_format or "").strip().lower().replace("-", "_")
-    if fmt == "raw_post":
-        return "raw"
-    return fmt
 
 
 def _coerce_bool(value: Any) -> bool | None:
@@ -902,11 +881,7 @@ def list_image_http_v1_protocol_catalog() -> dict[str, Any]:
 
 def _image_http_v1_protocol_id_for_provider(provider: MediaProvider, extra: dict[str, Any] | None = None) -> str:
     params = extra if isinstance(extra, dict) else _parse_extra(provider)
-    explicit = str(params.get("image_protocol_id") or params.get("protocol_id") or "").strip()
-    if explicit:
-        return explicit
-    fmt = _normalized_api_format(provider)
-    return _IMAGE_HTTP_V1_LEGACY_PROTOCOLS_BY_FORMAT.get(fmt, "")
+    return str(params.get("image_protocol_id") or "").strip()
 
 
 def _image_http_v1_protocol(
@@ -1078,11 +1053,7 @@ def _audio_http_v1_protocol_id_for_provider(provider: MediaProvider, extra: dict
     params = _parse_extra(provider)
     if isinstance(extra, dict):
         params.update(extra)
-    explicit = str(params.get("audio_protocol_id") or params.get("protocol_id") or "").strip()
-    if explicit:
-        return explicit
-    fmt = _normalized_api_format(provider)
-    return _AUDIO_HTTP_V1_LEGACY_PROTOCOLS_BY_FORMAT.get(fmt, "")
+    return str(params.get("audio_protocol_id") or "").strip()
 
 
 def _audio_http_v1_protocol(
@@ -2860,7 +2831,7 @@ async def generate_image_with_provider(
                 reference_images=resolved_refs or None,
                 extra=extra_override,
             )
-        if _image_http_v1_protocol_id_for_provider(provider):
+        if provider.api_format == "image_http_v1":
             return await _call_image_http_v1(
                 provider=provider,
                 project_id=project_id,
@@ -2872,11 +2843,17 @@ async def generate_image_with_provider(
                 reference_images=resolved_refs or None,
                 extra_override=extra_override,
             )
-        if n <= 1:
+        if provider.api_format == "raw" and n <= 1:
             return await _call_raw_http(
                 provider, prompt, negative_prompt, _size,
                 resolved_refs or None, extra_override,
             )
+        if provider.api_format != "raw":
+            return {
+                "ok": False,
+                "error": f"Unsupported image provider api_format: {provider.api_format}",
+                "error_kind": "unsupported_provider",
+            }
         collected: list[dict] = []
         last_err: dict[str, Any] | None = None
         for _ in range(n):
@@ -3057,7 +3034,7 @@ async def generate_audio_with_provider(
             save_locally=save_locally,
             wait_for_completion=wait_for_completion,
         )
-    elif _audio_http_v1_protocol_id_for_provider(provider, extra_override):
+    elif provider.api_format == "audio_http_v1":
         result = await _call_audio_http_v1(
             provider=provider,
             project_id=project_id,
@@ -3120,7 +3097,7 @@ async def poll_audio_with_provider(
             kind="audio",
             progress_callback=progress_callback,
         )
-    elif _audio_http_v1_protocol_id_for_provider(provider, extra or {}):
+    elif provider.api_format == "audio_http_v1":
         result = await _poll_audio_http_v1_task(
             provider=provider,
             project_id=project_id,

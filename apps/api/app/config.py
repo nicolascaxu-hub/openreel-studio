@@ -48,7 +48,6 @@ class Settings(BaseSettings):
     LITELLM_ENABLED: bool = True
     DEFAULT_TEXT_MODEL: str = "deepseek/deepseek-chat"
     DEFAULT_FAST_MODEL: str = "deepseek/deepseek-chat"
-    DEFAULT_SCRIPT_MODEL: str = "deepseek/deepseek-chat"
     DEFAULT_REVIEW_MODEL: str = "deepseek/deepseek-chat"
 
     OPENAI_API_KEY: str = ""

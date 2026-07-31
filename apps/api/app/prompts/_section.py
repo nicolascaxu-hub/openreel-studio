@@ -8,33 +8,22 @@
 
 可同一个文件被多个 NAME 共享(用 ALIASES = ["...", "..."] 列出)。
 """
+
 from __future__ import annotations
 
 import importlib
 import pkgutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 
 @dataclass
 class WorkerContext:
-    """Worker LLM 调用前可用的运行时上下文。
+    """剧本解析 Prompt 可用的运行时上下文。"""
 
-    drama_tools.py 的每个生成工具在调 resolve_prompt 时把当前 segment / shot
-    的真实参数传进来,build() 函数可据此生成更精确的 prompt。
-    """
     project_id: Optional[str] = None
     node_id: Optional[str] = None
     episode_number: Optional[int] = None
-    segment_index: Optional[int] = None
-    workflow_mode: Optional[str] = None  # grid | frames | story_template
-    grid: Optional[str] = None  # 2*2 | 2*3 | 3*3
-    duration_seconds: Optional[int] = None
-    resolution: Optional[str] = None
-    aspect_ratio: Optional[str] = None
-    quality: Optional[str] = None
-    model: Optional[str] = None
-    extras: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -77,10 +66,6 @@ def _discover() -> None:
 _discover()
 
 
-def get_section(tool_name: str) -> Optional[WorkerSection]:
-    return _sections.get(tool_name)
-
-
 def render(tool_name: str, ctx: WorkerContext) -> str:
     sec = _sections.get(tool_name)
     if not sec:
@@ -93,14 +78,8 @@ def render(tool_name: str, ctx: WorkerContext) -> str:
     return sec.prompt or ""
 
 
-def all_tool_names() -> list[str]:
-    return sorted(_sections.keys())
-
-
 __all__ = [
     "WorkerContext",
     "WorkerSection",
-    "get_section",
     "render",
-    "all_tool_names",
 ]

@@ -70,7 +70,7 @@ async def config_patch(patch: dict) -> dict[str, Any]:
         {"patch": {"llm_providers": [...完整新数组...]}}
 
         # 改某个 task 的 provider 引用
-        {"patch": {"model_assignments": {"script_generation": "gpt-4o-aihubmix"}}}
+        {"patch": {"model_assignments": {"text_generation": "gpt-4o-aihubmix"}}}
 
         # 改 Agent 偏好
         {"patch": {"app_settings": {"agent.max_iterations": 120}}}
@@ -91,83 +91,3 @@ async def config_reload() -> dict[str, Any]:
     store = get_store()
     ok, errors = await store.reload()
     return {"ok": ok, "errors": errors}
-
-
-# ── 兼容旧接口 ────────────────────────────────────────────────────────────
-
-
-async def config_list_all() -> dict[str, Any]:
-    """向后兼容：返回 LLM / 图片 / 视频 / API Keys 总览。
-
-    保持上一版本调用方（前端 /config 命令、设置弹窗 v1）兼容。新代码用 config.read。
-    """
-    from app.db.models import AppSetting, LlmProvider, MediaProvider, ModelConfig
-    from app.db.session import session_scope
-    from sqlmodel import select
-    import json as _json
-
-    store = get_store()
-    cfg = await store.get_runtime()
-
-    llm_list: list[dict] = []
-    image_list: list[dict] = []
-    video_list: list[dict] = []
-    settings_dict: dict = {}
-
-    async with session_scope() as session:
-        for p in (await session.exec(select(LlmProvider))).all():
-            try:
-                params = _json.loads(p.params_json or "{}")
-            except Exception:
-                params = {}
-            llm_list.append({
-                "id": p.id, "name": p.name, "provider": p.provider,
-                "model_name": p.model_name, "base_url": p.base_url,
-                "context_window_tokens": p.context_window_tokens,
-                "max_input_tokens": p.max_input_tokens,
-                "max_output_tokens": p.max_output_tokens,
-                "supports_prompt_cache": p.supports_prompt_cache,
-                "supports_vision": p.supports_vision,
-                "tokenizer": p.tokenizer,
-                "tier": getattr(p, "tier", "balanced") or "balanced",
-                "params": params,
-                "enabled": p.enabled,
-                "notes": p.notes,
-            })
-        for m in (await session.exec(select(MediaProvider))).all():
-            entry = {
-                "id": m.id, "name": m.name, "model_name": m.model_name,
-                "base_url": m.base_url, "api_format": m.api_format,
-                "is_active": m.is_active, "enabled": m.enabled, "notes": m.notes,
-            }
-            (image_list if m.kind == "image" else video_list).append(entry)
-        for s in (await session.exec(select(AppSetting))).all():
-            try:
-                settings_dict[s.key] = _json.loads(s.value_json)
-            except Exception:
-                settings_dict[s.key] = s.value_json
-
-        # task → provider name 映射
-        task_map: dict[str, str | None] = {}
-        for c in (await session.exec(select(ModelConfig))).all():
-            task_map[c.task_type] = c.llm_provider_name
-
-    active_image = next((p["name"] for p in image_list if p["is_active"]), None)
-    active_video = next((p["name"] for p in video_list if p["is_active"]), None)
-
-    return {
-        "llm_providers": llm_list,
-        "image": image_list,
-        "video": video_list,
-        "model_tier_defaults": dict(cfg.model_tier_defaults),
-        "model_assignments": task_map,
-        "app_settings": settings_dict,
-        "summary": {
-            "llm_providers": len(llm_list),
-            "image_providers": len(image_list),
-            "video_providers": len(video_list),
-            "active_image": active_image,
-            "active_video": active_video,
-            "schema_version": cfg.schema_version_,
-        },
-    }

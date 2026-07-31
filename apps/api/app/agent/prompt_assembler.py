@@ -14,6 +14,7 @@ Historical business triggers such as create/video/template/introspect are not
 loaded automatically. Detailed workflow guidance must be requested explicitly
 through tools/skills, not inferred by this assembler.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -25,6 +26,7 @@ from . import prompts as prompts_pkg
 # ────────────────────────────────────────────────────────────────────────────
 # Context
 # ────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class PromptContext:
@@ -107,7 +109,17 @@ class PromptAssemblyResult:
 
 
 # Baseline namespaces always loaded for the node-first, task-driven creation path.
-_BASELINE_NS = ["project", "interaction", "skill", "node", "canvas", "task", "agent", "tool", "vision"]
+_BASELINE_NS = [
+    "project",
+    "interaction",
+    "skill",
+    "node",
+    "canvas",
+    "task",
+    "agent",
+    "tool",
+    "vision",
+]
 _WORKFLOW_BUILD_NS = ["project", "interaction", "skill", "workflow"]
 _DEFAULT_TOOL_PROFILE = "default"
 _WORKFLOW_BUILD_TOOL_PROFILE = "workflow_build"
@@ -134,7 +146,9 @@ _RUNTIME_STATE_CACHE_KEYS = (
 
 def _cache_signature(value: object) -> dict[str, object]:
     try:
-        text = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+        text = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":")
+        )
     except TypeError:
         text = str(value)
     if not text:
@@ -156,12 +170,6 @@ def _runtime_state_signature(state: dict) -> dict[str, object]:
         if key in state:
             payload[key] = state.get(key)
     return _cache_signature(payload)
-
-def should_require_plan(
-    ctx: PromptContext,
-) -> bool:
-    """Legacy pending-plan enforcement is retired; Plan Mode is explicit."""
-    return False
 
 
 def trigger_matches(trigger: str, ctx: PromptContext) -> bool:
@@ -197,29 +205,7 @@ def select_tool_profile(ctx: PromptContext) -> str:
 # 组装 + 缓存
 # ────────────────────────────────────────────────────────────────────────────
 
-_cache: dict[str, str] = {}
 _CACHE_LIMIT = 64
-
-
-def assemble_system_prompt(ctx: PromptContext) -> str:
-    """老接口:返回 system+history 拼成的整段(用于不分层的旧调用方)。"""
-    result = assemble_split_result(ctx)
-    system, history, runtime = result.system, result.history, result.runtime
-    if history:
-        system = system + "\n\n---\n\n" + history if system else history
-    if runtime:
-        system = system + "\n\n---\n\n" + runtime if system else runtime
-    return system
-
-
-def assemble_split(ctx: PromptContext) -> tuple[str, str]:
-    """分层拼装:返回 (system_text, history_text)。
-
-    - system_text: TIER='s' 段 + factory section,每次 LLM 调用必发
-    - history_text: TIER='h' 段 + TIER='od' 段,首轮注入 messages 后不重发
-    """
-    result = assemble_split_result(ctx)
-    return result.system, result.history
 
 
 def assemble_split_result(ctx: PromptContext) -> PromptAssemblyResult:
@@ -253,12 +239,14 @@ def assemble_split_result(ctx: PromptContext) -> PromptAssemblyResult:
             s_blocks.append(text)
         else:  # 'h' 或 'od' 都进 history
             h_blocks.append(text)
-        stats.append(PromptSectionStat(
+        stats.append(
+            PromptSectionStat(
             name=sec.name,
             trigger=sec.trigger,
             tier=sec.tier,
             chars=len(text),
-        ))
+            )
+        )
 
     # factory section 始终进 system(实时数据,每次必更)
     namespaces = tuple(select_tool_namespaces(ctx))
@@ -274,13 +262,15 @@ def assemble_split_result(ctx: PromptContext) -> PromptAssemblyResult:
         )
         if text:
             runtime_text = text.rstrip()
-            stats.append(PromptSectionStat(
+            stats.append(
+                PromptSectionStat(
                 name=rt_sec.name,
                 trigger=rt_sec.trigger,
                 tier=rt_sec.tier,
                 chars=len(runtime_text),
                 source="factory",
-            ))
+                )
+            )
 
     sep = "\n\n---\n\n"
     return PromptAssemblyResult(
@@ -294,27 +284,7 @@ def assemble_split_result(ctx: PromptContext) -> PromptAssemblyResult:
     )
 
 
-def get_system_prompt(ctx: PromptContext) -> str:
-    key = ctx.cache_key()
-    cached = _cache.get(key)
-    if cached is not None:
-        return cached
-
-    if len(_cache) >= _CACHE_LIMIT:
-        _cache.clear()
-
-    result = assemble_system_prompt(ctx)
-    _cache[key] = result
-    return result
-
-
 _split_cache: dict[str, PromptAssemblyResult] = {}
-
-
-def get_split_prompt(ctx: PromptContext) -> tuple[str, str]:
-    """返回 (system, history) 分层版本,带 cache。"""
-    result = get_split_prompt_result(ctx)
-    return result.system, result.history
 
 
 def get_split_prompt_result(ctx: PromptContext) -> PromptAssemblyResult:
@@ -332,14 +302,10 @@ def get_split_prompt_result(ctx: PromptContext) -> PromptAssemblyResult:
     return result
 
 
-def invalidate_cache() -> None:
-    _cache.clear()
-    _split_cache.clear()
-
-
 # ────────────────────────────────────────────────────────────────────────────
 # 状态衍生
 # ────────────────────────────────────────────────────────────────────────────
+
 
 def derive_status_flags(state: dict) -> dict[str, bool]:
     return {

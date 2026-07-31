@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -209,14 +209,14 @@ async def _ensure_project_mode_for_type(
 _NODE_FIELD_SCHEMA: dict[str, dict] = {
     "text": {
         "required": [],
-        "optional": ["title", "content", "description", "references", "depends_on"],
+        "optional": ["title", "content", "description", "references"],
         "description": "通用文本节点。用于 brief、故事、设定、镜头清单、制作说明等模型自定义结构；正文需要模型写入 fields.content，node.run 只保存已有正文。",
     },
     "image": {
         "required": ["prompt", "aspect_ratio", "resolution"],
         "optional": [
             "title", "description", "quality",
-            "reference_images", "references", "depends_on", "seed",
+            "references", "seed",
             "purpose", "prompt_source",
         ],
         "description": "通用图片节点。模型必须自己写最终图片 prompt、aspect_ratio 和精确像素 resolution；后端只按 prompt/fields/references 调图片服务，不判断它是人物、场景、分镜、首尾帧或故事模板。",
@@ -225,8 +225,7 @@ _NODE_FIELD_SCHEMA: dict[str, dict] = {
         "required": ["prompt"],
         "optional": [
             "title", "description", "duration_seconds", "aspect_ratio", "resolution",
-            "reference_images", "reference_videos", "reference_audios", "media_references",
-            "references", "depends_on", "video_mode", "mode",
+            "references", "video_mode", "mode",
             "first_frame_asset_id", "last_frame_asset_id",
             "generate_audio", "watermark", "return_last_frame", "seed",
             "priority", "execution_expires_after", "safety_identifier", "tools",
@@ -240,7 +239,7 @@ _NODE_FIELD_SCHEMA: dict[str, dict] = {
             "title", "description", "style", "instrumental", "format", "duration_seconds",
             "voice", "speed", "instructions",
             "negative_tags", "custom_mode", "callback_url",
-            "references", "depends_on",
+            "references",
         ],
         "description": "通用纯音频节点。模型必须自己写最终音频 prompt；TTS 语音可写 voice/speed/instructions，音乐可写 style/instrumental；后端只按 prompt/fields 调已配置的 audio provider。",
     },
@@ -361,15 +360,6 @@ async def _merge_stage_into_fusion(
                 if isinstance(fallback_value, str) and fallback_value.strip():
                     direct["url"] = fallback_value.strip()
                     break
-        if not any(isinstance(url, str) and url for url in direct.values()):
-            for key in ("output", "result", "images", "data", "history", "media_history"):
-                if key not in value:
-                    continue
-                candidate = _media_from_output(value.get(key))
-                if candidate:
-                    direct.update(candidate)
-                    break
-
         if not any(isinstance(url, str) and url for url in direct.values()):
             path_candidates = [
                 value.get("path"),
@@ -735,14 +725,12 @@ _MAX_4K_DIMENSION = 3840
 _DIRECT_INPUT_PATCH_KEYS = {
     "aspect_ratio",
     "content",
-    "depends_on",
     "description",
     "duration",
     "duration_seconds",
     "first_frame_asset_id",
     "image_prompt",
     "last_frame_asset_id",
-    "media_references",
     "mode",
     "negative_prompt",
     "no_visual_references",
@@ -752,9 +740,6 @@ _DIRECT_INPUT_PATCH_KEYS = {
     "prompt_review",
     "purpose",
     "quality",
-    "reference_audios",
-    "reference_images",
-    "reference_videos",
     "references",
     "resolution",
     "seed",
@@ -937,7 +922,7 @@ def _prompt_review_required_payload(
             "content_preview": str(fields.get("content") or fields.get("prompt") or "")[:600],
             "fields": {
                 key: fields.get(key)
-                for key in ("aspect_ratio", "resolution", "duration_seconds", "quality", "purpose", "references", "depends_on")
+                for key in ("aspect_ratio", "resolution", "duration_seconds", "quality", "purpose", "references")
                 if fields.get(key) not in (None, "", [], {})
             },
         },
@@ -1062,8 +1047,8 @@ async def _normalize_node_reference_image_for_render(project_id: str, text: str)
         return "", "", False
     if node.get("type") != "image":
         title = str(node.get("title") or node_id)
-        return "", f"reference_images 已跳过非图片节点 {title}", True
-    warning = "" if prefixed else f"reference_images 已将裸节点 ID/节点编号 {text} 规范化为 node:{public_node_id_from_dict(node)}"
+        return "", f"references 已跳过非图片节点 {title}", True
+    warning = "" if prefixed else f"references 已将裸节点 ID/节点编号 {text} 规范化为 node:{public_node_id_from_dict(node)}"
     return f"node:{node_id}", warning, True
 
 
@@ -1109,7 +1094,7 @@ async def _normalize_reference_images_for_render(
         if text.startswith("upload:"):
             text = _storage_relative_upload_reference(text)
         if text.startswith("ref_") or text.startswith("@"):
-            warnings.append(f"reference_images 未能解析 {text};请改用 node:<编号>、upload:<rel_path>、asset:<id> 或图片路径")
+            warnings.append(f"references 未能解析 {text};请改用 node:<编号>、upload:<rel_path>、asset:<id> 或图片路径")
             continue
         else:
             node_ref, node_warning, handled_node_ref = await _normalize_node_reference_image_for_render(project_id, text)
@@ -1314,15 +1299,14 @@ async def _reference_images_for_media_run(
     project_id: str,
     fields: dict[str, Any],
 ) -> tuple[list[str], list[str]]:
-    explicit_refs, warnings = await _normalize_reference_images_for_render(
-        project_id,
-        fields.get("reference_images") or [],
-    )
     semantic_refs = _coerce_reference_values(
         fields.get("references"),
-        fields.get("reference_images"),
         include_roles=_MEDIA_REFERENCE_ROLES,
         exclude_roles=_DIRECT_IMAGE_SOURCE_ROLES,
+    )
+    explicit_refs, warnings = await _normalize_reference_images_for_render(
+        project_id,
+        semantic_refs,
     )
     node_refs, node_warnings = await _image_node_reference_images_for_video(project_id, semantic_refs)
     merged: list[str] = []
@@ -1368,13 +1352,6 @@ def _reference_image_mention_note(fields: dict[str, Any], reference_images: list
         for index, ref in enumerate(reference_images)
         if _reference_lookup_key(ref)
     }
-    raw_reference_images = fields.get("reference_images") or []
-    if not isinstance(raw_reference_images, list):
-        raw_reference_images = [raw_reference_images]
-    for index, ref in enumerate(raw_reference_images):
-        key = _reference_lookup_key(ref)
-        if key and key not in index_by_ref:
-            index_by_ref[key] = index + 1
     rows: list[str] = []
     for item in mentions:
         ref = str(item.get("ref") or "").strip()
@@ -1667,7 +1644,7 @@ async def _direct_image_source_output(
                 "images": [image],
                 "n_requested": 1,
                 "n_succeeded": 1,
-                "reference_images": [],
+                "resolved_reference_images": [],
                 "reference_warnings": warnings,
             }, None, warnings
         if error:
@@ -1727,155 +1704,6 @@ async def _check_mode_and_guide_gate(
         }
     return True, None
 
-
-async def _scan_unfinished_nodes(project_id: str) -> list[dict]:
-    """扫描项目所有节点，返回未完成节点列表。
-
-    判定规则（复用 node_check_readiness 逻辑）：
-    - status=failed → 未完成
-    - status=running（中断遗留）→ 未完成
-    - 图融合类节点：提示词 stage 不存在/非 completed，或图 stage 不存在/无 URL → 未完成
-    - 非图节点：output 为空 → 未完成
-    - status=completed 且所有阶段齐全 → 已完成（不在列表中）
-    """
-    nodes = await canvas_tools.list_nodes(project_id)
-    if not isinstance(nodes, list):
-        return []
-
-    unfinished: list[dict] = []
-    for n in nodes:
-        if not isinstance(n, dict):
-            continue
-        nid = n.get("id", "")
-        ntype = n.get("type", "")
-        nstatus = n.get("status", "")
-        ntitle = n.get("title", "")
-
-        if n.get("superseded"):
-            continue
-
-        # status=failed 永远算未完成
-        if nstatus == "failed":
-            output = n.get("output") or {}
-            err_msg = ""
-            if isinstance(output, dict) and output.get("type") == "fusion":
-                for s in (output.get("stages") or []):
-                    if isinstance(s, dict) and s.get("status") == "failed":
-                        err_msg = s.get("error") or "stage 失败"
-                        break
-            unfinished.append({
-                "node_id": nid,
-                "type": ntype,
-                "title": ntitle,
-                "status": "failed",
-                "reason": err_msg or (n.get("error_message") or "节点失败"),
-                "suggested_action": "在原节点调用 node.run(action='render') 或 node.run(force) 重试；未经用户明确要求不要删除",
-            })
-            continue
-
-        # status=running 超过任务超时窗口 → 视为服务重启/连接中断遗留，
-        # 自动回收成 failed，避免永久占住 node.create 门禁。
-        if nstatus == "running":
-            updated_at_raw = n.get("updated_at")
-            updated_at = None
-            if isinstance(updated_at_raw, str):
-                try:
-                    updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
-                    if updated_at.tzinfo is not None:
-                        updated_at = updated_at.replace(tzinfo=None)
-                except ValueError:
-                    updated_at = None
-            if updated_at and updated_at < datetime.utcnow() - timedelta(seconds=STALE_RUNNING_SECONDS):
-                err_text = "任务执行中断或超时，已自动标记失败。请在原节点重试。"
-                await canvas_tools.update_node(
-                    nid, {"status": "failed", "error_message": err_text},
-                )
-                unfinished.append({
-                    "node_id": nid,
-                    "type": ntype,
-                    "title": ntitle,
-                    "status": "failed",
-                    "reason": err_text,
-                    "suggested_action": "在原节点调用 node.run(action='render') 或 node.run(force) 重试；未经用户明确要求不要删除",
-                })
-                continue
-            unfinished.append({
-                "node_id": nid,
-                "type": ntype,
-                "title": ntitle,
-                "status": "running",
-                "reason": "节点被中断，状态仍为 running",
-                "suggested_action": "在原节点调用 node.run(action='render') 或 node.run(force) 重试；未经用户明确要求不要删除",
-            })
-            continue
-
-        # Only current generic canvas node types participate in readiness checks.
-        if ntype not in NODE_TYPES:
-            continue
-
-        if ntype == "image":
-            output = n.get("output") or {}
-            if isinstance(output, dict) and any(output.get(k) for k in ("url", "local_url", "remote_url")):
-                continue
-            stages: list[dict] = []
-            if isinstance(output, dict) and output.get("type") == "fusion":
-                raw = output.get("stages")
-                if isinstance(raw, list):
-                    stages = [s for s in raw if isinstance(s, dict)]
-            by_name = {s.get("name"): s for s in stages if s.get("name")}
-            img_stage = by_name.get("图片")
-
-            missing_stages: list[str] = []
-            if not img_stage or img_stage.get("status") != "completed" or not _stage_has_image_url(img_stage):
-                missing_stages.append("图片")
-
-            if missing_stages:
-                unfinished.append({
-                    "node_id": nid,
-                    "type": ntype,
-                    "title": ntitle,
-                    "status": nstatus,
-                    "reason": f"缺阶段: {', '.join(missing_stages)}",
-                    "suggested_action": "确认 prompt 后在原节点调用 node.run(node_id) 或 node.run(action='render') 出图",
-                })
-            continue
-
-        # 非图节点：output 为空
-        output = n.get("output")
-        output_empty = (
-            output is None
-            or (isinstance(output, dict) and not output)
-            or (isinstance(output, list) and not output)
-        )
-        if output_empty:
-            unfinished.append({
-                "node_id": nid,
-                "type": ntype,
-                "title": ntitle,
-                "status": nstatus,
-                "reason": "output 为空，尚未生成内容",
-                "suggested_action": "在原节点调用 node.run(node_id) 生成内容；未经用户明确要求不要删除",
-            })
-
-    return unfinished
-
-
-async def node_list_unfinished(project_id: str) -> dict:
-    """列出画布上所有未完成节点，供 Agent 决定是否原地修复。
-
-    未完成 = 没出图的 image 节点 / 没写内容或没产物的 text/video/audio 节点 / 失败节点 / 中断的 running 节点。
-    """
-    unfinished = await _scan_unfinished_nodes(project_id)
-    return {
-        "ok": True,
-        "unfinished_count": len(unfinished),
-        "unfinished": unfinished,
-        "next_action": (
-            "保留已有节点。用户要求修复时在原节点重试；用户明确要求新建时可以创建独立新节点。未经用户要求不要删除。"
-            if unfinished
-            else "当前没有未完成节点，可以继续创建新节点。"
-        ),
-    }
 
 
 def _client_ref_key(value: Any) -> str:
@@ -1937,7 +1765,7 @@ def _resolve_batch_create_refs(
         return fields, parent_node_id, None
     unresolved: list[str] = []
     resolved_fields = dict(fields)
-    for key in ("depends_on", "references", "reference_images"):
+    for key in ("references",):
         if key not in resolved_fields:
             continue
         value = resolved_fields[key]
@@ -1983,7 +1811,7 @@ async def _node_create_one(
 
     Args:
       type: 必须是 text / image / video / audio
-      fields: 通用字段；text 正文写 fields.content；视频时长/比例/制作路径/依赖写 fields.duration_seconds/aspect_ratio/production_path/references/depends_on
+      fields: 通用字段；text 正文写 fields.content；视频时长/比例/制作路径/依赖写 fields.duration_seconds/aspect_ratio/production_path/references
       name: 短标题(可选,后端会按 type 推断)
       prompt: 图片/视频类节点的提示词
       parent_node_id: 可选,创建后自动连边到该父节点
@@ -2015,7 +1843,7 @@ async def _node_create_one(
     if not gate_ok:
         return gate_err  # 包含详细 error_kind / required_action / hint
 
-    # Gate 3:不做业务流程顺序判断。显式 depends_on/references 会通过连边表达依赖。
+    # Gate 3:不做业务流程顺序判断。显式 references 会通过连边表达依赖。
     state = await _read_project_state(project_id)
     if state.get("project_mode") != "single_node":
         ok, dep_err, missing = await _check_node_deps(project_id, type, state, fields)
@@ -2084,7 +1912,7 @@ async def _node_create_one(
         except Exception as exc:
             node["edge_warning"] = f"连边失败:{exc}"
 
-    # 自动建拓扑连线只使用模型显式写入的 references/depends_on/reference_images。
+    # 自动建拓扑连线只使用模型显式写入的 references。
     # 后端不根据业务类型推导制作链路。
     try:
         await _auto_connect_topology(project_id, node["id"], type, fields)
@@ -2228,7 +2056,7 @@ async def _auto_connect_topology(project_id: str, node_id: str, node_type: str, 
             pass
 
     raw_refs: list[Any] = []
-    for key in ("depends_on", "references", "reference_images"):
+    for key in ("references",):
         value = fields.get(key)
         if isinstance(value, list):
             raw_refs.extend(value)
@@ -2573,113 +2401,6 @@ def _completed_image_url_from_output(output: Any, *, include_direct: bool = True
     return ""
 
 
-async def node_check_readiness(node_id: str) -> dict:
-    """扫节点的"信息完整度",返回逐项 true/false 清单。失败修复第一步。
-
-    判定规则:
-    - input 里 _NODE_FIELD_SCHEMA[type].required 每个字段非空 → field 项 ok
-    - image 节点:output 里有 url/local_url/remote_url 或 fusion 图片阶段 completed
-    - text/video 节点:output 非空 + 非 {} → output 项 ok
-    - depends_on 在 single_node 模式下返回 [],提示语去掉递归部分
-
-    LLM 看到 ready=False → 按 missing 补字段或 force run;有 depends_on 先递归往上验。
-    """
-    node = await canvas_tools.get_node(node_id)
-    if not isinstance(node, dict) or node.get("error"):
-        return {"ok": False, "error": node.get("error") if isinstance(node, dict) else "节点不存在"}
-
-    node_type = node.get("type")
-    if node_type not in NODE_TYPES:
-        return {
-            "ok": False,
-            "error": f"未知节点类型 {node_type!r}",
-            "node_id": node_id,
-        }
-
-    project_id = node.get("project_id") or ""
-    state = await _read_project_state(project_id) if project_id else {}
-    project_mode = state.get("project_mode")
-
-    schema = _NODE_FIELD_SCHEMA.get(node_type, {})
-    required_fields: list[str] = list(schema.get("required") or [])
-    fields = node.get("input") or {}
-
-    checklist: list[dict] = []
-    missing: list[str] = []
-
-    for f in required_fields:
-        ok = _field_filled(fields.get(f))
-        item = {"item": f, "ok": ok, "kind": "field"}
-        if not ok:
-            item["reason"] = "字段为空"
-            missing.append(f)
-        checklist.append(item)
-
-    output = node.get("output")
-    is_fusion_type = node_type in _SUBJECT_BY_TYPE
-
-    if is_fusion_type:
-        if isinstance(output, dict) and any(output.get(k) for k in ("url", "local_url", "remote_url")):
-            checklist.append({"item": "图片", "ok": True, "kind": "output"})
-        else:
-            stages: list[dict] = []
-            if isinstance(output, dict) and output.get("type") == "fusion":
-                raw_stages = output.get("stages")
-                if isinstance(raw_stages, list):
-                    stages = [s for s in raw_stages if isinstance(s, dict)]
-            by_name = {s.get("name"): s for s in stages if s.get("name")}
-            s = by_name.get("图片")
-            if not s or s.get("status") != "completed" or not _stage_has_image_url(s):
-                checklist.append({
-                    "item": "图片", "ok": False, "kind": "output",
-                    "reason": "缺少已完成图片 URL",
-                })
-                missing.append("图片")
-            else:
-                checklist.append({"item": "图片", "ok": True, "kind": "stage"})
-    else:
-        # 文本类节点:output 非空就算 ok
-        ok = isinstance(output, (dict, list)) and bool(output)
-        item = {"item": "output", "ok": ok, "kind": "output"}
-        if not ok:
-            item["reason"] = "output 为空,需要 node.run 生成内容"
-            missing.append("output")
-        checklist.append(item)
-
-    # 依赖列表:single_node 模式不要求依赖
-    if project_mode == "single_node":
-        depends_on: list[str] = []
-    else:
-        depends_on = list(_NODE_DEPENDENCIES.get(node_type, []))
-
-    ready = not missing
-
-    if ready:
-        hint = "本节点信息齐全。如果之前是失败状态,可直接 node.run(force) 重跑;否则无需操作。"
-    elif depends_on:
-        hint = (
-            f"本节点缺 {missing}。先对每个上游 type {depends_on} 调 node.list 找节点,"
-            f"再 node.get 逐个看 status/output/stages;上游完成后再回头补本节点字段并 node.run force。"
-        )
-    else:
-        hint = (
-            f"本节点缺 {missing}。"
-            f"field 类直接 node.update 补字段;stage 类直接 node.run(action='force') 触发生成。"
-        )
-
-    return {
-        "ok": True,
-        "node_id": node_id,
-        "type": node_type,
-        "status": node.get("status"),
-        "ready": ready,
-        "checklist": checklist,
-        "missing": missing,
-        "depends_on": depends_on,
-        "project_mode": project_mode,
-        "next_action_hint": hint,
-    }
-
 
 def _normalize_node_update_patch(node: dict, patch: dict) -> tuple[dict, dict | None]:
     """Accept common Agent field patch shapes and turn them into DB-safe keys."""
@@ -2987,23 +2708,6 @@ async def node_update(
     }
 
 
-async def node_delete(node_id: str, cascade: bool = True, project_id: str = "") -> dict:
-    """删除通用节点。cascade 参数仅保留为工具入参，不触发业务类型级联。"""
-    resolved_node_id = await _resolve_agent_node_id(project_id, node_id)
-    if not resolved_node_id:
-        return {
-            "ok": False,
-            "error": "Current project context is missing; backend could not resolve the node number",
-            "error_kind": "missing_project_context",
-            "node_id": node_id,
-            "hint": "节点编号由后端按当前项目自动解析；请检查 chat stream 是否注入了当前项目上下文。",
-        }
-    node = await canvas_tools.get_node(resolved_node_id)
-    if node.get("error"):
-        return node
-
-    return await canvas_tools.delete_node(resolved_node_id)
-
 
 def _node_search_blob(node: dict[str, Any]) -> str:
     return search_blob(
@@ -3171,7 +2875,7 @@ NodeRunner = Callable[[str, str, dict], Awaitable[dict]]
 
 
 def _visual_prompt_from_fields(f: dict, *, include_prompt: bool = True) -> str:
-    """Return the model/user supplied visual prompt, accepting legacy aliases.
+    """Return the model/user supplied visual prompt from supported prompt fields.
 
     The agent often writes `image_prompt` or `visual_prompt` from a guide. Render
     must treat those as first-class prompt text instead of generating a generic
@@ -3320,8 +3024,6 @@ _IMAGE_RENDER_FRESHNESS_KEYS = {
     "seed",
     "style",
     "references",
-    "reference_images",
-    "depends_on",
 }
 
 
@@ -3479,7 +3181,7 @@ async def _render_image_node(project_id: str, node_id: str, f: dict, node_type: 
         {},
         image_result,
         prompt,
-        {**f, "reference_images": reference_images},
+        {**f, "resolved_reference_images": reference_images},
     )
     if warning:
         merged["model_warning"] = warning
@@ -3561,7 +3263,7 @@ def _merge_image_output(text_meta: dict, image_result: Any, prompt: str, f: dict
         (image_result.get("model") if isinstance(image_result, dict) else None)
         or f.get("model")
     )
-    merged["reference_images"] = f.get("reference_images") or []
+    merged["resolved_reference_images"] = f.get("resolved_reference_images") or []
     if isinstance(image_result, dict) and not image_result.get("ok"):
         image_error = image_result.get("error") or image_result.get("provider_msg") or "image generation failed"
         merged["image_error"] = image_error
@@ -3577,14 +3279,12 @@ async def _run_text_node(project_id: str, node_id: str, f: dict) -> dict:
     prompt = str(f.get("prompt") or f.get("instruction") or "").strip()
     content = str(f.get("content") or f.get("description") or "").strip()
     references = f.get("references") or []
-    depends_on = f.get("depends_on") or []
     if not prompt:
         return {
             "type": "text",
             "title": f.get("title"),
             "content": content,
             "references": references,
-            "depends_on": depends_on,
         }
 
     history = _text_chat_history_entries(f)
@@ -3641,8 +3341,7 @@ async def _run_text_node(project_id: str, node_id: str, f: dict) -> dict:
             "content": content,
             "prompt": prompt,
             "references": references,
-            "depends_on": depends_on,
-            "reference_images": reference_images,
+            "resolved_reference_images": reference_images,
             "resolved_reference_image_count": len(resolved_reference_image_urls),
             "reference_warnings": reference_warnings,
             "error": "文本模型没有返回内容",
@@ -3663,7 +3362,6 @@ async def _run_text_node(project_id: str, node_id: str, f: dict) -> dict:
     next_fields["content"] = reply
     next_fields["prompt"] = prompt
     next_fields["text_chat_history"] = next_history
-    next_fields["reference_images"] = reference_images
     next_fields.setdefault("llm_task_type", task_type)
     if model_override:
         next_fields["model"] = model_override
@@ -3679,8 +3377,7 @@ async def _run_text_node(project_id: str, node_id: str, f: dict) -> dict:
         "usage": llm_result.get("usage"),
         "usage_total_tokens": history_entry["usage_total_tokens"],
         "references": references,
-        "depends_on": depends_on,
-        "reference_images": reference_images,
+        "resolved_reference_images": reference_images,
         "resolved_reference_image_count": len(resolved_reference_image_urls),
         "reference_warnings": reference_warnings,
     }
@@ -4196,17 +3893,6 @@ def _workflow_render_prompt_template(
     }
 
 
-async def _load_workflow_text_skill(workflow: dict[str, Any]) -> dict[str, Any]:
-    primary = str(workflow.get("primary_skill") or "").strip()
-    if not primary:
-        return {"ok": False, "error": "no primary_skill"}
-    category = str(workflow.get("skill_category") or "prompt").strip()
-    scope = str(workflow.get("skill_scope") or workflow.get("scope") or "").strip()
-    from app.mcp_tools import skill_tools
-
-    return await skill_tools.skill_get_skill(primary, category=category, scope=scope)
-
-
 def _workflow_prompt_template_has_contract(prompt_runtime: dict[str, Any]) -> bool:
     return bool(
         str(prompt_runtime.get("rendered_prompt_template") or "").strip()
@@ -4228,17 +3914,13 @@ async def _workflow_runtime_skill_payload(
             "load_error": None,
         }
 
-    skill = await _load_workflow_text_skill(workflow)
-    skill_content = str(skill.get("content") or "") if skill.get("ok") else ""
-    if len(skill_content) > 12000:
-        skill_content = skill_content[:12000] + "\n\n[skill content truncated]"
     return {
-        "name": skill.get("name") if skill.get("ok") else workflow.get("primary_skill"),
-        "category": skill.get("category") if skill.get("ok") else workflow.get("skill_category"),
-        "scope": skill.get("scope") if skill.get("ok") else workflow.get("skill_scope"),
-        "content": skill_content,
-        "content_mode": "fallback_skill_content" if skill.get("ok") else "missing_skill",
-        "load_error": None if skill.get("ok") else skill.get("error"),
+        "name": workflow.get("primary_skill"),
+        "category": workflow.get("skill_category"),
+        "scope": workflow.get("skill_scope") or workflow.get("scope"),
+        "content": "",
+        "content_mode": "missing_prompt_template",
+        "load_error": "workflow text step is missing its compiled prompt template",
     }
 
 
@@ -4563,7 +4245,7 @@ async def _run_image_node(project_id: str, node_id: str, f: dict) -> dict:
         from app.services import image_operations
 
         rows, cols = _grid_rows_cols(f)
-        source_refs = f.get("source_images") or f.get("source_refs") or f.get("reference_images") or []
+        source_refs = f.get("source_images") or f.get("source_refs") or []
         if not isinstance(source_refs, list):
             source_refs = [source_refs]
         return await image_operations.combine_grid_node(
@@ -4610,9 +4292,6 @@ async def _run_video_node(project_id: str, node_id: str, f: dict) -> dict:
             "video_mode",
             "mode",
             "ratio",
-            "media_references",
-            "reference_videos",
-            "reference_audios",
             "generate_audio",
             "cfg_scale",
             "enhance_prompt",
@@ -4631,6 +4310,8 @@ async def _run_video_node(project_id: str, node_id: str, f: dict) -> dict:
         )
         if key in f
     }
+    if isinstance(f.get("references"), list):
+        video_extra["media_references"] = f["references"]
     generation_prompt = _prompt_with_reference_image_mentions(prompt, f, reference_images)
     result = await media_generation.generate_video(
         project_id=project_id,

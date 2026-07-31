@@ -8,7 +8,6 @@ from app.agent.collaboration_mode import (
     MODE_WORKFLOW_BUILD,
     collaboration_mode_patch,
     current_collaboration_mode,
-    is_workflow_build_mode,
 )
 
 
@@ -19,8 +18,6 @@ def test_collaboration_mode_helpers_support_workflow_build() -> None:
     assert current_collaboration_mode({COLLABORATION_MODE_STATE_KEY: "unknown"}) == MODE_DEFAULT
     assert collaboration_mode_patch(MODE_WORKFLOW_BUILD) == {COLLABORATION_MODE_STATE_KEY: MODE_WORKFLOW_BUILD}
     assert collaboration_mode_patch("bad-mode") == {COLLABORATION_MODE_STATE_KEY: MODE_DEFAULT}
-    assert is_workflow_build_mode({COLLABORATION_MODE_STATE_KEY: MODE_WORKFLOW_BUILD}) is True
-    assert is_workflow_build_mode({COLLABORATION_MODE_STATE_KEY: MODE_PLAN}) is False
 
 
 @pytest.mark.asyncio
@@ -28,7 +25,7 @@ async def test_slash_workflow_enters_workflow_build_mode(monkeypatch) -> None:
     updates: list[tuple[str, dict]] = []
     emitted: list[tuple[str, bool]] = []
 
-    async def fake_project_update_state(project_id: str, patch: dict):
+    async def fake_patch_project_state(project_id: str, patch: dict):
         updates.append((project_id, patch))
         return {"ok": True}
 
@@ -36,7 +33,7 @@ async def test_slash_workflow_enters_workflow_build_mode(monkeypatch) -> None:
         emitted.append((text, ok))
         return None
 
-    monkeypatch.setattr(slash_commands, "project_update_state", fake_project_update_state)
+    monkeypatch.setattr(slash_commands, "patch_project_state", fake_patch_project_state)
     monkeypatch.setattr(slash_commands, "_emit_text", fake_emit_text)
 
     events = [
@@ -62,14 +59,14 @@ async def test_slash_workflow_enters_workflow_build_mode(monkeypatch) -> None:
 async def test_slash_workflow_exit_returns_to_default_mode(monkeypatch) -> None:
     updates: list[tuple[str, dict]] = []
 
-    async def fake_project_update_state(project_id: str, patch: dict):
+    async def fake_patch_project_state(project_id: str, patch: dict):
         updates.append((project_id, patch))
         return {"ok": True}
 
     async def fake_emit_text(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(slash_commands, "project_update_state", fake_project_update_state)
+    monkeypatch.setattr(slash_commands, "patch_project_state", fake_patch_project_state)
     monkeypatch.setattr(slash_commands, "_emit_text", fake_emit_text)
 
     events = [
@@ -89,14 +86,14 @@ async def test_slash_workflow_exit_returns_to_default_mode(monkeypatch) -> None:
 async def test_slash_workflow_rejects_unknown_actions(monkeypatch) -> None:
     updates: list[tuple[str, dict]] = []
 
-    async def fake_project_update_state(project_id: str, patch: dict):
+    async def fake_patch_project_state(project_id: str, patch: dict):
         updates.append((project_id, patch))
         return {"ok": True}
 
     async def fake_emit_text(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(slash_commands, "project_update_state", fake_project_update_state)
+    monkeypatch.setattr(slash_commands, "patch_project_state", fake_patch_project_state)
     monkeypatch.setattr(slash_commands, "_emit_text", fake_emit_text)
 
     events = [

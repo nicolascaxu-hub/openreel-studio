@@ -18,7 +18,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: "/reset", description: "清理失败节点或确认重置", usage: "/reset [failed|full|confirm|cancel]" },
   { name: "/doctor", description: "项目诊断快照" },
   { name: "/status", description: "系统状态(模型/工具/MCP)" },
-  { name: "/config", description: "LLM/图片/视频/Key 配置总览" },
+  { name: "/config", description: "运行时模型与媒体配置总览" },
   { name: "/model", description: "当前模型配置" },
   { name: "/mcp", description: "MCP 连接状态" },
   { name: "/clear", description: "清空对话、任务和流程运行态" },

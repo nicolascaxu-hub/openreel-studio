@@ -9,7 +9,8 @@ from PIL import Image
 from app.agent import context_compact, prompt_dump, vision_context
 from app.agent.tool_output import (
     build_tool_output_envelope,
-    tool_result_messages,
+    tool_result_context_messages,
+    tool_result_message,
     tool_trace_fields,
 )
 from app.agent.vision_context import (
@@ -41,12 +42,14 @@ async def test_upload_images_inject_as_temporary_multimodal_context(tmp_path, mo
     for index in range(10):
         rel_path = f"uploads/ref-{index}.png"
         _write_image(storage / project_id / rel_path, (index * 20 % 255, 20, 40))
-        attachments.append({
-            "kind": "image",
-            "rel_path": rel_path,
-            "filename": f"ref-{index}.png",
-            "mention": f"@图{index + 1}",
-        })
+        attachments.append(
+            {
+                "kind": "image",
+                "rel_path": rel_path,
+                "filename": f"ref-{index}.png",
+                "mention": f"@图{index + 1}",
+            }
+        )
 
     class NoNodeDB:
         async def exec(self, statement):  # pragma: no cover - should not be called
@@ -61,7 +64,10 @@ async def test_upload_images_inject_as_temporary_multimodal_context(tmp_path, mo
         max_dimension=512,
     )
 
-    messages = [{"role": "assistant", "content": "旧回复"}, {"role": "user", "content": "按这些参考图继续"}]
+    messages = [
+        {"role": "assistant", "content": "旧回复"},
+        {"role": "user", "content": "按这些参考图继续"},
+    ]
     apply_vision_context_to_latest_user(messages, "按这些参考图继续", context)
 
     assert context.injected_count == 8
@@ -86,14 +92,18 @@ async def test_explicit_node_references_inject_completed_image_nodes(tmp_path, m
     nodes: list[WorkflowNode] = []
     for index in range(3):
         filename = f"node-{index}.png"
-        _write_image(storage / project_id / "generated_images" / filename, (40, index * 60 % 255, 90))
-        nodes.append(WorkflowNode(
-            project_id=project_id,
-            type="image",
-            title=f"分镜图 {index + 1}",
-            status="completed",
-            output_json=json.dumps({"url": f"/api/media/{project_id}/{filename}"}),
-        ))
+        _write_image(
+            storage / project_id / "generated_images" / filename, (40, index * 60 % 255, 90)
+        )
+        nodes.append(
+            WorkflowNode(
+                project_id=project_id,
+                type="image",
+                title=f"分镜图 {index + 1}",
+                status="completed",
+                output_json=json.dumps({"url": f"/api/media/{project_id}/{filename}"}),
+            )
+        )
 
     class FakeResult:
         def all(self):
@@ -145,13 +155,15 @@ def test_prompt_dump_and_compaction_redact_image_data_urls(tmp_path, monkeypatch
     monkeypatch.setenv("DRAMA_PROMPT_DUMP_ENABLED", "1")
     monkeypatch.setattr(prompt_dump, "_DUMP_ROOT", tmp_path)
     data_url = "data:image/png;base64," + ("A" * 5000)
-    messages = [{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "看这张图"},
-            {"type": "image_url", "image_url": {"url": data_url}},
-        ],
-    }]
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "看这张图"},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ],
+        }
+    ]
 
     prompt_dump.dump_llm_request(
         project_id="project-1",
@@ -175,7 +187,9 @@ def test_prompt_dump_and_compaction_redact_image_data_urls(tmp_path, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_vision_metadata_rehydrates_images_from_database_references(tmp_path, monkeypatch) -> None:
+async def test_vision_metadata_rehydrates_images_from_database_references(
+    tmp_path, monkeypatch
+) -> None:
     storage = tmp_path / "storage"
     monkeypatch.setattr(vision_context.settings, "STORAGE_PATH", str(storage))
     monkeypatch.setattr(vision_context.settings, "STORAGE_DIR", str(storage))
@@ -205,13 +219,20 @@ async def test_vision_metadata_rehydrates_images_from_database_references(tmp_pa
     assert rehydrated.images[0].source == "uploads/history.png"
     assert rehydrated.images[0].image_url.startswith("data:image/jpeg;base64,")
     assert "data:image/" not in json.dumps(metadata, ensure_ascii=False)
-    assert context_compact.estimate_tokens([
-        {"role": "user", "content": "看这张图", "_metadata": metadata},
-    ]) >= vision_context.DEFAULT_IMAGE_TOKEN_ESTIMATE
+    assert (
+        context_compact.estimate_tokens(
+            [
+                {"role": "user", "content": "看这张图", "_metadata": metadata},
+            ]
+        )
+        >= vision_context.DEFAULT_IMAGE_TOKEN_ESTIMATE
+    )
 
 
 @pytest.mark.asyncio
-async def test_build_messages_rehydrates_persisted_user_and_tool_vision_context(tmp_path, monkeypatch) -> None:
+async def test_build_messages_rehydrates_persisted_user_and_tool_vision_context(
+    tmp_path, monkeypatch
+) -> None:
     storage = tmp_path / "storage"
     monkeypatch.setattr(vision_context.settings, "STORAGE_PATH", str(storage))
     monkeypatch.setattr(vision_context.settings, "STORAGE_DIR", str(storage))
@@ -224,7 +245,9 @@ async def test_build_messages_rehydrates_persisted_user_and_tool_vision_context(
         VISION_METADATA_KEY: {
             "version": 1,
             "source": "user_message",
-            "images": [{"label": "@图1", "source_kind": "attachment", "source": "uploads/user.png"}],
+            "images": [
+                {"label": "@图1", "source_kind": "attachment", "source": "uploads/user.png"}
+            ],
         }
     }
     assistant_metadata = {
@@ -239,16 +262,24 @@ async def test_build_messages_rehydrates_persisted_user_and_tool_vision_context(
     class FakeResult:
         def all(self):
             return [
-                type("Row", (), {
-                    "role": "assistant",
-                    "content": "我看了图。",
-                    "metadata_json": json.dumps(assistant_metadata, ensure_ascii=False),
-                })(),
-                type("Row", (), {
-                    "role": "user",
-                    "content": "请看图",
-                    "metadata_json": json.dumps(user_metadata, ensure_ascii=False),
-                })(),
+                type(
+                    "Row",
+                    (),
+                    {
+                        "role": "assistant",
+                        "content": "我看了图。",
+                        "metadata_json": json.dumps(assistant_metadata, ensure_ascii=False),
+                    },
+                )(),
+                type(
+                    "Row",
+                    (),
+                    {
+                        "role": "user",
+                        "content": "请看图",
+                        "metadata_json": json.dumps(user_metadata, ensure_ascii=False),
+                    },
+                )(),
             ]
 
     class FakeDB:
@@ -313,7 +344,10 @@ async def test_vision_view_image_returns_multimodal_tool_context(tmp_path, monke
     )
     assert "data:image/" not in json.dumps(tool_trace_fields(envelope), ensure_ascii=False)
 
-    messages = tool_result_messages("call-view-image", envelope)
+    messages = [
+        tool_result_message("call-view-image", envelope),
+        *tool_result_context_messages("call-view-image", envelope),
+    ]
     assert messages[0]["role"] == "tool"
     assert messages[0]["tool_call_id"] == "call-view-image"
     assert messages[1]["role"] == "user"
@@ -387,23 +421,3 @@ async def test_vision_view_image_loads_completed_image_node(tmp_path, monkeypatc
     assert result["node_id"] == "image-node-1"
     assert result["title"] == "分镜图"
     assert result["_model_content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
-
-
-def test_micro_compact_preserves_tool_image_contexts_for_stable_history() -> None:
-    data_url = "data:image/png;base64," + ("A" * 1000)
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": f"tool image {index}"},
-                {"type": "image_url", "image_url": {"url": data_url}},
-            ],
-            "_tool_image_context": True,
-        }
-        for index in range(context_compact.KEEP_RECENT_TOOL_RESULTS + 1)
-    ]
-
-    context_compact.micro_compact(messages)
-
-    assert all(isinstance(message["content"], list) for message in messages)
-    assert all(not message.get("_tool_image_context_compacted") for message in messages)

@@ -22,8 +22,6 @@ function markdownFiles(relativeRoot) {
 const publicDocs = [
   "README.md",
   "README.en.md",
-  "SETUP.md",
-  "SETUP.en.md",
   ...markdownFiles("docs"),
   "apps/api/README.md",
   "apps/api/README.zh-CN.md",
@@ -79,7 +77,6 @@ for (const relativeFile of publicDocs) {
 
 const requiredPairs = [
   ["README.md", "README.en.md"],
-  ["SETUP.md", "SETUP.en.md"],
   ["docs/README.md", "docs/README.en.md"],
   ["docs/zh-CN/getting-started.md", "docs/en/getting-started.md"],
   ["docs/zh-CN/user-guide.md", "docs/en/user-guide.md"],

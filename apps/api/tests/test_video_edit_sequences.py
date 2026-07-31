@@ -217,19 +217,19 @@ async def test_sequence_persistence_revision_conflict_history_and_restore(tmp_pa
 
 
 def test_sequence_contract_rejects_unknown_tracks_and_source_overflow() -> None:
-    legacy_payload = sequence_spec().model_dump(mode="json")
-    legacy_payload.pop("markers")
-    legacy_payload.pop("transitions")
-    for track in legacy_payload["tracks"]:
+    minimal_payload = sequence_spec().model_dump(mode="json")
+    minimal_payload.pop("markers")
+    minimal_payload.pop("transitions")
+    for track in minimal_payload["tracks"]:
         track.pop("height_px")
-    for clip in legacy_payload["clips"]:
+    for clip in minimal_payload["clips"]:
         clip.pop("visual_transform")
-    legacy = video_edit_sequences.SequenceSpec.model_validate(legacy_payload)
-    assert legacy.markers == []
-    assert legacy.transitions == []
-    assert all(track.height_px == 76 for track in legacy.tracks)
-    assert all(clip.visual_transform.scale == 1.0 for clip in legacy.clips)
-    assert all(clip.visual_transform.opacity == 1.0 for clip in legacy.clips)
+    minimal = video_edit_sequences.SequenceSpec.model_validate(minimal_payload)
+    assert minimal.markers == []
+    assert minimal.transitions == []
+    assert all(track.height_px == 76 for track in minimal.tracks)
+    assert all(clip.visual_transform.scale == 1.0 for clip in minimal.clips)
+    assert all(clip.visual_transform.opacity == 1.0 for clip in minimal.clips)
 
     payload = sequence_spec().model_dump(mode="json")
     payload["clips"][0]["track_id"] = "missing"

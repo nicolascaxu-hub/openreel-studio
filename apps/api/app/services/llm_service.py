@@ -30,17 +30,7 @@ _TASK_DEFAULTS = {
     "agent_review": "DEFAULT_REVIEW_MODEL",
     "agent_compact": "DEFAULT_FAST_MODEL",
     "agent_aux": "DEFAULT_FAST_MODEL",
-    # Legacy compatibility only. Runtime code should call agent_loop.
-    "intent_parse": "DEFAULT_FAST_MODEL",
-    "planning": "DEFAULT_FAST_MODEL",
-    "script_generation": "DEFAULT_SCRIPT_MODEL",
     "script_review": "DEFAULT_REVIEW_MODEL",
-    "character_generation": "DEFAULT_TEXT_MODEL",
-    "outline_generation": "DEFAULT_TEXT_MODEL",
-    "storyboard_generation": "DEFAULT_TEXT_MODEL",
-    "image_understanding": "DEFAULT_TEXT_MODEL",
-    "image_prompt_generation": "DEFAULT_TEXT_MODEL",
-    "video_prompt_generation": "DEFAULT_TEXT_MODEL",
     "subagent_node_producer": "DEFAULT_TEXT_MODEL",
     "subagent_image_editor": "DEFAULT_FAST_MODEL",
     "subagent_workflow_spec": "DEFAULT_TEXT_MODEL",
@@ -271,9 +261,7 @@ async def _resolve_config(
         from app.db.models import ModelConfig
 
         candidate_tasks = [task_type]
-        if task_type == "agent_loop":
-            candidate_tasks.append("intent_parse")
-        else:
+        if task_type != "agent_loop":
             fallback_task = _TASK_CONFIG_FALLBACKS.get(task_type)
             if fallback_task:
                 candidate_tasks.append(fallback_task)
@@ -1024,26 +1012,3 @@ class LLMService:
             accept_backend_content=policy["accept_backend_content"],
         )
         return response
-
-
-# Module-level singleton used by planner, mcp_tools, and agent helpers.
-llm_service = LLMService(db=None)
-
-
-async def generate_json(
-    task_type: str,
-    messages: list[dict],
-    db: AsyncSession,
-    system: str | None = None,
-    project_id: str | None = None,
-) -> Any:
-    svc = LLMService(db)
-    result = await svc.generate(task_type, messages, system=system, project_id=project_id)
-    text = result["content"].strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines[-1].strip() == "```":
-            text = "\n".join(lines[1:-1])
-        else:
-            text = "\n".join(lines[1:])
-    return json.loads(text)

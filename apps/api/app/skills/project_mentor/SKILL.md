@@ -1,9 +1,9 @@
 ---
 name: project_mentor
 tool_name: skill.project_mentor
-description: OpenReel project mentor for node-first production, debugging, repair, and prompt hygiene.
-when_to_use: Use for project rules, video workflow selection, node repair, delivery audit, trace/debug guidance, or prompt maintenance.
-tags: [project, mentor, video, production, guide]
+description: OpenReel project mentor for architecture, debugging, repair, and prompt hygiene.
+when_to_use: Use for project rules, node repair, delivery audit, trace/debug guidance, or prompt maintenance.
+tags: [project, mentor, debugging, guide]
 source: skill
 ---
 
@@ -20,11 +20,6 @@ maintain separate canvas/panel state before work appears.
 
 - `overview`: repo layout, commands, and current architecture.
 - `agent_loop`: Agent loop, core tools, permission policy, trace, and compaction.
-- `video_workflow`: default video workflow selection and information gathering.
-- `video_workflow_t2v`: direct text-to-video.
-- `video_workflow_storyboard`: storyboard/grid image driven video.
-- `video_workflow_shot_images`: separate high-quality shot image driven video.
-- `video_workflow_story_template`: story-template board driven video.
 - `production_audit_guide`: final delivery and consistency review.
 - `node_repair_guide`: failed node repair, rerun, and dependency recovery.
 - `slash_commands`: deterministic command surface.
@@ -79,7 +74,6 @@ meta tools for discovering and running low-frequency deferred capabilities.
 
 - `README.md` / `README.en.md`: Chinese and English product entry points.
 - `docs/README.md` / `docs/README.en.md`: language-specific documentation maps.
-- `SETUP.md` / `SETUP.en.md`: compatibility links to the current quick starts.
 - `apps/api/app/agent/prompts/`: short always-loaded prompt sections.
 - `apps/api/app/mcp_tools/registry.py`: tool exposure and core/deferred surface.
 - `apps/api/app/agent/orchestrator.py`: Agent loop and confirmation handling.

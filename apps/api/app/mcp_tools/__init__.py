@@ -1,4 +1,5 @@
 """MCP-style tools (internal first, MCP-compatible signatures)."""
+
 from app.mcp_tools import (
     agent_tools,
     canvas_tools,
@@ -9,9 +10,7 @@ from app.mcp_tools import (
     image_operation_tools,
     media_tools,
     memory_tools,
-    model_tools,
     project_tools,
-    prompt_tools,
     shot_tools,
     skill_tools,
     workflow_tools,
@@ -32,9 +31,7 @@ __all__ = [
     "image_operation_tools",
     "media_tools",
     "memory_tools",
-    "model_tools",
     "project_tools",
-    "prompt_tools",
     "shot_tools",
     "skill_tools",
     "workflow_tools",

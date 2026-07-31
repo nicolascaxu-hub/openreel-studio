@@ -1,7 +1,7 @@
 import pytest
 
 from app.agent import slash_commands
-from app.agent.feature_flags import evaluate_feature_flags, is_feature_enabled_from_env
+from app.agent.feature_flags import evaluate_feature_flags
 from app.mcp_tools.registry import registry
 
 
@@ -56,14 +56,6 @@ def test_feature_env_kill_switch_forces_disabled() -> None:
     assert states["agent.deferred_tools"]["enabled"] is False
     assert states["agent.deferred_tools"]["killed"] is True
     assert states["agent.deferred_tools"]["kill_source"] == "DRAMA_KILL_AGENT_DEFERRED_TOOLS"
-
-
-def test_env_feature_enabled_helper_matches_kill_switch() -> None:
-    assert is_feature_enabled_from_env("agent.deferred_tools", env={}) is True
-    assert is_feature_enabled_from_env(
-        "agent.deferred_tools",
-        env={"DRAMA_KILL_AGENT_DEFERRED_TOOLS": "1"},
-    ) is False
 
 
 def test_feature_global_kill_switch_forces_all_disabled() -> None:

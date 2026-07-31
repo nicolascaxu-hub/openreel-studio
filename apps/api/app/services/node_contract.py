@@ -35,11 +35,6 @@ _FIELD_TYPES: dict[str, dict[str, Any]] = {
     "video_mode": {"type": "string"},
     "mode": {"type": "string"},
     "references": {"type": "array"},
-    "depends_on": {"type": "array"},
-    "reference_images": {"type": "array"},
-    "reference_videos": {"type": "array"},
-    "reference_audios": {"type": "array"},
-    "media_references": {"type": "array"},
 }
 
 _PROJECT_DEFAULT_CONTAINERS = (
@@ -283,20 +278,8 @@ def _reference_counts(fields: dict[str, Any]) -> dict[str, int]:
         slot = role if role in {"first_frame", "last_frame"} else ""
         seen.add((kind, identity, slot))
 
-    for key, kind in (
-        ("reference_images", "images"),
-        ("reference_videos", "videos"),
-        ("reference_audios", "audios"),
-    ):
-        values = fields.get(key)
-        if isinstance(values, list):
-            for item in values:
-                add(kind, item)
-
-    for key in ("references", "media_references"):
-        values = fields.get(key)
-        if not isinstance(values, list):
-            continue
+    values = fields.get("references")
+    if isinstance(values, list):
         for item in values:
             role = node_universal._reference_role(item)
             if "audio" in role:

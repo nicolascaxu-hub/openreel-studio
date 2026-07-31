@@ -14,51 +14,7 @@ function normalizeVideoImageTransport(value?: unknown): string {
 
 function normalizeMediaProvider(
   entry: MediaProviderEntry,
-  imageProtocols: MediaProtocolSummary[] = [],
-  _videoProtocols: MediaProtocolSummary[] = [],
-  audioProtocols: MediaProtocolSummary[] = [],
 ): MediaProviderEntry {
-  if (entry.kind === "video") {
-    return {
-      ...entry,
-      api_format: entry.api_format?.trim() || "universal_adapter",
-      params: { ...(entry.params || {}) },
-    }
-  }
-  if (entry.api_format?.trim() === "universal_adapter") {
-    return { ...entry, api_format: "universal_adapter", params: { ...(entry.params || {}) } }
-  }
-  if (entry.kind === "audio") {
-    const rawApiFormat = entry.api_format?.trim() || "audio_http_v1"
-    const nextParams = { ...(entry.params || {}) }
-    delete nextParams.audio_protocol
-    delete nextParams.protocol
-    const legacyProtocolId =
-      rawApiFormat === "suno_compatible" ? "newapi_suno_music"
-      : ["openai_tts", "tts", "openai_speech", "openai_audio_speech"].includes(rawApiFormat) ? "openai_audio_speech"
-      : ""
-    const catalogProtocolId = String(nextParams.audio_protocol_id || legacyProtocolId || audioProtocols[0]?.id || "").trim()
-    if (catalogProtocolId) nextParams.audio_protocol_id = catalogProtocolId
-    return {
-      ...entry,
-      api_format: "audio_http_v1",
-      params: nextParams,
-    }
-  }
-  if (entry.kind === "image") {
-    const rawApiFormat = entry.api_format?.trim() || "image_http_v1"
-    const nextParams = { ...(entry.params || {}) }
-    delete nextParams.image_protocol
-    delete nextParams.protocol
-    const catalogProtocolId = String(nextParams.image_protocol_id || imageProtocols[0]?.id || "").trim()
-    const shouldUseCatalog = rawApiFormat === "openai" || rawApiFormat === "image_http_v1"
-    if (shouldUseCatalog && catalogProtocolId) nextParams.image_protocol_id = catalogProtocolId
-    return {
-      ...entry,
-      api_format: shouldUseCatalog ? "image_http_v1" : rawApiFormat,
-      params: nextParams,
-    }
-  }
   return { ...entry, params: { ...(entry.params || {}) } }
 }
 
@@ -115,7 +71,7 @@ export function MediaTab({ ctx, kind }: { ctx: ConfigContext; kind: MediaKind })
     || items[0]
 
   const upsert = async (entry: MediaProviderEntry, originalName?: string) => {
-    const normalizedEntry = normalizeMediaProvider(entry, ctx.imageProtocols, ctx.videoProtocols, ctx.audioProtocols)
+    const normalizedEntry = normalizeMediaProvider(entry)
     let next = [...config.media_providers]
     if (originalName) {
       next = next.map((p) =>
@@ -347,7 +303,7 @@ function Row({
   videoProtocols: MediaProtocolSummary[]
   audioProtocols: MediaProtocolSummary[]
 }) {
-  const [draft, setDraft] = useState(() => normalizeMediaProvider(entry, imageProtocols, videoProtocols, audioProtocols))
+  const [draft, setDraft] = useState(() => normalizeMediaProvider(entry))
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   if (!editing) {
@@ -710,7 +666,7 @@ function Row({
         <button onClick={onCancel}
           className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300">取消</button>
         <button
-          onClick={() => onSave(normalizeMediaProvider(draft, imageProtocols, videoProtocols, audioProtocols))}
+          onClick={() => onSave(normalizeMediaProvider(draft))}
           disabled={
             !draft.name.trim()
             || !draft.base_url.trim()

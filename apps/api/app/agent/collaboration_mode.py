@@ -1,4 +1,5 @@
 """Deterministic collaboration-mode helpers for the Agent Loop."""
+
 from __future__ import annotations
 
 import hashlib
@@ -30,10 +31,6 @@ def current_collaboration_mode(state: dict[str, Any] | None) -> str:
 
 def is_plan_mode(state: dict[str, Any] | None) -> bool:
     return current_collaboration_mode(state) == MODE_PLAN
-
-
-def is_workflow_build_mode(state: dict[str, Any] | None) -> bool:
-    return current_collaboration_mode(state) == MODE_WORKFLOW_BUILD
 
 
 def collaboration_mode_patch(mode: str) -> dict[str, str]:

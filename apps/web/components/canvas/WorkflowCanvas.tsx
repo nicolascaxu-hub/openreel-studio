@@ -9701,7 +9701,7 @@ function nodeDirectReferenceIds(
   }
   const input = data?.input
   if (input) {
-    for (const key of ["references", "depends_on", "reference_images"] as const) {
+    for (const key of ["references", "depends_on"] as const) {
       const value = input[key]
       if (Array.isArray(value)) {
         for (const item of value) add(item)
@@ -9709,7 +9709,7 @@ function nodeDirectReferenceIds(
     }
     const fields = asWorkflowObject(input.fields)
     if (fields) {
-      for (const key of ["references", "depends_on", "reference_images"] as const) {
+      for (const key of ["references", "depends_on"] as const) {
         const value = fields[key]
         if (Array.isArray(value)) {
           for (const item of value) add(item)

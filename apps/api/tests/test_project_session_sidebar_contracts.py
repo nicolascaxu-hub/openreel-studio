@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from app.agent import orchestrator
 from app.api import routes_projects
 from app.api.routes_projects import CreateProjectRequest, UpdateProjectRequest
-from app.mcp_tools.project_tools import project_create
 from app.services.project_service import _initial_state
 
 
@@ -52,26 +51,6 @@ def test_project_management_uses_the_left_session_sidebar() -> None:
     assert "<ProjectSessionSidebar />" in project_page
 
 
-def test_project_crud_is_absent_from_slash_command_surfaces() -> None:
-    slash_menu = (
-        PROJECT_ROOT / "apps" / "web" / "components" / "chat" / "SlashMenu.tsx"
-    ).read_text(encoding="utf-8")
-    chat_panel = (
-        PROJECT_ROOT / "apps" / "web" / "components" / "chat" / "ChatPanel.tsx"
-    ).read_text(encoding="utf-8")
-    slash_backend = (
-        PROJECT_ROOT / "apps" / "api" / "app" / "agent" / "slash_commands.py"
-    ).read_text(encoding="utf-8")
-
-    assert 'name: "/project"' not in slash_menu
-    assert 'name: "/project new"' not in slash_menu
-    assert 'name: "/project delete"' not in slash_menu
-    assert "buildProjectSlashCompletions" not in chat_panel
-    assert '"project", "help"' not in slash_backend
-    assert "async def _project_events" not in slash_backend
-    assert "async def _project_delete_events" not in slash_backend
-
-
 def test_project_sidebar_uses_compact_list_and_rest_delete_api() -> None:
     web_api = (PROJECT_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(
         encoding="utf-8"
@@ -90,7 +69,6 @@ def test_project_sidebar_uses_compact_list_and_rest_delete_api() -> None:
 def test_project_session_creation_only_accepts_a_title() -> None:
     assert set(CreateProjectRequest.model_fields) == {"title"}
     assert set(UpdateProjectRequest.model_fields) == {"title"}
-    assert list(project_create.__annotations__) == ["title", "return"]
     assert _initial_state("新会话")["metadata"] == {"title": "新会话"}
 
     with pytest.raises(ValidationError):

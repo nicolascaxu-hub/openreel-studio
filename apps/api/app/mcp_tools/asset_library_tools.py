@@ -44,12 +44,6 @@ _PROJECT_KIND_DIR = {
     "scene": "场景",
     "storyboard": "分镜",
 }
-_LEGACY_KIND_DIRS = {
-    "character": ["characters"],
-    "scene": ["scenes"],
-    "storyboard": ["storyboards"],
-}
-
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}
 _VIDEO_SUFFIXES = {".mp4", ".webm", ".mov", ".m4v"}
 _AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
@@ -93,7 +87,7 @@ def _path_is_within(path: Path, root: Path) -> bool:
 
 
 def _library_roots(lib: dict[str, Any]) -> list[Path]:
-    raw = lib.get("root") or lib.get("shared_root") or lib.get("project_root")
+    raw = lib.get("root")
     if not raw:
         return []
     return [Path(str(raw)).expanduser().resolve()]
@@ -112,16 +106,6 @@ def _kind_dir_name(kind: str) -> str:
 
 def _kind_dir(root: Path, kind: str) -> Path:
     return root / _kind_dir_name(kind)
-
-
-def _kind_dir_candidates(root: Path, kind: str) -> list[Path]:
-    names = [_kind_dir_name(kind), *_LEGACY_KIND_DIRS.get(kind, [])]
-    candidates: list[Path] = []
-    for name in names:
-        for candidate in (root / name, root / "shared" / name):
-            if candidate not in candidates:
-                candidates.append(candidate)
-    return candidates
 
 
 def _mime_for_path(path: Path) -> str:
@@ -469,37 +453,6 @@ async def _get_state(project_id: str) -> dict[str, Any]:
         return json.loads(project.state_json or "{}")
 
 
-async def _set_state(project_id: str, state: dict[str, Any]) -> None:
-    async with session_scope() as session:
-        project = await session.get(Project, project_id)
-        if not project:
-            raise ValueError(f"Project {project_id} not found")
-        project.state_json = json.dumps(state, ensure_ascii=False)
-        session.add(project)
-        await session.commit()
-
-
-async def assets_set_library_path(
-    project_id: str,
-    root: str | None = None,
-    library_root: str | None = None,
-    project_root: str | None = None,
-    shared_root: str | None = None,
-) -> dict[str, Any]:
-    state = await _get_state(project_id)
-    lib = effective_asset_library(state.get("asset_library"), ensure_dirs=True)
-    selected_root = root or library_root or shared_root or project_root
-    if selected_root:
-        p = Path(selected_root).expanduser().resolve()
-        p.mkdir(parents=True, exist_ok=True)
-        lib["root"] = str(p)
-        lib["project_root"] = str(p)
-        lib["shared_root"] = str(p)
-    state["asset_library"] = lib
-    await _set_state(project_id, state)
-    return {"ok": True, "asset_library": lib}
-
-
 async def assets_get_library_path(project_id: str) -> dict[str, Any]:
     state = await _get_state(project_id)
     raw_lib = state.get("asset_library")
@@ -607,7 +560,7 @@ async def _list_library_items(
     lib = effective_asset_library(state.get("asset_library"), ensure_dirs=True)
     root = _library_root(lib)
     if not root.exists():
-        return {"ok": True, "items": [], "root": str(root), "shared_root": str(root), "project_dir": str(root), "count": 0}
+        return {"ok": True, "items": [], "root": str(root), "count": 0}
 
     item_kinds = [kind] if kind else sorted(_LIBRARY_KINDS)
     items: list[dict[str, Any]] = []
@@ -616,7 +569,7 @@ async def _list_library_items(
         item_kind = str(item_kind or "").strip().lower()
         if item_kind not in _LIBRARY_KINDS:
             continue
-        for kind_dir in _kind_dir_candidates(root, item_kind):
+        for kind_dir in [_kind_dir(root, item_kind)]:
             if not kind_dir.exists() or not kind_dir.is_dir():
                 continue
             for file_path in sorted(p for p in kind_dir.iterdir() if p.is_file() and not _is_sidecar_file(p)):
@@ -652,7 +605,7 @@ async def _list_library_items(
         pattern=pattern,
         case_sensitive=case_sensitive,
     )
-    return {"ok": True, "items": items, "root": str(root), "shared_root": str(root), "project_dir": str(root), "count": len(items)}
+    return {"ok": True, "items": items, "root": str(root), "count": len(items)}
 
 
 async def assets_save_to_shared(
@@ -708,7 +661,7 @@ async def assets_list_categories(
     for item_kind in sorted(_LIBRARY_KINDS):
         if kind and item_kind != kind:
             continue
-        for kind_dir in _kind_dir_candidates(root, item_kind):
+        for kind_dir in [_kind_dir(root, item_kind)]:
             if not kind_dir.exists():
                 continue
             for category_dir in sorted(p for p in kind_dir.iterdir() if p.is_dir()):

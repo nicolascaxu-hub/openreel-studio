@@ -56,7 +56,6 @@ async def test_web_chat_create_query_and_delete_single_node(
     _done(create_events)
     _no_contract_error(create_events)
     names = _tool_names(create_events)
-    assert "node.get_creation_guide" not in names, create_events
     assert "node.create" in names, create_events
     assert "node.run" in names, create_events
     assert any(event.get("type") == "agent_round" for event in create_events)

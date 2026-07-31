@@ -64,7 +64,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.agent.prompt_dump import dump_llm_request, new_run_id
 from app.agent.context_compact import (
-    micro_compact,
     auto_compact_needed,
     estimate_tokens,
     save_transcript,
@@ -83,7 +82,6 @@ from app.agent.tool_output import (
 )
 from app.agent.lifecycle_hooks import (
     PermissionDenialState,
-    run_before_turn,
     run_before_model_call,
     run_pre_tool_use,
     run_stop_after_text_response,
@@ -104,7 +102,6 @@ from app.mcp_tools.registry import registry
 from app.services.llm_service import LLMService, is_context_length_error
 from app.services.node_service import NodeService
 from app.services.project_service import ProjectService
-from app.services.version_service import VersionService
 
 logger = logging.getLogger(__name__)
 
@@ -208,8 +205,6 @@ def _mentor_guide_cache_payload(result: dict[str, Any]) -> dict[str, Any] | None
     guidance = str(result.get("guidance") or "")
     return {
         "topic": topic,
-        "detail": str(result.get("detail") or "summary"),
-        "has_full_guide": bool(result.get("has_full_guide")),
         "guidance_summary": _compact_cached_guide_summary(guidance),
         "guidance_hash": _cached_guide_hash(guidance),
         "guidance_chars": len(guidance),
@@ -259,10 +254,6 @@ def _agent_run_agent_name(tool_name: str, tool_args: dict[str, Any]) -> str:
     if tool_name != "tool.execute" or _deferred_tool_target(tool_args) != "agent.run":
         return ""
     return str(_deferred_tool_input(tool_args).get("agent") or "").strip()
-
-
-def _template_lookup_state_payload(tool_args: dict[str, Any], result: Any) -> dict[str, Any] | None:
-    return None
 
 
 def _agent_review_state_payload(tool_args: dict[str, Any], result: Any) -> dict[str, Any] | None:
@@ -402,10 +393,6 @@ _KIND_LABEL = {
     "other": "文件",
 }
 
-# 画布事件投递支持两类 sink：
-# 1) 无 project_id: 写入本地 queue，由 stream 主循环兼容路径（如旧子 agent 调用）drain。
-# 2) 有 project_id: 直达项目级订阅者（/api/chat/events + 实时 stream 合并）。
-_canvas_event_queue: asyncio.Queue = asyncio.Queue()  # 兼容旧 sub-agent 路径
 _project_subscribers: dict[str, list[asyncio.Queue]] = {}
 
 
@@ -423,22 +410,13 @@ def _remove_subscriber(project_id: str, q: asyncio.Queue) -> None:
         del _project_subscribers[project_id]
 
 
-async def emit_canvas_event(event: dict, project_id: str | None = None) -> None:
-    """画布事件多路投递:
-       - 若给了 project_id，优先 fan-out 到该项目所有长连订阅者。
-       - 若未给 project_id，塞入本地 queue，给主 stream 的历史兼容路径 drain。
-    """
-    if project_id is None:
-        await _canvas_event_queue.put(event)
-    else:
-        # 带 project_id 的事件应走 /chat/events 订阅路径，避免与主循环旧 drain 重复。
-        pass
-    if project_id:
-        for q in list(_project_subscribers.get(project_id) or []):
-            try:
-                q.put_nowait(event)
-            except asyncio.QueueFull:
-                pass  # 慢消费端不阻塞投递
+async def emit_canvas_event(event: dict, project_id: str) -> None:
+    """把画布事件投递给指定项目的所有实时订阅者。"""
+    for q in list(_project_subscribers.get(project_id) or []):
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            pass  # 慢消费端不阻塞投递
 
 
 async def emit_project_ui_event(event: dict) -> int:
@@ -490,7 +468,6 @@ def _subagent_trace_records(result: Any) -> list[dict[str, Any]]:
 
 
 _TRACE_OMITTED_TOOL_ARG_KEYS = {
-    "_requires_plan",
     "_state",
     "_user_message",
     "project_id",
@@ -790,51 +767,6 @@ def _tool_confirmation_continuation_message(
     return "\n".join(lines)
 
 
-async def build_base_system(
-    state: dict,
-    model_configs: list[dict] | None = None,
-    project_id: str | None = None,
-    user_message: str = "",
-    attachments: list[dict] | None = None,
-    canvas_summary: dict | None = None,
-) -> str:
-    """旧接口:返回完整 system(等价 system+history 拼接)。供向后兼容。"""
-    result = await build_split_system_result(
-        state, model_configs, project_id, user_message, attachments,
-        canvas_summary,
-    )
-    system, history, runtime = result.system, result.history, result.runtime
-    if history:
-        system = system + "\n\n---\n\n" + history if system else history
-    if runtime:
-        system = system + "\n\n---\n\n" + runtime if system else runtime
-    return system
-
-
-async def build_split_system(
-    state: dict,
-    model_configs: list[dict] | None = None,
-    project_id: str | None = None,
-    user_message: str = "",
-    attachments: list[dict] | None = None,
-    canvas_summary: dict | None = None,
-) -> tuple[str, str]:
-    """新接口:返回 (system, history) 分层版本。
-
-    - system: 每次 LLM 调用都重发的稳定前缀(身份/工作循环/核心规则)
-    - history: 首轮注入 messages 后不再重发(详细规则/澄清/审计等)
-    """
-    result = await build_split_system_result(
-        state,
-        model_configs=model_configs,
-        project_id=project_id,
-        user_message=user_message,
-        attachments=attachments,
-        canvas_summary=canvas_summary,
-    )
-    return result.system, result.history
-
-
 async def build_split_system_result(
     state: dict,
     model_configs: list[dict] | None = None,
@@ -922,7 +854,6 @@ class AgentOrchestrator:
         self.db = db
         self.project_service = ProjectService(db)
         self.node_service = NodeService(db)
-        self.version_service = VersionService(db)
         self.llm_service = LLMService(db)
 
     @staticmethod
@@ -1100,10 +1031,7 @@ class AgentOrchestrator:
         terminal_error: dict[str, Any] | None,
         tool_errors: list[dict[str, Any]],
         step_index: int,
-        project_switched: bool,
     ) -> str:
-        if project_switched:
-            return ""
         error_result = terminal_error or (tool_errors[-1] if tool_errors else None)
         if error_result:
             text = cls._tool_error_user_text(error_result)
@@ -1394,19 +1322,6 @@ class AgentOrchestrator:
         message_for_agent = message
         user_message_already_saved = False
         pre_loop_assistant_text = ""
-
-        # Clear only the legacy per-turn node guide marker. Project mentor
-        # digests live in _mentor_guides_loaded and are kept across turns so the
-        # model can reuse already-read guide summaries without re-querying.
-        before_turn = run_before_turn(state)
-        if before_turn.state_patch:
-            state.update(before_turn.state_patch)
-            try:
-                await self.project_service.update_project_state(
-                    project_id, before_turn.state_patch,
-                )
-            except Exception:
-                logger.exception("reset guide_loaded failed")
 
         agent_prefs = await _load_agent_settings()
         turn_budget = TurnBudgetState(TurnBudgetLimits.from_settings(agent_prefs))
@@ -1853,8 +1768,6 @@ class AgentOrchestrator:
             PromptContext,
             derive_status_flags,
             select_tool_profile,
-            select_tool_namespaces,
-            should_require_plan,
         )
         _ctx = PromptContext(
             project_id=project_id,
@@ -1865,7 +1778,6 @@ class AgentOrchestrator:
             **derive_status_flags(state),
         )
         tools = registry.get_tools_for_agent_loop(
-            namespaces=select_tool_namespaces(_ctx),
             profile=select_tool_profile(_ctx),
         )
         if _ctx.collaboration_mode == "plan":
@@ -1875,7 +1787,6 @@ class AgentOrchestrator:
                 for tool in tools
                 if str((tool.get("function") or {}).get("name") or "").replace("__", ".") in allowed_tools
             ]
-        _requires_plan = should_require_plan(_ctx)
         _visible_tool_names = visible_tool_names(tools)
         trace.emit(
             "prompt_assembly",
@@ -1897,7 +1808,6 @@ class AgentOrchestrator:
             iteration=0,
             transition_reason="agent_loop_ready",
             visible_tools=_visible_tool_names,
-            requires_plan=_requires_plan,
             project_mode=state.get("project_mode"),
             prompt_assembly=prompt_assembly_diag,
         )
@@ -1906,7 +1816,6 @@ class AgentOrchestrator:
         _pending_meta: dict = {}  # accumulate plan/nodes data during loop → save with assistant msg
         tool_vision_contexts: list[dict[str, Any]] = []
         step_index = 0
-        project_switched = False
         stop_after_tool = False
         full_reset_completed = False
         audit_triggered = False  # 退出 loop 前最多注入一次收尾自检 reminder
@@ -1941,7 +1850,6 @@ class AgentOrchestrator:
                 iteration=iteration,
                 transition_reason="loop_iteration",
                 visible_tools=_visible_tool_names,
-                requires_plan=_requires_plan,
                 prompt_assembly=prompt_assembly_diag,
             )
             model_budget = turn_budget.before_model_call(state)
@@ -1958,7 +1866,6 @@ class AgentOrchestrator:
                 )
                 break
             # Context compression
-            micro_compact(messages)
             if auto_compact_needed(messages):
                 compact_tokens_before = estimate_tokens(messages)
                 transcript_path = save_transcript(messages, project_id)
@@ -2097,7 +2004,6 @@ class AgentOrchestrator:
             checklist_reminder = self._build_checklist_reminder(
                 state,
                 canvas_summary,
-                require_plan=_requires_plan,
                 project_id=project_id,
             )
             before_model_call = run_before_model_call(
@@ -2467,7 +2373,6 @@ class AgentOrchestrator:
                     tool_args["_state"] = state
                 if tool_name == "tool.execute":
                     tool_args["_user_message"] = message
-                    tool_args["_requires_plan"] = _requires_plan
                 tool_args = _normalize_attachment_references_in_tool_args(tool_name, tool_args, attachments)
                 round_tools.append(tool_name)
                 round_tool_calls.append((tool_call, tool_name, tool_args))
@@ -2618,7 +2523,6 @@ class AgentOrchestrator:
                         tool_name=tool_name,
                         state=state,
                         user_message=message,
-                        requires_plan=_requires_plan,
                         tool_args=tool_args,
                     ),
                     permission_denial_state,
@@ -2906,29 +2810,6 @@ class AgentOrchestrator:
                                 tool_name=tool_name,
                                 transition_reason="guide_tool_result_loaded",
                                 **guide_trace,
-                            )
-                        template_lookup = _template_lookup_state_payload(tool_args, raw_result)
-                        if template_lookup:
-                            lookup_by_category = (
-                                dict(state.get("_template_lookups_by_category"))
-                                if isinstance(state.get("_template_lookups_by_category"), dict)
-                                else {}
-                            )
-                            lookup_category = str(template_lookup.get("category") or "").strip()
-                            if lookup_category:
-                                lookup_by_category[lookup_category] = template_lookup
-                            state["_last_template_lookup"] = template_lookup
-                            state["_template_lookups_by_category"] = lookup_by_category
-                            await _persist_state_patch({
-                                "_last_template_lookup": template_lookup,
-                                "_template_lookups_by_category": lookup_by_category,
-                            })
-                            trace.emit(
-                                "template_lookup_recorded",
-                                iteration=iteration,
-                                tool_name=tool_name,
-                                transition_reason="template_lookup_state_recorded",
-                                **template_lookup,
                             )
                         review_payload = _agent_review_state_payload(tool_args, raw_result)
                         if review_payload:
@@ -3419,7 +3300,7 @@ class AgentOrchestrator:
                         else {
                             key: value
                             for key, value in tool_args.items()
-                            if key not in {"project_id", "_state", "_user_message", "_requires_plan"}
+                            if key not in {"project_id", "_state", "_user_message"}
                         }
                     )
                     pending_tool = {
@@ -3475,21 +3356,8 @@ class AgentOrchestrator:
                     full_response += assistant_text
                     yield {"type": "text_delta", "content": assistant_text}
                     stop_after_tool = True
-                elif event_tool_name == "project.create" and isinstance(result, dict) and result.get("id"):
-                    yield {"type": "project_switch", "project_id": result["id"], "title": result.get("title", "")}
-                    yield {"type": "canvas_action", "action": "clear_all", "payload": {}}
-                    project_switched = True
-
                 # Feed result back to LLM
                 _append_tool_result_messages(tool_call.id, tool_output)
-
-                # Drain canvas events from sub-agents
-                while not _canvas_event_queue.empty():
-                    try:
-                        ev = _canvas_event_queue.get_nowait()
-                        yield ev
-                    except asyncio.QueueEmpty:
-                        break
 
                 if model_feedback_after_tool:
                     break
@@ -3506,7 +3374,6 @@ class AgentOrchestrator:
                 transition_reason="tool_round_completed",
                 stop_after_tool=stop_after_tool,
                 model_feedback_after_tool=model_feedback_after_tool,
-                project_switched=project_switched,
             )
 
             # Refresh state after tool execution
@@ -3526,12 +3393,6 @@ class AgentOrchestrator:
                 runtime_inject = prompt_assembly.runtime
                 prompt_assembly_diag = prompt_assembly.diagnostics()
 
-            if project_switched:
-                yield {
-                    "type": "text_delta",
-                    "content": "\n\n✅ 新项目已创建并切换为当前项目。请告诉我接下来想做什么。",
-                }
-                break
             if stop_after_tool:
                 break
 
@@ -3542,7 +3403,6 @@ class AgentOrchestrator:
                 terminal_error=terminal_loop_error,
                 tool_errors=tool_errors,
                 step_index=step_index,
-                project_switched=project_switched,
             )
             fallback_text = _sanitize_user_visible_text(fallback_text)
             if fallback_text:
@@ -3620,8 +3480,6 @@ class AgentOrchestrator:
             completion_reason = "project_reset_completed"
         elif terminal_loop_error:
             completion_reason = str(terminal_loop_error.get("stop_reason") or "stopped_after_tool_error")
-        elif project_switched:
-            completion_reason = "project_switched"
         elif interrupted_by_new_message:
             completion_reason = "new_message_pending"
         elif stop_after_tool:
@@ -3811,7 +3669,6 @@ class AgentOrchestrator:
         state: dict,
         canvas_summary: dict | None = None,
         *,
-        require_plan: bool = False,
         project_id: str | None = None,
     ) -> str:
         """拼当前执行状态的 system-reminder,每轮 LLM 前注入。
@@ -3821,7 +3678,7 @@ class AgentOrchestrator:
         - 未完成节点提示(画布上有失败/未出图节点时)
         - 最新用户消息优先的执行边界
         """
-        # Read tasks from task_graph; legacy plan-state mirrors are cleaned before the turn.
+        # Read the current execution ledger from task_graph.
         task_project_id = str(project_id or (state.get("project_id") if isinstance(state, dict) else "") or "").strip()
         try:
             from app.agent.task_graph import task_graph as _tg
@@ -3840,8 +3697,8 @@ class AgentOrchestrator:
             }
             for t in active_tasks
         ]
-        # 没有任务、没有 plan 前置要求 → 不注入。节点状态由模型按需 node.list/node.get 读取。
-        if not checklist and not require_plan:
+        # 没有任务时不注入。节点状态由模型按需 node.list/node.get 读取。
+        if not checklist:
             return ""
 
         lines: list[str] = ["<execution-checklist>"]
@@ -3880,20 +3737,13 @@ class AgentOrchestrator:
                 lines.append(
                     "\n清单里只剩失败或阻塞项。检查真实节点和工具结果后修复，无法继续时向用户说明。"
                 )
-        elif require_plan:
-            lines.append(
-                "\n当前项目要求先确认计划，但计划工具不在本轮可见工具面。"
-                "不要猜测隐藏工具；请向用户说明这个阻塞，或在用户明确同意后按可见节点工具继续。"
-            )
-
         # 任务执行引导
-        if checklist or require_plan:
-            lines.append(
-                "\n任务提示:\n"
-                "1) 已有清单是当前执行账本；继续/修复时优先按可执行任务推进\n"
-                "2) 当前可执行记录以 node 状态和工具返回为准，任务完成必须以真实结果为依据\n"
-                "3) 用户这轮的新消息优先级高于清单，先回应用户的修改请求，再决定是否更新或继续清单"
-            )
+        lines.append(
+            "\n任务提示:\n"
+            "1) 已有清单是当前执行账本；继续/修复时优先按可执行任务推进\n"
+            "2) 当前可执行记录以 node 状态和工具返回为准，任务完成必须以真实结果为依据\n"
+            "3) 用户这轮的新消息优先级高于清单，先回应用户的修改请求，再决定是否更新或继续清单"
+        )
         lines.append("\n此清单仅作为你的执行参考，不要在回复中逐条复述清单内容。用户已在面板中看到任务进度。")
         lines.append("</execution-checklist>")
         return "\n".join(lines)

@@ -8,7 +8,6 @@ from app.api.routes_agent_debug import router as agent_debug_router
 from app.api.routes_chat import router as chat_router
 from app.api.routes_director import router as director_router
 from app.api.routes_media import router as media_router
-from app.api.routes_models import router as models_router
 from app.api.routes_nodes import router as nodes_router
 from app.api.routes_projects import router as projects_router
 from app.api.routes_tools import router as tools_router
@@ -110,7 +109,6 @@ app.include_router(director_router, prefix="/api/projects", tags=["director"])
 app.include_router(nodes_router, prefix="/api/nodes", tags=["nodes"])
 app.include_router(assets_router, prefix="/api/assets", tags=["assets"])
 app.include_router(media_router, prefix="/api/media", tags=["media"])
-app.include_router(models_router, prefix="/api/models", tags=["models"])
 app.include_router(tools_router, prefix="/api/tools", tags=["tools"])
 app.include_router(uploads_router, prefix="/api/uploads", tags=["uploads"])
 app.include_router(video_editor_router, prefix="/api/video-editor", tags=["video-editor"])

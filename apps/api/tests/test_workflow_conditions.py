@@ -1,4 +1,4 @@
-from app.mcp_tools.workflow_conditions import workflow_step_condition_skipped
+from app.agent.workflow_condition_eval import workflow_step_condition_skipped
 
 
 def test_structured_positive_conditions_support_comparison_and_empty_operators() -> None:
@@ -28,7 +28,6 @@ def test_structured_positive_conditions_support_comparison_and_empty_operators()
 
 def test_missing_or_unknown_conditions_do_not_skip() -> None:
     assert workflow_step_condition_skipped({}, {}) is False
-    assert workflow_step_condition_skipped({"when": "legacy string"}, {}) is False
     assert workflow_step_condition_skipped(
         {"when": {"path": "unknown.count", "op": "lt", "value": 2}}, {"count": 1}
     ) is False

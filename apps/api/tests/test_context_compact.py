@@ -3,48 +3,6 @@ import json
 from app.agent import context_compact
 
 
-def test_micro_compact_preserves_openai_tool_messages_for_cache_prefix() -> None:
-    messages = [
-        {"role": "tool", "content": str(i) * 300}
-        for i in range(5)
-    ]
-
-    result = context_compact.micro_compact(messages)
-
-    assert result is messages
-    assert messages[0]["content"] == "0" * 300
-    assert messages[1]["content"] == "1" * 300
-    assert messages[2]["content"] == "2" * 300
-
-
-def test_micro_compact_keeps_short_tool_messages() -> None:
-    messages = [
-        {"role": "tool", "content": str(i) * 20}
-        for i in range(5)
-    ]
-
-    context_compact.micro_compact(messages)
-
-    assert messages[0]["content"] == "0" * 20
-    assert messages[1]["content"] == "1" * 20
-
-
-def test_micro_compact_still_handles_legacy_tool_result_blocks() -> None:
-    messages = [
-        {
-            "role": "user",
-            "content": [{"type": "tool_result", "content": str(i) * 300}],
-        }
-        for i in range(5)
-    ]
-
-    context_compact.micro_compact(messages)
-
-    assert messages[0]["content"][0]["content"] == "[Previous tool result - compacted]"
-    assert messages[1]["content"][0]["content"] == "[Previous tool result - compacted]"
-    assert messages[2]["content"][0]["content"] == "2" * 300
-
-
 def test_auto_compact_threshold() -> None:
     below = [{"role": "user", "content": "x" * 100}]
     above = [
@@ -113,10 +71,10 @@ def test_large_tool_search_result_keeps_candidate_names_visible(tmp_path, monkey
                 "usage_hints": ["create 传 workflow；update 传 base 和 operations。"],
             },
             {
-                "name": "workflow.materialize_artifact",
+                "name": "workflow.template.export",
                 "category": "workflow",
-                "description": "按 workflow spec artifact_ref 物化画布 draft 节点和依赖边。",
-                "usage_hints": ["/workflow 写入返回 artifact_ref 后使用。"],
+                "description": "导出用户 workflow 模板包。",
+                "usage_hints": ["仅导出已经保存的用户模板。"],
             },
         ],
         "padding": "x" * 5000,
@@ -136,7 +94,7 @@ def test_large_tool_search_result_keeps_candidate_names_visible(tmp_path, monkey
     assert payload["tool_result_compacted"] is True
     assert [item["name"] for item in summary["tools"]] == [
         "workflow.spec.apply_patch",
-        "workflow.materialize_artifact",
+        "workflow.template.export",
     ]
     assert "tool.execute" in summary["next_action"]
     assert "keys:" not in json.dumps(summary, ensure_ascii=False)
@@ -240,10 +198,10 @@ def test_large_tool_describe_result_keeps_schema_names_visible(tmp_path, monkeyp
     assert "tool.execute" in payload["summary"]["next_action"]
 
 
-def test_large_workflow_execute_result_keeps_actionable_summary(tmp_path, monkeypatch) -> None:
+def test_large_workflow_run_result_keeps_actionable_summary(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(context_compact, "tool_results_dir", lambda: tmp_path)
     result = {
-        "_deferred_tool": "workflow.instantiate",
+        "_deferred_tool": "workflow.run_all",
         "ok": True,
         "template_id": "segment_character",
         "template_name": "分段人物图",
@@ -271,7 +229,7 @@ def test_large_workflow_execute_result_keeps_actionable_summary(tmp_path, monkey
     summary = payload["summary"]
 
     assert payload["tool_result_compacted"] is True
-    assert summary["_deferred_tool"] == "workflow.instantiate"
+    assert summary["_deferred_tool"] == "workflow.run_all"
     assert summary["created_count"] == 3
     assert summary["nodes"][0]["title"] == "第1段人物图"
     assert "已创建画布节点" in summary["next_action"]
@@ -364,7 +322,7 @@ def test_large_agent_run_workflow_spec_result_keeps_template_ref_visible(tmp_pat
                 "ok": True,
                 "workflow_id": "general_short_drama_workflow",
                 "step_count": 18,
-                "protocol": {"workflow_spec_version": "openreel.workflow.v1"},
+                "protocol": {"workflow_spec_version": "openreel.workflow.v2"},
             },
             "next_action": "输入齐全后使用 template_id 调用 workflow.run_all。",
         },

@@ -1508,18 +1508,6 @@ export async function getProjectMessages(projectId: string) {
   return asJson<unknown[]>(res)
 }
 
-export async function getModelConfigs() {
-  const base = await getApiBase()
-  const res = await fetch(`${base}/api/models/configs`)
-  return asJson<{ defaults: Record<string, string>; configs: unknown[] }>(res)
-}
-
-export async function getProviders() {
-  const base = await getApiBase()
-  const res = await fetch(`${base}/api/models/providers`)
-  return asJson<Record<string, boolean>>(res)
-}
-
 export interface UploadedAttachment {
   attachment_id?: string
   rel_path: string
@@ -2261,12 +2249,6 @@ export async function getRuntimeConfigFile<T = unknown>(maskSecrets = true): Pro
   return asJson<T>(res)
 }
 
-export async function getRuntimeConfigSummary<T = unknown>(): Promise<T> {
-  const base = await getApiBase()
-  const res = await fetch(`${base}/api/tools/config/summary`)
-  return asJson<T>(res)
-}
-
 export async function getVideoProviderProtocols<T = unknown>(): Promise<T> {
   const base = await getApiBase()
   const res = await fetch(`${base}/api/tools/config/video-model-targets`)
@@ -2349,8 +2331,6 @@ export const api = {
   createProjectEdge,
   deleteProjectEdge,
   getProjectMessages,
-  getModelConfigs,
-  getProviders,
   uploadFile,
   chatStream,
   chatStreamAsync,
@@ -2365,7 +2345,6 @@ export const api = {
   readAgentArtifact,
   listMcpServers,
   getRuntimeConfigFile,
-  getRuntimeConfigSummary,
   getImageProviderProtocols,
   getVideoProviderProtocols,
   getAudioProviderProtocols,

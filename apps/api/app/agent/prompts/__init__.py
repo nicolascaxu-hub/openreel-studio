@@ -61,7 +61,3 @@ def all_sections() -> list[Section]:
 
 def get(name: str) -> Section | None:
     return _sections.get(name)
-
-
-def sections_by_trigger(trigger: str) -> list[Section]:
-    return [s for s in all_sections() if s.trigger == trigger]

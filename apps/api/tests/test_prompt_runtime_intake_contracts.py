@@ -7,7 +7,6 @@ def test_single_image_request_does_not_require_backend_plan_mode() -> None:
         user_message="生成一张赛博朋克街道的图片",
         state={},
     )
-    assert should_require_plan(ctx) is False
     assert trigger_matches("complex_no_skip", ctx) is False
 
 def test_prompt_sections_do_not_route_by_image_intent_or_loaded_content() -> None:
@@ -18,7 +17,6 @@ def test_prompt_sections_do_not_route_by_image_intent_or_loaded_content() -> Non
         has_script=True,
         has_characters=True,
     )
-    assert should_require_plan(ctx) is False
     assert trigger_matches("complex_no_skip", ctx) is False
 
 def test_unknown_business_prompt_triggers_are_not_loaded_automatically() -> None:
@@ -104,7 +102,6 @@ def test_workflow_build_prompt_uses_dedicated_cached_prefix() -> None:
     assert "frontend supplies media runtime settings" in result.system
     assert "Put media settings in `fields`" not in result.system
     assert "Specs describe structure and settings" not in result.system
-    assert "openreel.workflow.authoring.v1" not in result.system
     assert "After a repairable failure, continue from the returned `repair_ref`" in result.system
     assert "Ready means saved and inspected with `workflow.canvas.inspect`" in result.system
     assert "Patch again when visible outputs, loops, dependencies, or final outputs are missing" in result.system
@@ -180,7 +177,6 @@ def test_runtime_context_does_not_inject_video_intake_first_card() -> None:
     assert "start_tree_draft" not in text
 
 def test_split_prompt_cache_ignores_latest_user_and_mentor_guides() -> None:
-    invalidate_cache()
     base = get_split_prompt_result(PromptContext(
         project_id="cache-runtime",
         user_message="继续优化提示词注入",
@@ -191,11 +187,9 @@ def test_split_prompt_cache_ignores_latest_user_and_mentor_guides() -> None:
         user_message="继续优化提示词注入",
         state={
             "_mentor_guides_loaded": {
-                "video_workflow": {
-                    "topic": "video_workflow",
-                    "detail": "summary",
-                    "has_full_guide": True,
-                    "guidance_summary": "视频制作先写完整剧情，再规划人物、分集、分段和镜头。",
+                "debugging": {
+                    "topic": "debugging",
+                    "guidance_summary": "先检查 trace、SSE 和工具结果。",
                     "guidance_hash": "guide-hash-1",
                     "references_count": 2,
                 }
@@ -218,50 +212,6 @@ def test_split_prompt_cache_ignores_latest_user_and_mentor_guides() -> None:
     assert "继续优化提示词注入" not in base.runtime
     assert "改为检查图片和分镜一致性" not in changed_user.runtime
     assert "### 指南复用缓存" not in with_guide.system
-
-def test_split_prompt_cache_ignores_dynamic_runtime_state() -> None:
-    invalidate_cache()
-    base = get_split_prompt_result(PromptContext(
-        project_id="cache-runtime-state",
-        user_message="继续",
-        state={},
-    ))
-    with_runtime_state = get_split_prompt_result(PromptContext(
-        project_id="cache-runtime-state",
-        user_message="继续",
-        state={
-            "pending_video_request": {
-                "stage": "structure",
-                "collected_facts": {
-                    "topic": "雨夜桥头决斗",
-                    "duration_seconds": "30秒",
-                    "aspect_ratio": "16:9",
-                },
-            },
-            "active_plan_checklist": [
-                {"step_id": "s1", "title": "检查分镜提示词", "status": "pending", "tool": "agent.review"}
-            ],
-            "reference_assets": {
-                "assets": [
-                    {
-                        "ref_id": "ref-1",
-                        "mention": "@角色参考",
-                        "rel_path": "uploads/role.png",
-                        "status": "ready",
-                    }
-                ],
-                "bindings": [],
-            },
-        },
-    ))
-
-    assert base.cache_key == with_runtime_state.cache_key
-    assert "雨夜桥头决斗" not in with_runtime_state.cache_key
-    assert "检查分镜提示词" not in with_runtime_state.cache_key
-    assert "待补充创作信息" not in with_runtime_state.runtime
-    assert "下一步任务" not in with_runtime_state.runtime
-    assert "项目参考图资产索引" not in with_runtime_state.runtime
-    assert "待补充创作信息" not in with_runtime_state.system
 
 
 def test_always_prompt_sections_are_contracts_not_manuals() -> None:
@@ -292,7 +242,6 @@ def test_working_loop_stays_domain_neutral_with_core_prompt() -> None:
     assert "Before tools, write one progress sentence" in working_loop.PROMPT
     assert "finalize_tree_draft" not in working_loop.PROMPT
     assert "agent.review" not in working_loop.PROMPT
-    assert "video_workflow" not in working_loop.PROMPT
     assert "workflow_spec returns" not in working_loop.PROMPT
     assert "workflow.run_*" not in working_loop.PROMPT
 
@@ -333,7 +282,6 @@ def test_canvas_reference_request_is_not_backend_routed_by_parser_label() -> Non
         has_characters=True,
     )
 
-    assert should_require_plan(ctx) is False
     assert trigger_matches("complex_no_skip", ctx) is False
 
 def test_video_generation_request_does_not_backend_force_plan_mode() -> None:
@@ -343,23 +291,13 @@ def test_video_generation_request_does_not_backend_force_plan_mode() -> None:
         state={},
     )
     assert trigger_matches("complex_no_skip", ctx) is False
-    assert should_require_plan(ctx) is False
 
 def test_atomic_request_reminder_is_not_injected_for_mode_only_state() -> None:
     reminder = AgentOrchestrator._build_checklist_reminder(
         {"project_mode": "video_production", "project_sub_mode": "grid"},
-        require_plan=False,
     )
     assert reminder == ""
     assert "任何创作动作前必须先 plan.propose" not in reminder
-
-def test_complex_request_reminder_requires_plan() -> None:
-    reminder = AgentOrchestrator._build_checklist_reminder(
-        {"project_mode": "video_production", "project_sub_mode": "grid"},
-        require_plan=True,
-    )
-    assert "计划工具不在本轮可见工具面" in reminder
-    assert "plan.propose" not in reminder
 
 def test_checklist_reminder_omits_skipped_tasks(monkeypatch) -> None:
     from app.agent import task_graph as task_graph_module
@@ -424,7 +362,6 @@ def test_agent_loop_no_text_fallback_reports_tool_error() -> None:
         terminal_error={"ok": False, "error_kind": "empty_plan", "error": "empty plan"},
         tool_errors=[],
         step_index=0,
-        project_switched=False,
     )
 
     assert "本轮" in text
@@ -522,29 +459,6 @@ def test_before_model_call_hook_removes_checklist_without_new_reminder() -> None
     assert result.checklist_reminder_added is False
     assert result.messages == [{"role": "user", "content": "继续"}]
 
-def test_before_turn_hook_clears_guide_loaded() -> None:
-    result = run_before_turn({"guide_loaded": {"character": True}})
-
-    assert result.state_patch == {"guide_loaded": {}}
-
-def test_before_turn_hook_keeps_project_mentor_guide_digest() -> None:
-    result = run_before_turn({
-        "_mentor_guides_loaded": {
-            "video_workflow": {
-                "topic": "video_workflow",
-                "guidance_hash": "abc123",
-                "guidance_summary": "已读视频工作流摘要",
-            }
-        }
-    })
-
-    assert result.state_patch == {}
-
-def test_before_turn_hook_leaves_state_without_loaded_guides() -> None:
-    result = run_before_turn({"project_mode": "single_node"})
-
-    assert result.state_patch == {}
-
 def test_stop_hook_skips_completion_audit_without_pending_work() -> None:
     result = run_stop_after_text_response(
         step_index=2,
@@ -590,166 +504,13 @@ def test_stop_hook_does_not_repeat_completion_audit() -> None:
     assert result.audit_message == ""
 
 def test_agent_review_is_model_called_not_orchestrator_hardcoded() -> None:
-    tools = registry.get_tools_for_agent_loop(namespaces=select_tool_namespaces(PromptContext(project_id="test")))
+    tools = registry.get_tools_for_agent_loop()
     visible = {str((tool.get("function") or {}).get("name") or "").replace("__", ".") for tool in tools}
 
     assert "agent.review" in visible
     assert "agent.run" not in visible
     assert "workflow.spec.apply_patch" not in visible
 
-def test_post_tool_use_hook_matches_node_create_expected_type() -> None:
-    result = run_post_tool_use_checklist(
-        tool_name="node.create",
-        tool_args={"type": "scene"},
-        result={"id": "scene-1"},
-        node_id=None,
-        checklist=[
-            {"status": "completed", "tool": "node.create", "expected_node_type": "character"},
-            {"status": "pending", "tool": "node.create", "expected_node_type": "scene"},
-        ],
-    )
-
-    assert result.should_update is True
-    assert result.matched_index == 1
-    assert result.status == "completed"
-    assert result.actual_node_id == "scene-1"
-
-
-def test_post_tool_use_hook_does_not_let_node_id_preempt_create_type_match() -> None:
-    result = run_post_tool_use_checklist(
-        tool_name="node.create",
-        tool_args={"type": "scene"},
-        result={"id": "scene-1"},
-        node_id=None,
-        checklist=[
-            {"status": "pending", "tool": "node.create", "expected_node_type": "character"},
-            {"status": "pending", "tool": "node.create", "expected_node_type": "scene"},
-        ],
-    )
-
-    assert result.should_update is True
-    assert result.matched_index == 1
-    assert result.actual_node_id == "scene-1"
-
-def test_post_tool_use_hook_marks_failed_result_on_matched_step() -> None:
-    result = run_post_tool_use_checklist(
-        tool_name="node.create",
-        tool_args={"type": "scene"},
-        result={"ok": False, "error": "provider failed"},
-        node_id=None,
-        checklist=[
-            {"status": "pending", "tool": "node.run", "expected_node_type": "scene"},
-        ],
-    )
-
-    assert result.should_update is True
-    assert result.matched_index == 0
-    assert result.status == "failed"
-
-def test_post_tool_use_hook_does_not_mark_confirmation_request_failed() -> None:
-    result = run_post_tool_use_checklist(
-        tool_name="canvas.delete",
-        tool_args={"scope": "selected", "node_ids": ["node-1"]},
-        result={
-            "ok": False,
-            "requires_user_confirm": True,
-            "action": "canvas.delete",
-        },
-        node_id=None,
-        checklist=[
-            {"status": "pending", "tool": "canvas.delete"},
-        ],
-    )
-
-    assert result.should_update is False
-    assert result.matched_index is None
-
-def test_post_tool_use_hook_prefers_local_node_id() -> None:
-    result = run_post_tool_use_checklist(
-        tool_name="node.create",
-        tool_args={"type": "character"},
-        result={"id": "from-result"},
-        node_id="from-node",
-        checklist=[
-            {"status": "pending", "tool": "node.create", "expected_node_type": "character"},
-        ],
-    )
-
-    assert result.should_update is True
-    assert result.actual_node_id == "from-node"
-
-
-def test_post_tool_use_hook_matches_node_run_by_resolved_node_ref() -> None:
-    result = run_post_tool_use_checklist(
-        tool_name="node.run",
-        tool_args={"node_id": "scene-1", "action": "render"},
-        result={"ok": False, "error": "provider failed", "node_id": "scene-1"},
-        node_id="scene-1",
-        checklist=[
-            {
-                "step": 12,
-                "status": "completed",
-                "tool": "node.create",
-                "actual_node_id": "character-1",
-            },
-            {
-                "step": 14,
-                "status": "pending",
-                "tool": "node.run",
-                "title": "渲染人物图",
-                "expected_node_ref_step": 12,
-                "expected_action": "render",
-            },
-            {
-                "step": 15,
-                "status": "completed",
-                "tool": "node.create",
-                "actual_node_id": "scene-1",
-            },
-            {
-                "step": 17,
-                "status": "pending",
-                "tool": "node.run",
-                "title": "渲染场景图",
-                "expected_node_ref_step": 15,
-                "expected_action": "render",
-            },
-        ],
-    )
-
-    assert result.should_update is True
-    assert result.matched_index == 3
-    assert result.status == "failed"
-    assert result.actual_node_id == "scene-1"
-
-
-def test_post_tool_use_hook_does_not_mark_wrong_node_run_step() -> None:
-    result = run_post_tool_use_checklist(
-        tool_name="node.run",
-        tool_args={"node_id": "scene-1", "action": "render"},
-        result={"ok": True, "node_id": "scene-1"},
-        node_id="scene-1",
-        checklist=[
-            {
-                "step": 12,
-                "status": "completed",
-                "tool": "node.create",
-                "actual_node_id": "character-1",
-            },
-            {
-                "step": 14,
-                "status": "pending",
-                "tool": "node.run",
-                "title": "渲染人物图",
-                "expected_node_ref_step": 12,
-                "expected_action": "render",
-            },
-        ],
-    )
-
-    assert result.should_update is False
-    assert result.matched_index is None
-    assert result.actual_node_id == "scene-1"
 
 def test_agent_round_summary_prefers_model_progress_text() -> None:
     event = AgentOrchestrator._build_agent_round_summary(
@@ -840,7 +601,6 @@ def test_repeated_tool_error_fallback_names_tool_kind_count_and_next_step() -> N
         },
         tool_errors=[],
         step_index=1,
-        project_switched=False,
     )
 
     assert "本轮已停止" in text
@@ -849,30 +609,6 @@ def test_repeated_tool_error_fallback_names_tool_kind_count_and_next_step() -> N
     assert "3 次" in text
     assert "补齐依赖" in text
     assert "satisfy_dependency" not in text
-
-def test_repeated_tool_error_fallback_beats_existing_pending_plan() -> None:
-    text = AgentOrchestrator._build_no_text_fallback(
-        state={"pending_plan": {"kind": "node_execution", "title": "旧方案"}},
-        pending_meta={"plan": {"kind": "node_execution", "title": "旧方案"}},
-        terminal_error={
-            "ok": False,
-            "tool": "node.update",
-            "error": "节点 'segment_01' 不存在。",
-            "error_kind": "node_not_found",
-            "hint": "从 available_node_ids 选择现有节点。",
-            "suggested_next": "read_state",
-            "stop_reason": "repeated_tool_error",
-            "repeat_count": 3,
-        },
-        tool_errors=[],
-        step_index=3,
-        project_switched=False,
-    )
-
-    assert "本轮已停止" in text
-    assert "node.update" in text
-    assert "node_not_found" in text
-    assert "方案已提交" not in text
 
 def test_video_intake_state_patch_starts_basic_stage() -> None:
     patch = video_intake_state_patch_for_interaction({}, "制作一个15秒的视频", [], "basic")
@@ -969,37 +705,9 @@ def test_video_intake_preserves_model_delegation_as_collected_facts() -> None:
     assert "model_decide 表示用户授权模型选择" not in runtime_text
     assert "duration/aspect_ratio/production_basis 等字段要落成具体可执行值" not in runtime_text
 
-def test_default_prompt_omits_old_workflow_authoring_routes() -> None:
-    result = assemble_split_result(PromptContext(
-        project_id="test",
-        user_message="生成一张女主角人物参考图",
-        state={},
-    ))
-    section_names = [section.name for section in result.sections]
-
-    assert "tool_loader" not in section_names
-    assert "template_rule" not in section_names
-    assert "workflow.run_*" not in result.system
-    assert "latest_authorized_workflow_ref" not in result.system
-    assert "tool.execute(name=\"agent.run\"" not in result.system
-    assert "Main Agent keeps workflow skill/spec/template decisions inside workflow_spec" not in result.system
-    assert "workflow_spec returns" not in result.system
-    assert "Workflow Build Mode" not in result.system
-    assert "`node.*`" in result.system
-    assert "template.list_categories" not in result.system
-    assert "template.list(category, query)" not in result.system
-    assert "template.get" not in result.system
-
-def test_runtime_context_omits_recent_review_records_and_template_lookup() -> None:
+def test_runtime_context_omits_recent_review_records() -> None:
     text = runtime_context.build(
         {
-            "_last_template_lookup": {
-                "tool": "template.list",
-                "category": "storyboard_image",
-                "query": "宫格 分镜 15秒",
-                "count": 2,
-                "updated_at": "2026-06-12T10:00:00",
-            },
             "_last_agent_review": {
                 "review_profile": "视频检查",
                 "review_skill_key": "my_storyboard_check",
@@ -1013,7 +721,6 @@ def test_runtime_context_omits_recent_review_records_and_template_lookup() -> No
     )
 
     assert "最近检查记录" not in text
-    assert "storyboard_image" not in text
     assert "my_storyboard_check" not in text
     assert "safe_to_submit" not in text
 

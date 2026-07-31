@@ -62,18 +62,17 @@ def test_reference_mention_parser_requires_an_exact_candidate_token() -> None:
     assert unknown == ["@宫格分镜图2不是已有标签"]
 
 
-def test_reference_mention_parser_preserves_special_characters_and_legacy_aliases() -> None:
+def test_reference_mention_parser_preserves_special_characters() -> None:
     candidates = build_reference_mention_candidates([
         {"ref": "node:character", "label": "《回头》主角|15岁少年", "source": "node"},
         {"ref": "node:scene", "label": "《回头》场景｜宽敞 孩子卧室｜四机位", "source": "node"},
     ])
 
-    assert [(item["mention"], item["label"], item.get("aliases")) for item in candidates] == [
-        ("@《回头》主角|15岁少年", "《回头》主角|15岁少年", ["@回头主角15岁少年图片"]),
+    assert [(item["mention"], item["label"]) for item in candidates] == [
+        ("@《回头》主角|15岁少年", "《回头》主角|15岁少年"),
         (
             "@《回头》场景｜宽敞 孩子卧室｜四机位",
             "《回头》场景｜宽敞 孩子卧室｜四机位",
-            ["@回头场景宽敞孩子卧室四机位图片"],
         ),
     ]
 
@@ -91,17 +90,6 @@ def test_reference_mention_parser_preserves_special_characters_and_legacy_aliase
     ]
     assert unknown == []
     assert missing == []
-
-    matched, unknown, missing = parse_reference_mentions(
-        "兼容旧提示词：@回头主角15岁少年图片。",
-        candidates,
-    )
-    assert [(item["mention"], item["ref"]) for item in matched] == [
-        ("@回头主角15岁少年图片", "node:character"),
-    ]
-    assert unknown == []
-    assert missing == ["@《回头》场景｜宽敞 孩子卧室｜四机位"]
-
 
 @pytest.mark.asyncio
 async def test_prompt_mentions_bind_to_image_node_ids_across_reference_reordering(

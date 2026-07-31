@@ -195,11 +195,6 @@ def plugin_errors() -> list[dict[str, str]]:
 def plugin_node_types() -> list[dict[str, Any]]:
     return list(load_plugins().get("nodes") or [])
 
-
-def available_extension_ids() -> set[str]:
-    return {plugin.id for plugin in load_plugins().get("plugins") or []}
-
-
 def find_plugin_node(step: dict[str, Any], workflow: dict[str, Any] | None = None) -> tuple[WorkflowPlugin, dict[str, Any]]:
     loaded = load_plugins()
     workflow = workflow if isinstance(workflow, dict) else {}

@@ -30,7 +30,6 @@ import json
 import os
 import re
 import uuid
-import zipfile
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -188,11 +187,11 @@ ROLE_PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "media_prompt_reviewer": {
-        "description": "只读媒体提示词审查:检查 prompt 和 reference_images 一致性",
+        "description": "只读媒体提示词审查:检查 prompt 和 references 一致性",
         "task_type": "agent_review",
         "system": (
             "你是 media_prompt_reviewer 子 Agent,任务是**只读检查媒体提示词**。"
-            "重点看人物/场景/分镜/首尾帧/视频提示词是否一致,reference_images 是否合理。"
+            "重点看人物/场景/分镜/首尾帧/视频提示词是否一致,references 是否合理。"
             "只给修改建议,禁止调用任何 media/drama 生成工具或 node.run。"
         ),
         "allowed_tools": [
@@ -571,7 +570,7 @@ def _coerce_tool_arguments(raw: Any) -> dict[str, Any]:
     return {}
 
 
-def _agent_review_timeout_seconds(_legacy_max_steps: Any = None) -> float:
+def _agent_review_timeout_seconds() -> float:
     return REVIEW_TIMEOUT_MAX_SECONDS
 
 
@@ -1232,7 +1231,7 @@ def _build_node_producer_task_message(task: str, inputs: dict | None) -> str:
         + inputs_json
         + "\n\n## 作用域\n"
         + "- 只处理输入中的 node_id/node_ids/target_node_ids/scoped_node_ids。\n"
-        + "- reference_node_ids、fields.references 和 depends_on 是只读上游上下文；读取后用于补全当前节点,不更新这些上游节点。\n"
+        + "- reference_node_ids 和 fields.references 是只读上游上下文；读取后用于补全当前节点,不更新这些上游节点。\n"
         + "- allowed_node_types 限定可处理的节点类型；没有传时可处理 text/image/video/audio，但仍受节点作用域限制。\n"
         + "- basis/primary_skill/inline_spec 是本轮判断依据；primary_skill 已由主 Agent 选择，inline_spec 和用户当前明确要求优先。\n"
         + "- 没有 skill 时使用输入事实和通用模型能力完成，并在 basis_used 里记录依据。\n"
@@ -2064,10 +2063,6 @@ def _finalize_workflow_spec_result(
     if artifact_ref:
         return _workflow_spec_selector_boundary_error(
             "workflow_spec 只选择现有模板，不能返回 artifact_ref。"
-        )
-    if decision in {"patch_existing", "compile_new"}:
-        return _workflow_spec_selector_boundary_error(
-            "workflow_spec 只选择现有模板，不能 patch_existing 或 compile_new。"
         )
     status = str(result_payload.get("status") or "").strip().lower()
     input_values = _workflow_spec_input_values(inputs)
@@ -3060,10 +3055,6 @@ async def agent_run(
     normalized_inputs = _coerce_mapping_arg(inputs, fallback_key="text")
     subagent_allowed_tools: list[str] | None = None
     if agent_key == WORKFLOW_SPEC_ROLE_NAME:
-        normalized_inputs = {
-            **normalized_inputs,
-            "_workflow_spec_mode": "selector",
-        }
         subagent_allowed_tools = workflow_spec_role.allowed_tools_for_mode("selector")
     subagent_kwargs: dict[str, Any] = {
         "project_id": project_id,
@@ -3536,7 +3527,7 @@ async def agent_review(
             "suggested_next": "主 Agent 下一步应修改、补查、提交、继续执行或向用户说明阻塞",
         },
     }
-    timeout_seconds = _agent_review_timeout_seconds(max_steps)
+    timeout_seconds = _agent_review_timeout_seconds()
     try:
         result = await asyncio.wait_for(
             subagent_run(
@@ -3672,36 +3663,3 @@ def _coerce_mapping_arg(value: object, *, fallback_key: str | None = None) -> di
         if fallback_key:
             return {fallback_key: value}
     return {}
-
-
-async def export_project_zip(project_id: str, output_name: str | None = None) -> dict:
-    """Package state.json + storage/<project> into a zip under storage/<project>/exports/."""
-    from app.mcp_tools.file_tools import _project_dir  # type: ignore
-
-    async with session_scope() as session:
-        project = await session.get(Project, project_id)
-        if not project:
-            return {"error": "Project not found"}
-        state = json.loads(project.state_json or "{}")
-        title = project.title
-
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    name = output_name or f"{title}-{timestamp}.zip"
-    project_dir: Path = _project_dir(project_id)
-    exports = project_dir / "exports"
-    exports.mkdir(parents=True, exist_ok=True)
-    zip_path = exports / name
-
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(
-            "project_state.json",
-            json.dumps(state, ensure_ascii=False, indent=2),
-        )
-        for entry in project_dir.rglob("*"):
-            if entry.is_file() and exports not in entry.parents and entry != zip_path:
-                z.write(entry, entry.relative_to(project_dir))
-
-    return {
-        "path": str(zip_path.relative_to(project_dir)).replace("\\", "/"),
-        "size": zip_path.stat().st_size,
-    }

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import uuid
 from pathlib import Path
 
@@ -265,9 +264,3 @@ def waveform_page(
         "maximum": maximum.tolist(),
         "rms": rms.tolist(),
     }
-
-
-def gain_amplitude(gain_db: float) -> float:
-    if gain_db <= -120:
-        return 0.0
-    return math.pow(10.0, gain_db / 20.0)

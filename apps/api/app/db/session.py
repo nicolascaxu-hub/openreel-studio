@@ -30,10 +30,6 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-# Backwards-compatible alias used in some routes
-get_db = get_session
-
-
 @asynccontextmanager
 async def session_scope() -> AsyncIterator[AsyncSession]:
     """Context-manager form for use inside services / tools."""

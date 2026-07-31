@@ -41,7 +41,6 @@ async def test_node_detail_and_debug_trace_use_web_endpoints(
 
     _done(create_events)
     names = _tool_names(create_events)
-    assert "node.get_creation_guide" not in names
     assert "node.create" in names
     assert "node.run" in names
 

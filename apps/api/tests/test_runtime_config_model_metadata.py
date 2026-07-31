@@ -19,8 +19,6 @@ def test_llm_provider_accepts_model_context_metadata() -> None:
                     "supports_vision": False,
                     "tokenizer": "provider",
                     "tier": "strong",
-                    # Legacy global default flag is accepted then dropped.
-                    "is_default": True,
                     "enabled": True,
                     "notes": "runtime configured",
                     "params": {"cache_min_input_tokens": 1024},
@@ -59,8 +57,6 @@ def test_runtime_config_accepts_tier_defaults_without_task_names() -> None:
                     "provider": "openai",
                     "model_name": "strong-model",
                     "tier": "strong",
-                    # Legacy global default flag no longer affects routing.
-                    "is_default": True,
                 },
                 {
                     "name": "small-provider",

@@ -220,7 +220,7 @@ async def test_video_export_frame_creates_image_node_and_dependency_edge(monkeyp
         node = await session.get(WorkflowNode, created["id"])
         assert node is not None
         assert node.type == "image"
-        assert "node:1" in json.loads(node.input_json or "{}")["depends_on"]
+        assert {"ref": "node:1", "role": "context"} in json.loads(node.input_json or "{}")["references"]
 
 
 @pytest.mark.asyncio

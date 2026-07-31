@@ -24,7 +24,6 @@ from app.agent.vision_context import (
 )
 
 
-KEEP_RECENT_TOOL_RESULTS = 3
 TOKEN_THRESHOLD = 50000
 CHARS_PER_TOKEN = 3.5  # rough estimate for CJK + English mix
 TOOL_RESULT_CONTEXT_BUDGET_CHARS = 3000
@@ -104,41 +103,6 @@ def _estimate_text_tokens(messages: list[dict]) -> int:
         if tool_calls:
             total_chars += len(json.dumps(tool_calls, ensure_ascii=False, default=str))
     return math.ceil(total_chars / CHARS_PER_TOKEN)
-
-
-def micro_compact(messages: list[dict]) -> list[dict]:
-    """Layer 1: Replace legacy tool_result blocks with short placeholders.
-
-    OpenAI-style ``role=tool`` messages are append-only within a run. Mutating
-    already-sent tool messages breaks prompt-cache prefixes; completed rounds
-    are summarized separately before being persisted to chat history.
-
-    This still supports legacy list-form tool_result blocks used by older
-    tutorial harnesses.
-    Vision image context is persisted history, not a tool result; keep it
-    stable during a run so prompt-cache prefixes do not drift mid-loop.
-    Keeps the most recent KEEP_RECENT_TOOL_RESULTS intact.
-    Modifies messages in-place and returns the same list.
-    """
-    tool_results: list[tuple[str, Any]] = []
-
-    for msg in messages:
-        content = msg.get("content")
-        if msg.get("role") != "user" or not isinstance(content, list):
-            continue
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "tool_result":
-                tool_results.append(("block", part))
-
-    if len(tool_results) <= KEEP_RECENT_TOOL_RESULTS:
-        return messages
-
-    for _, target in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
-        content_str = target.get("content", "")
-        if isinstance(content_str, str) and len(content_str) > 200:
-            target["content"] = "[Previous tool result - compacted]"
-
-    return messages
 
 
 def save_transcript(messages: list[dict], project_id: str = "") -> Path:
@@ -483,7 +447,7 @@ def _summarize_node_list_item(node: Any) -> dict[str, Any]:
     input_payload = _summarize_node_input(node.get("input") or node.get("input_json"), node_type=node_type)
     fields_payload = _summarize_node_input(node.get("fields"), node_type=node_type)
     merged_input = {**fields_payload, **input_payload}
-    for key in ("purpose", "stage", "aspect_ratio", "resolution", "quality", "duration_seconds", "production_path", "references", "depends_on"):
+    for key in ("purpose", "stage", "aspect_ratio", "resolution", "quality", "duration_seconds", "production_path", "references"):
         value = merged_input.get(key)
         if value not in (None, "", [], {}):
             payload[key] = value
@@ -654,8 +618,6 @@ def _summarize_node_input(value: Any, *, node_type: str = "") -> dict[str, Any]:
             "duration_seconds",
             "production_path",
             "references",
-            "depends_on",
-            "reference_images",
         ),
     )
     prompt = source.get("prompt")
@@ -684,7 +646,7 @@ def _summarize_media_node_result(result: dict[str, Any]) -> dict[str, Any]:
     run_result = result.get("result")
     if isinstance(run_result, dict):
         nested = _summarize_node_io(run_result)
-        nested.update(_copy_present(run_result, ("n_succeeded", "n_failed", "reference_warnings", "reference_images")))
+        nested.update(_copy_present(run_result, ("n_succeeded", "n_failed", "reference_warnings", "resolved_reference_images")))
         if nested:
             payload["result"] = nested
 

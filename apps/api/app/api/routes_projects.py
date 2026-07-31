@@ -734,7 +734,7 @@ def _strip_ui_private(data: dict) -> dict:
     return {key: value for key, value in data.items() if key not in {"_ui_creator", "created_by"}}
 
 
-_DEPENDENCY_FIELD_KEYS = {"depends_on", "references", "reference_images"}
+_DEPENDENCY_FIELD_KEYS = {"references"}
 
 
 def _has_dependency_fields(data: dict[str, Any]) -> bool:
@@ -757,8 +757,6 @@ _IMAGE_RENDER_FRESHNESS_KEYS = {
     "seed",
     "style",
     "references",
-    "reference_images",
-    "depends_on",
 }
 
 
@@ -854,9 +852,7 @@ _CHANGE_LABELS = {
     "clarity": "清晰度",
     "duration_seconds": "时长",
     "production_path": "制作方式",
-    "reference_images": "引用图",
     "references": "参考",
-    "depends_on": "依赖",
 }
 
 
@@ -904,20 +900,6 @@ def _node_update_changes(
     add("prompt", old_prompt, new_prompt, 800)
     add("title", old_title, new_title, 500)
     return changes
-
-
-def _dependency_values(raw: Any) -> list[str]:
-    if raw is None:
-        return []
-    items = raw if isinstance(raw, list) else [raw]
-    values: list[str] = []
-    for item in items:
-        if item is None:
-            continue
-        text = _reference_value(item).strip()
-        if text and text not in values:
-            values.append(text)
-    return values
 
 
 def _reference_value(raw: Any) -> str:
@@ -982,42 +964,20 @@ def _add_edge_dependency(target: WorkflowNode, source: WorkflowNode | str) -> bo
     source_ref = _public_node_ref(source)
     input_data = _parse_json_dict(target.input_json)
     aliases = _node_dependency_aliases(source)
-
-    def add_to_container(container: dict[str, Any]) -> bool:
-        changed = False
-        deps = _dependency_values(container.get("depends_on"))
-        if not any(dep in aliases for dep in deps):
-            deps.append(source_ref)
-            container["depends_on"] = deps
-            changed = True
-
-        if isinstance(source, WorkflowNode):
-            role = _manual_edge_reference_role(source, target)
-            if role:
-                refs = container.get("references")
-                ref_items = refs if isinstance(refs, list) else ([refs] if refs else [])
-                if not any(_reference_value(item) in aliases for item in ref_items):
-                    ref_items.append({"ref": source_ref, "role": role})
-                    container["references"] = ref_items
-                    changed = True
-                if target.type in {"text", "image", "video"}:
-                    reference_images = _dependency_values(container.get("reference_images"))
-                    if not any(ref in aliases for ref in reference_images):
-                        reference_images.append(source_ref)
-                        container["reference_images"] = reference_images
-                        changed = True
-        return changed
-
-    changed = add_to_container(input_data)
-    fields = input_data.get("fields")
-    if isinstance(fields, dict) and any(key in fields for key in _DEPENDENCY_FIELD_KEYS):
-        if add_to_container(fields):
-            changed = True
-
-    if changed and target.type == "image":
-        input_data["render_state"] = "stale"
-    if not changed:
+    refs = input_data.get("references")
+    ref_items = refs if isinstance(refs, list) else ([refs] if refs else [])
+    if any(_reference_value(item) in aliases for item in ref_items):
         return False
+    role = (
+        _manual_edge_reference_role(source, target)
+        if isinstance(source, WorkflowNode)
+        else None
+    ) or "context"
+    ref_items.append({"ref": source_ref, "role": role})
+    input_data["references"] = ref_items
+
+    if target.type == "image":
+        input_data["render_state"] = "stale"
     target.input_json = json.dumps(_strip_ui_private(input_data), ensure_ascii=False)
     target.updated_at = datetime.utcnow()
     return True
@@ -1026,32 +986,12 @@ def _add_edge_dependency(target: WorkflowNode, source: WorkflowNode | str) -> bo
 def _remove_edge_dependency(target: WorkflowNode, source: WorkflowNode | str) -> bool:
     input_data = _parse_json_dict(target.input_json)
     aliases = _node_dependency_aliases(source)
-
-    def remove_from_container(container: dict[str, Any]) -> bool:
-        changed = False
-        if "depends_on" in container:
-            deps_raw = container.get("depends_on")
-            deps = deps_raw if isinstance(deps_raw, list) else ([deps_raw] if deps_raw else [])
-            next_deps = [dep for dep in deps if _reference_value(dep) not in aliases]
-            if next_deps != deps:
-                container["depends_on"] = next_deps
-                changed = True
-        for key in ("references", "reference_images"):
-            if key not in container:
-                continue
-            value = container.get(key)
-            refs = value if isinstance(value, list) else ([value] if value else [])
-            next_refs = [item for item in refs if _reference_value(item) not in aliases]
-            if next_refs != refs:
-                container[key] = next_refs
-                changed = True
-        return changed
-
-    changed = remove_from_container(input_data)
-    fields = input_data.get("fields")
-    if isinstance(fields, dict):
-        if remove_from_container(fields):
-            changed = True
+    value = input_data.get("references")
+    refs = value if isinstance(value, list) else ([value] if value else [])
+    next_refs = [item for item in refs if _reference_value(item) not in aliases]
+    changed = next_refs != refs
+    if changed:
+        input_data["references"] = next_refs
     if changed and target.type == "image":
         input_data["render_state"] = "stale"
     if not changed:
@@ -1144,7 +1084,7 @@ async def _create_media_operation_node(
             "operation": result.metadata.get("type"),
             "source_node_ids": [source.id for source in source_nodes],
         },
-        "depends_on": source_refs,
+        "references": [{"ref": ref, "role": "context"} for ref in source_refs],
         "fields": {
             "media_operation": result.metadata,
             "source_node_refs": source_refs,
@@ -1190,10 +1130,8 @@ def _session_clear_state_patch(state: dict, *, cleared_at: str) -> tuple[dict, i
     return (
         {
             "session": {},
-            "guide_loaded": {},
             "_mentor_guides_loaded": {},
             "_skills_loaded": {},
-            "_last_template_lookup": None,
             "_last_agent_review": None,
             ACTIVE_WORKFLOW_STATE_KEY: None,
             "workflow_runtime": {},
@@ -1350,10 +1288,8 @@ async def clear_project_session(
         "cleared": [
             "messages",
             "session",
-            "guide_loaded",
             "_mentor_guides_loaded",
             "_skills_loaded",
-            "_last_template_lookup",
             "_last_agent_review",
             "active_workflow",
             "workflow_runtime",

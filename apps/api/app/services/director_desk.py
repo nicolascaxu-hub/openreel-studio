@@ -113,7 +113,6 @@ def default_director_scene() -> dict[str, Any]:
     }
     return {
         "aspect_ratio": "16:9",
-        "camera": copy.deepcopy(primary_camera),
         "cameras": [{"id": "camera-main", "name": "机位 1", **copy.deepcopy(primary_camera)}],
         "active_camera_id": "camera-main",
         "viewport_camera": {
@@ -136,7 +135,7 @@ def default_director_state() -> dict[str, Any]:
     }
 
 
-def _normalize_legacy_mannequin_joints(scene: dict[str, Any]) -> None:
+def _normalize_mannequin_joints(scene: dict[str, Any]) -> None:
     objects = scene.get("objects")
     if not isinstance(objects, list):
         return
@@ -165,11 +164,10 @@ def _normalize_legacy_mannequin_joints(scene: dict[str, Any]) -> None:
 
 
 def _normalize_director_cameras(scene: dict[str, Any]) -> None:
-    fallback = default_director_scene()["camera"]
-    legacy = scene.get("camera") if isinstance(scene.get("camera"), dict) else fallback
+    fallback = default_director_scene()["cameras"][0]
     cameras = scene.get("cameras") if isinstance(scene.get("cameras"), list) else []
     if not cameras:
-        cameras = [{"id": "camera-main", "name": "机位 1", **copy.deepcopy(legacy)}]
+        cameras = [{"id": "camera-main", "name": "机位 1", **copy.deepcopy(fallback)}]
     scene["cameras"] = cameras
     camera_ids = [
         str(item.get("id") or "").strip()
@@ -184,21 +182,16 @@ def _normalize_director_cameras(scene: dict[str, Any]) -> None:
         (item for item in cameras if isinstance(item, dict) and item.get("id") == active_camera_id),
         None,
     )
-    if isinstance(active_camera, dict):
-        scene["camera"] = {
-            "position": copy.deepcopy(active_camera.get("position", fallback["position"])),
-            "target": copy.deepcopy(active_camera.get("target", fallback["target"])),
-            "fov": active_camera.get("fov", fallback["fov"]),
-        }
     if not isinstance(scene.get("viewport_camera"), dict):
-        position = scene["camera"].get("position")
+        active_camera = active_camera if isinstance(active_camera, dict) else fallback
+        position = active_camera.get("position")
         if not (
             isinstance(position, list)
             and len(position) == 3
             and all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in position)
         ):
             position = fallback["position"]
-        target = scene["camera"].get("target")
+        target = active_camera.get("target")
         if not isinstance(target, list) or len(target) != 3:
             target = fallback["target"]
         scene["viewport_camera"] = {
@@ -218,7 +211,7 @@ def normalize_director_state(raw: Any) -> dict[str, Any]:
     state["version"] = DIRECTOR_VERSION
     if isinstance(source.get("scene"), dict):
         state["scene"] = copy.deepcopy(source["scene"])
-        _normalize_legacy_mannequin_joints(state["scene"])
+        _normalize_mannequin_joints(state["scene"])
         _normalize_director_cameras(state["scene"])
     if isinstance(source.get("model_assets"), list):
         state["model_assets"] = source["model_assets"]
@@ -338,29 +331,24 @@ def validate_director_scene(scene: Any) -> dict[str, Any]:
     aspect_ratio = str(scene.get("aspect_ratio") or "16:9")
     if aspect_ratio not in {"16:9", "9:16", "1:1", "4:3"}:
         raise DirectorDeskError("不支持的导演台画幅")
-    camera = scene.get("camera")
-    if not isinstance(camera, dict):
-        raise DirectorDeskError("导演台缺少相机状态")
-    _validate_camera_pose(camera, name="camera")
     viewport_camera = scene.get("viewport_camera")
     if viewport_camera is not None:
         _validate_camera_pose(viewport_camera, name="viewport_camera")
     cameras = scene.get("cameras")
-    if cameras is not None:
-        if not isinstance(cameras, list) or not 1 <= len(cameras) <= MAX_DIRECTOR_CAMERAS:
-            raise DirectorDeskError(f"导演台机位数量必须在 1 到 {MAX_DIRECTOR_CAMERAS} 之间")
-        camera_ids: set[str] = set()
-        for index, item in enumerate(cameras):
-            _validate_camera_pose(item, name=f"cameras[{index}]")
-            camera_id = str(item.get("id") or "").strip()
-            camera_name = str(item.get("name") or "").strip()
-            if not camera_id or camera_id in camera_ids or len(camera_id) > 128:
-                raise DirectorDeskError("导演台机位 ID 无效")
-            if not camera_name or len(camera_name) > 120:
-                raise DirectorDeskError(f"cameras[{index}].name 无效")
-            camera_ids.add(camera_id)
-        if str(scene.get("active_camera_id") or "") not in camera_ids:
-            raise DirectorDeskError("active_camera_id 必须指向现有机位")
+    if not isinstance(cameras, list) or not 1 <= len(cameras) <= MAX_DIRECTOR_CAMERAS:
+        raise DirectorDeskError(f"导演台机位数量必须在 1 到 {MAX_DIRECTOR_CAMERAS} 之间")
+    camera_ids: set[str] = set()
+    for index, item in enumerate(cameras):
+        _validate_camera_pose(item, name=f"cameras[{index}]")
+        camera_id = str(item.get("id") or "").strip()
+        camera_name = str(item.get("name") or "").strip()
+        if not camera_id or camera_id in camera_ids or len(camera_id) > 128:
+            raise DirectorDeskError("导演台机位 ID 无效")
+        if not camera_name or len(camera_name) > 120:
+            raise DirectorDeskError(f"cameras[{index}].name 无效")
+        camera_ids.add(camera_id)
+    if str(scene.get("active_camera_id") or "") not in camera_ids:
+        raise DirectorDeskError("active_camera_id 必须指向现有机位")
     panorama = scene.get("panorama")
     if panorama is not None:
         if not isinstance(panorama, dict):
@@ -891,6 +879,16 @@ class DirectorDeskService:
             "3D 导演台构图参考：仅参考人物与物体的站位、朝向、姿态、比例、遮挡关系、景别和机位；"
             "生成正式分镜时结合人物与场景参考重绘，不保留白模、色块、网格或编辑器外观。"
         )
+        scene_snapshot = capture.get("scene_snapshot") or {}
+        camera_id = str(capture.get("camera_id") or scene_snapshot.get("active_camera_id") or "")
+        camera = next(
+            (
+                item
+                for item in scene_snapshot.get("cameras", [])
+                if isinstance(item, dict) and str(item.get("id") or "") == camera_id
+            ),
+            {},
+        )
         fields = {
             "director_capture": True,
             "director_capture_id": capture_id,
@@ -899,7 +897,7 @@ class DirectorDeskService:
             "reference_role": "composition",
             "reference_usage": "composition_only",
             "actor_legend": capture.get("actor_legend", []),
-            "director_camera": (capture.get("scene_snapshot") or {}).get("camera", {}),
+            "director_camera": camera,
             "aspect_ratio": capture.get("aspect_ratio", "16:9"),
         }
         input_data = {

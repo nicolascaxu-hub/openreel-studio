@@ -22,7 +22,6 @@ from app.agent import workflow_canvas_projection
 from app.agent import workflow_spec_artifacts
 from app.config import settings
 from app.mcp_tools import node_universal, workflow_tools
-from app.mcp_tools.registry import registry
 
 
 def _base_spec() -> dict:
@@ -46,75 +45,6 @@ def _base_spec() -> dict:
             }
         ],
     }
-
-
-def test_v2_is_the_only_accepted_public_schema() -> None:
-    parsed = parse_workflow_spec(_base_spec())
-    assert parsed.schema_ == WORKFLOW_SPEC_VERSION
-
-    legacy = _base_spec()
-    legacy["schema"] = "openreel.workflow.authoring.v1"
-    with pytest.raises(WorkflowSpecError):
-        parse_workflow_spec(legacy)
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("node_type", "text"),
-        ("runner", "node.run"),
-        ("surface", "workflow_runtime"),
-        ("visibility", "flow_only"),
-        ("prompt_template", "legacy"),
-        ("llm_task_type", "script_generation"),
-        ("runtime_hidden", True),
-        ("manual_only", True),
-        ("optional", True),
-        ("auto_skip_when", "{{ inputs.episode_count }} <= 1"),
-        ("context_refs", []),
-        ("reference_selectors", []),
-        ("repeat", {"count": 2}),
-        ("for_each", "steps.script.output"),
-        ("bindings", {}),
-        ("prompt_spec", {}),
-        ("expansion", {}),
-        ("completion", {}),
-        ("io", {}),
-        ("branch", "legacy"),
-        ("expand_when", "legacy"),
-        ("instance_scope", {}),
-        ("repeat_group_id", "legacy"),
-        ("source_category", "legacy"),
-        ("source_ui", "legacy"),
-        ("source_behavior", "legacy"),
-    ],
-)
-def test_v2_rejects_deleted_step_fields(field: str, value: object) -> None:
-    payload = _base_spec()
-    payload["steps"][0][field] = value
-    with pytest.raises(WorkflowSpecError):
-        parse_workflow_spec(payload)
-
-
-def test_v2_rejects_deleted_root_fields() -> None:
-    for field in ("name", "inputs_schema", "required_inputs", "defaults", "dimensions", "required_capabilities"):
-        payload = _base_spec()
-        payload[field] = {}
-        with pytest.raises(WorkflowSpecError):
-            parse_workflow_spec(payload)
-
-
-def test_legacy_workflow_authoring_tools_are_not_registered() -> None:
-    names = {tool.name for tool in registry.list_tools()}
-    assert {
-        "workflow.draft.start",
-        "workflow.draft.append_steps",
-        "workflow.draft.commit",
-        "workflow.spec.start",
-        "workflow.spec.append_steps",
-        "workflow.spec.commit",
-        "workflow.spec.patch",
-    }.isdisjoint(names)
 
 
 @pytest.mark.parametrize("field", ["model", "model_tier", "provider", "llm_task_type", "api_key"])
@@ -1868,56 +1798,6 @@ def test_builtin_vision_is_only_declared_for_steps_that_must_see_images() -> Non
     ]
 
 
-def test_workflow_managed_references_replace_legacy_edges_without_losing_manual_refs() -> None:
-    fields = {
-        "workflow": {"template_id": "short_drama", "instance_id": "wf-1"},
-        "references": [
-            {"ref": "node:character", "role": "context"},
-            {"ref": "node:script", "role": "context"},
-        ],
-        "depends_on": ["node:character", "node:script"],
-    }
-
-    migrated = workflow_tools._merge_workflow_dependency_refs(
-        fields,
-        [{"ref": "node:script", "role": "context"}],
-        replace_managed=True,
-    )
-
-    assert migrated["references"] == [{"ref": "node:script", "role": "context"}]
-    assert migrated["depends_on"] == ["node:script"]
-    assert migrated["workflow"]["managed_references"] == [
-        {"ref": "node:script", "role": "context"}
-    ]
-
-    migrated["references"].append({"ref": "asset:user-style", "role": "style_reference"})
-    refreshed = workflow_tools._merge_workflow_dependency_refs(
-        migrated,
-        [{"ref": "node:new-script", "role": "context"}],
-        replace_managed=True,
-    )
-
-    assert refreshed["references"] == [
-        {"ref": "asset:user-style", "role": "style_reference"},
-        {"ref": "node:new-script", "role": "context"},
-    ]
-    assert refreshed["depends_on"] == ["asset:user-style", "node:new-script"]
-
-    cleared = workflow_tools._merge_workflow_dependency_refs(
-        {
-            "workflow": {
-                "template_id": "short_drama",
-                "managed_references": [{"ref": "node:new-script", "role": "context"}],
-            },
-            "references": [{"ref": "node:new-script", "role": "context"}],
-            "depends_on": ["node:new-script"],
-        },
-        [],
-        replace_managed=True,
-    )
-    assert cleared["references"] == []
-    assert cleared["depends_on"] == []
-
 
 def test_private_loop_expansion_resolves_item_fields_but_keeps_workflow_paths() -> None:
     public = canvas_workflow_templates.get_builtin_template(
@@ -2036,17 +1916,6 @@ def test_conditional_feedback_loops_propagate_mode_to_expanded_children() -> Non
     assert set(story_template_steps) <= virtual
     assert "segment_production_s1_final_video" not in virtual
     assert "segment_production_s1_final_video_story_template" in virtual
-
-
-def test_template_loader_rejects_v1_instead_of_converting_it() -> None:
-    legacy = {
-        "workflow_spec_version": "openreel.workflow.v1",
-        "id": "legacy",
-        "name": "旧模板",
-        "steps": [{"id": "text", "node_type": "text", "runner": "node.run"}],
-    }
-    with pytest.raises(canvas_workflow_templates.WorkflowTemplateError):
-        canvas_workflow_templates.normalize_inline_workflow(legacy)
 
 
 def test_v2_audit_reports_logical_outputs_and_private_deferred_loops() -> None:
@@ -2324,9 +2193,6 @@ def test_workflow_build_guide_documents_v2_high_frequency_errors() -> None:
     assert "`key` is the current object item's stable field name" in WORKFLOW_SPEC_V2_GUIDE
     assert "Projection is a structural authoring preview" in WORKFLOW_SPEC_V2_GUIDE
     assert "if an expected dynamic loop has zero expanded instances" in WORKFLOW_SPEC_V2_GUIDE
-    assert "openreel.workflow.authoring.v1" not in WORKFLOW_SPEC_V2_GUIDE
-
-
 def test_workflow_build_guide_example_compiles_with_scoped_dynamic_selection() -> None:
     plan = compile_workflow_spec(WORKFLOW_SPEC_V2_EXAMPLE)
     by_id = {
@@ -2383,7 +2249,7 @@ def test_user_template_file_stays_a_plain_portable_v2_document(
     assert stored["steps"][1]["fields"] == {"purpose": "poster"}
 
 
-def test_legacy_user_template_is_canonicalized_before_model_read_or_export(
+def test_user_template_is_canonicalized_before_model_read_or_export(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

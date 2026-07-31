@@ -3,6 +3,7 @@
 This module intentionally does not parse natural-language messages. It only
 reads structured UI metadata such as decision_inputs.kind/action/values.
 """
+
 from __future__ import annotations
 
 import time
@@ -43,14 +44,18 @@ def decision_from_user_metadata(user_metadata: dict[str, Any] | None) -> Structu
         or values.get("subject")
         or kind
     ).strip()
-    action = str(
+    action = (
+        str(
         decision.get("action")
         or decision.get("decision")
         or values.get("action")
         or values.get("decision")
         or values.get("choice")
         or ""
-    ).strip().lower()
+        )
+        .strip()
+        .lower()
+    )
     feedback = str(
         decision.get("feedback")
         or decision.get("comment")
@@ -77,32 +82,6 @@ def decision_action(
     if not decision.matches(*targets):
         return "", ""
     return decision.action, decision.feedback
-
-
-def build_pending_confirmation(
-    *,
-    kind: str,
-    risk: str,
-    actions: list[str],
-    confirmation_id: str,
-    title: str = "",
-    summary: str = "",
-    checksum: str = "",
-    can_skip: bool = False,
-    expires_at: int | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": confirmation_id,
-        "kind": kind,
-        "risk": risk,
-        "title": title,
-        "summary": summary,
-        "actions": list(actions),
-        "checksum": checksum,
-        "can_skip": bool(can_skip),
-        "created_at": int(time.time()),
-        "expires_at": expires_at,
-    }
 
 
 def confirmation_expires_at(
@@ -179,7 +158,8 @@ def expired_pending_confirmation_patch(
         if not is_pending_confirmation_expired(pending, now=now):
             continue
         patch[state_key] = None
-        expired.append({
+        expired.append(
+            {
             "state_key": state_key,
             "confirmation_kind": kind,
             "confirmation_id": pending.get("id") or pending.get("confirmation_id"),
@@ -190,5 +170,6 @@ def expired_pending_confirmation_patch(
             "expires_at": pending.get("expires_at"),
             "version": pending.get("version"),
             "target_node_id": pending.get("target_node_id"),
-        })
+            }
+        )
     return patch, expired

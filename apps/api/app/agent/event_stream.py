@@ -14,13 +14,15 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
+
 
 class EventStream:
     """Append-only JSONL event log."""
 
     def __init__(self, events_dir: Path | str | None = None):
         if events_dir is None:
-            events_dir = Path("data/events")
+            events_dir = Path(settings.PROJECT_ROOT) / "data" / "events"
         self.dir = Path(events_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
 

@@ -1,85 +1,17 @@
 """MCP-style project tools."""
+
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from sqlmodel import select
-
-from app.db.models import Project, Version
 from app.db.session import session_scope
 from app.mcp_tools import canvas_tools
-from app.mcp_tools.query_match import invalid_regex_response, match_text, search_blob
 from app.services.node_public_ids import (
     internal_to_public_id_map,
     model_visible_edge_payload,
     model_visible_node_payload,
 )
 from app.services.project_service import ProjectService
-from app.services.version_service import VersionService
-
-
-async def project_list(
-    query: str = "",
-    regex: str | list[str] | None = None,
-    pattern: str | list[str] | None = None,
-    case_sensitive: bool = False,
-) -> list[dict] | dict:
-    invalid = invalid_regex_response(regex=regex, pattern=pattern)
-    if invalid is not None:
-        return invalid
-    async with session_scope() as session:
-        svc = ProjectService(session)
-        items = await svc.list_projects()
-        projects = [
-            {
-                "id": p.id,
-                "title": p.title,
-                "status": p.status,
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-            }
-            for p in items
-        ]
-        if query or regex or pattern:
-            projects = [
-                project
-                for project in projects
-                if match_text(
-                    search_blob(project),
-                    query=query,
-                    regex=regex,
-                    pattern=pattern,
-                    case_sensitive=case_sensitive,
-                ).get("matched")
-            ]
-        return projects
-
-
-async def project_create(
-    title: str,
-) -> dict:
-    async with session_scope() as session:
-        svc = ProjectService(session)
-        project = await svc.create_project(title=title)
-        return {"id": project.id, "title": project.title}
-
-
-async def project_rename(project_id: str, title: str) -> dict:
-    async with session_scope() as session:
-        svc = ProjectService(session)
-        project = await svc.update_project(project_id, {"title": title})
-        if not project:
-            return {"error": "Project not found"}
-        # also reflect in metadata
-        await svc.update_project_state(project_id, {"metadata.title": title})
-        return {"id": project.id, "title": project.title}
-
-
-async def project_delete(project_id: str) -> dict:
-    async with session_scope() as session:
-        svc = ProjectService(session)
-        ok = await svc.delete_project(project_id)
-        return {"ok": ok}
 
 
 async def project_get_state(project_id: str) -> dict[str, Any]:
@@ -125,14 +57,24 @@ def _agent_token_usage_summary(state: dict[str, Any]) -> dict[str, Any]:
             "note": "当前项目尚未记录模型 token/cache usage。",
         }
     cache_hit_rate = usage.get("cache_hit_rate")
-    latest_call_context = usage.get("latest_call_context") if isinstance(usage.get("latest_call_context"), dict) else {}
+    latest_call_context = (
+        usage.get("latest_call_context")
+        if isinstance(usage.get("latest_call_context"), dict)
+        else {}
+    )
     latest_context_map = latest_call_context if isinstance(latest_call_context, dict) else {}
     context_peak = usage.get("context_peak") if isinstance(usage.get("context_peak"), dict) else {}
     context_peak_map = context_peak if isinstance(context_peak, dict) else {}
-    context_available_rate = latest_context_map.get("context_available_rate", usage.get("context_available_rate"))
+    context_available_rate = latest_context_map.get(
+        "context_available_rate", usage.get("context_available_rate")
+    )
     context_used_rate = latest_context_map.get("context_used_rate", usage.get("context_used_rate"))
-    context_peak_available_rate = context_peak_map.get("context_available_rate", usage.get("context_peak_available_rate"))
-    context_peak_used_rate = context_peak_map.get("context_used_rate", usage.get("context_peak_used_rate"))
+    context_peak_available_rate = context_peak_map.get(
+        "context_available_rate", usage.get("context_peak_available_rate")
+    )
+    context_peak_used_rate = context_peak_map.get(
+        "context_used_rate", usage.get("context_peak_used_rate")
+    )
     summary = {
         "available": True,
         "llm_calls": usage.get("llm_calls", 0),
@@ -184,128 +126,3 @@ def _agent_token_usage_summary(state: dict[str, Any]) -> dict[str, Any]:
         summary["context_peak_available_rate"] = context_peak_available_rate
         summary["context_peak_available_percent"] = _percent(context_peak_available_rate)
     return summary
-
-
-async def project_update_state(project_id: str, patch: dict | str) -> dict:
-    if isinstance(patch, str):
-        try:
-            patch = json.loads(patch)
-        except (json.JSONDecodeError, TypeError):
-            return {"error": "patch must be a JSON object, not a string"}
-    if not isinstance(patch, dict):
-        return {"error": "patch must be a dict"}
-    async with session_scope() as session:
-        svc = ProjectService(session)
-        project = await svc.update_project_state(project_id, patch)
-        if not project:
-            return {"error": f"Project {project_id} not found"}
-        return {"ok": True, "project_id": project_id}
-
-
-async def project_lock_field(project_id: str, field_path: str) -> dict:
-    async with session_scope() as session:
-        project = await session.get(Project, project_id)
-        if not project:
-            return {"error": "Project not found"}
-        state = json.loads(project.state_json or "{}")
-        locked = set(state.get("locked_fields", []))
-        locked.add(field_path)
-        state["locked_fields"] = sorted(locked)
-        project.state_json = json.dumps(state, ensure_ascii=False)
-        session.add(project)
-        await session.commit()
-        return {"locked_fields": state["locked_fields"]}
-
-
-async def project_unlock_field(project_id: str, field_path: str) -> dict:
-    async with session_scope() as session:
-        project = await session.get(Project, project_id)
-        if not project:
-            return {"error": "Project not found"}
-        state = json.loads(project.state_json or "{}")
-        locked = [f for f in state.get("locked_fields", []) if f != field_path]
-        state["locked_fields"] = locked
-        project.state_json = json.dumps(state, ensure_ascii=False)
-        session.add(project)
-        await session.commit()
-        return {"locked_fields": locked}
-
-
-async def project_save_version(
-    project_id: str,
-    target_type: str,
-    target_id: str,
-    snapshot: dict,
-    message: str = "",
-) -> dict:
-    async with session_scope() as session:
-        svc = VersionService(session)
-        version = await svc.save_version(
-            project_id=project_id,
-            target_type=target_type,
-            target_id=target_id,
-            snapshot=snapshot,
-            message=message,
-        )
-        return {
-            "version_id": version.id,
-            "version_number": version.version_number,
-        }
-
-
-async def project_list_versions(
-    project_id: str, target_type: str | None = None, target_id: str | None = None
-) -> list[dict]:
-    async with session_scope() as session:
-        stmt = select(Version).where(Version.project_id == project_id)
-        if target_type:
-            stmt = stmt.where(Version.target_type == target_type)
-        if target_id:
-            stmt = stmt.where(Version.target_id == target_id)
-        stmt = stmt.order_by(Version.created_at.desc()).limit(50)
-        rows = (await session.exec(stmt)).all()
-        return [
-            {
-                "id": v.id,
-                "target_type": v.target_type,
-                "target_id": v.target_id,
-                "version_number": v.version_number,
-                "message": v.message,
-                "created_at": v.created_at.isoformat() if v.created_at else None,
-            }
-            for v in rows
-        ]
-
-
-async def project_restore_version(version_id: str) -> dict:
-    """Restore a snapshot back into project state. The snapshot is expected to
-    contain {"after": {...}} or {"state": {...}}; we merge that under the
-    appropriate key.
-    """
-    async with session_scope() as session:
-        version = await session.get(Version, version_id)
-        if not version:
-            return {"error": "Version not found"}
-        snapshot = json.loads(version.snapshot_json or "{}")
-        payload = snapshot.get("after") or snapshot.get("state") or snapshot
-
-        project = await session.get(Project, version.project_id)
-        if not project:
-            return {"error": "Project not found"}
-
-        if version.target_type == "project":
-            project.state_json = json.dumps(payload, ensure_ascii=False)
-        else:
-            state = json.loads(project.state_json or "{}")
-            bucket = state.setdefault(version.target_type + "s", {})
-            if isinstance(bucket, dict):
-                bucket[version.target_id] = payload
-            project.state_json = json.dumps(state, ensure_ascii=False)
-        session.add(project)
-        await session.commit()
-        return {
-            "ok": True,
-            "project_id": version.project_id,
-            "target_type": version.target_type,
-            "target_id": version.target_id,
-        }

@@ -385,7 +385,7 @@ def _attach_total_views(total: dict[str, Any]) -> dict[str, Any]:
 
 
 def infer_context_window_tokens(model: str | None) -> tuple[int, str]:
-    """Compatibility fallback for callers that have no runtime model metadata."""
+    """Estimate the context window when runtime model metadata is unavailable."""
     return TOKEN_THRESHOLD, "local_compaction_threshold"
 
 

@@ -128,14 +128,6 @@ async def peek_count(project_id: str) -> int:
         return len(_queues.get(project_id) or [])
 
 
-def merge_messages(items: list[dict[str, Any]]) -> tuple[str, list]:
-    """Legacy single-item adapter kept for compatibility with older tests/imports."""
-    if not items:
-        return "", []
-    item = items[0]
-    return item.get("message", ""), item.get("attachments") or []
-
-
 def queued_preview(items: list[dict[str, Any]], *, limit: int = 300) -> str:
     parts: list[str] = []
     for item in items:

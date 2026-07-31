@@ -24,6 +24,7 @@ def now() -> datetime:
 # projects
 # ---------------------------------------------------------------------------
 
+
 class ProjectBase(SQLModel):
     title: str
     description: Optional[str] = None
@@ -44,55 +45,10 @@ class Project(ProjectBase, table=True):
     updated_at: datetime = Field(default_factory=now)
 
 
-class ProjectCreate(ProjectBase):
-    pass
-
-
-class ProjectRead(ProjectBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-
-# ---------------------------------------------------------------------------
-# characters
-# ---------------------------------------------------------------------------
-
-class CharacterBase(SQLModel):
-    project_id: str = Field(foreign_key="projects.id", index=True)
-    name: str
-    role_type: Optional[str] = None          # female_lead | male_lead | antagonist | support
-    age: Optional[int] = None
-    identity: Optional[str] = None
-    personality: Optional[str] = None
-    appearance: Optional[str] = None
-    motivation: Optional[str] = None
-    relationship_json: Optional[str] = None  # JSON
-    visual_prompt: Optional[str] = None
-    locked: bool = False
-
-
-class Character(CharacterBase, table=True):
-    __tablename__ = "characters"
-
-    id: str = Field(default_factory=gen_uuid, primary_key=True)
-    created_at: datetime = Field(default_factory=now)
-    updated_at: datetime = Field(default_factory=now)
-
-
-class CharacterCreate(CharacterBase):
-    pass
-
-
-class CharacterRead(CharacterBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-
 # ---------------------------------------------------------------------------
 # episodes
 # ---------------------------------------------------------------------------
+
 
 class EpisodeBase(SQLModel):
     project_id: str = Field(foreign_key="projects.id", index=True)
@@ -102,8 +58,8 @@ class EpisodeBase(SQLModel):
     summary: Optional[str] = None
     script: Optional[str] = None
     cliffhanger: Optional[str] = None
-    score_json: Optional[str] = None   # JSON with rating breakdown
-    status: str = "pending"            # pending | generating | done | failed
+    score_json: Optional[str] = None  # JSON with rating breakdown
+    status: str = "pending"  # pending | generating | done | failed
 
 
 class Episode(EpisodeBase, table=True):
@@ -114,100 +70,9 @@ class Episode(EpisodeBase, table=True):
     updated_at: datetime = Field(default_factory=now)
 
 
-class EpisodeCreate(EpisodeBase):
-    pass
-
-
-class EpisodeRead(EpisodeBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-
-# ---------------------------------------------------------------------------
-# scenes
-# ---------------------------------------------------------------------------
-
-class SceneBase(SQLModel):
-    project_id: str = Field(foreign_key="projects.id", index=True)
-    episode_id: Optional[str] = Field(default=None, foreign_key="episodes.id", index=True)
-    name: Optional[str] = None
-    location: Optional[str] = None
-    time_of_day: Optional[str] = None
-    characters_json: Optional[str] = None   # JSON list of character ids
-    props_json: Optional[str] = None        # JSON list of props
-    summary: Optional[str] = None
-
-
-class Scene(SceneBase, table=True):
-    __tablename__ = "scenes"
-
-    id: str = Field(default_factory=gen_uuid, primary_key=True)
-    created_at: datetime = Field(default_factory=now)
-    updated_at: datetime = Field(default_factory=now)
-
-
-class SceneCreate(SceneBase):
-    pass
-
-
-class SceneRead(SceneBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-
-# ---------------------------------------------------------------------------
-# shots
-# ---------------------------------------------------------------------------
-
-class ShotBase(SQLModel):
-    project_id: str = Field(foreign_key="projects.id", index=True)
-    episode_id: Optional[str] = Field(default=None, foreign_key="episodes.id", index=True)
-    scene_id: Optional[str] = Field(default=None, foreign_key="scenes.id", index=True)
-    shot_number: int
-    shot_type: Optional[str] = None      # close_up | medium | wide | etc.
-    camera: Optional[str] = None
-    duration: Optional[int] = None       # seconds
-    content: Optional[str] = None
-    dialogue: Optional[str] = None
-    image_prompt: Optional[str] = None
-    video_prompt: Optional[str] = None
-    asset_id: Optional[str] = None
-
-
-class Shot(ShotBase, table=True):
-    __tablename__ = "shots"
-
-    id: str = Field(default_factory=gen_uuid, primary_key=True)
-    created_at: datetime = Field(default_factory=now)
-    updated_at: datetime = Field(default_factory=now)
-
-
-class ShotCreate(ShotBase):
-    pass
-
-
-class ShotRead(ShotBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-
 # ---------------------------------------------------------------------------
 # workflow_nodes
 # ---------------------------------------------------------------------------
-
-NODE_TYPES = [
-    "text",
-    "image",
-    "video",
-    "audio",
-]
-
-CHARACTER_TIERS = ["main", "recurring", "guest"]
-
-NODE_STATUSES = ["idle", "queued", "running", "completed", "failed", "waiting_confirm"]
 
 
 class WorkflowNodeBase(SQLModel):
@@ -235,19 +100,10 @@ class WorkflowNode(WorkflowNodeBase, table=True):
     updated_at: datetime = Field(default_factory=now)
 
 
-class WorkflowNodeCreate(WorkflowNodeBase):
-    pass
-
-
-class WorkflowNodeRead(WorkflowNodeBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-
 # ---------------------------------------------------------------------------
 # frame-accurate video editor sequences
 # ---------------------------------------------------------------------------
+
 
 class VideoEditSequence(SQLModel, table=True):
     __tablename__ = "video_edit_sequences"
@@ -296,6 +152,7 @@ class VideoSequenceRenderJob(SQLModel, table=True):
 # workflow_edges
 # ---------------------------------------------------------------------------
 
+
 class WorkflowEdgeBase(SQLModel):
     project_id: str = Field(foreign_key="projects.id", index=True)
     source_node_id: str = Field(foreign_key="workflow_nodes.id")
@@ -310,28 +167,9 @@ class WorkflowEdge(WorkflowEdgeBase, table=True):
     created_at: datetime = Field(default_factory=now)
 
 
-class WorkflowEdgeCreate(WorkflowEdgeBase):
-    pass
-
-
-class WorkflowEdgeRead(WorkflowEdgeBase):
-    id: str
-    created_at: datetime
-
-
 # ---------------------------------------------------------------------------
 # assets
 # ---------------------------------------------------------------------------
-
-ASSET_TYPES = [
-    "character_image",
-    "scene_image",
-    "storyboard_image",
-    "video",
-    "audio",
-    "document",
-    "reference",
-]
 
 
 class AssetBase(SQLModel):
@@ -354,22 +192,14 @@ class Asset(AssetBase, table=True):
     created_at: datetime = Field(default_factory=now)
 
 
-class AssetCreate(AssetBase):
-    pass
-
-
-class AssetRead(AssetBase):
-    id: str
-    created_at: datetime
-
-
 # ---------------------------------------------------------------------------
 # messages
 # ---------------------------------------------------------------------------
 
+
 class MessageBase(SQLModel):
     project_id: str = Field(foreign_key="projects.id", index=True)
-    role: str   # user | assistant | system | tool
+    role: str  # user | assistant | system | tool
     content: str
     metadata_json: Optional[str] = None
     archived: bool = False
@@ -382,18 +212,10 @@ class Message(MessageBase, table=True):
     created_at: datetime = Field(default_factory=now)
 
 
-class MessageCreate(MessageBase):
-    pass
-
-
-class MessageRead(MessageBase):
-    id: str
-    created_at: datetime
-
-
 # ---------------------------------------------------------------------------
 # agent trace events
 # ---------------------------------------------------------------------------
+
 
 class AgentTraceEvent(SQLModel, table=True):
     __tablename__ = "agent_trace_events"
@@ -416,31 +238,14 @@ class AgentTraceEvent(SQLModel, table=True):
 # model_configs
 # ---------------------------------------------------------------------------
 
-TASK_TYPES = [
-    "agent_loop",
-    "agent_review",
-    "agent_compact",
-    "agent_aux",
-    "planning",
-    "character_generation",
-    "outline_generation",
-    "script_generation",
-    "script_review",
-    "storyboard_generation",
-    "image_understanding",
-    "image_prompt_generation",
-    "video_prompt_generation",
-    "subagent_node_producer",
-    "subagent_image_editor",
-]
-
 
 class ModelConfigBase(SQLModel):
     task_type: str = Field(index=True)
     provider: str
     model_name: str
-    llm_provider_name: Optional[str] = Field(None, index=True,
-        description="引用 llm_providers.name；ConfigStore 同步时设置")
+    llm_provider_name: Optional[str] = Field(
+        None, index=True, description="引用 llm_providers.name；ConfigStore 同步时设置"
+    )
     temperature: float = 0.7
     max_tokens: int = 4000
     top_p: float = 1.0
@@ -457,33 +262,20 @@ class ModelConfig(ModelConfigBase, table=True):
     updated_at: datetime = Field(default_factory=now)
 
 
-class ModelConfigCreate(ModelConfigBase):
-    pass
-
-
-class ModelConfigRead(ModelConfigBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-
 # ---------------------------------------------------------------------------
 # media_providers — user-configured image/video/audio model endpoints
 # Multiple per kind; exactly one (or zero) is_active per kind.
 # ---------------------------------------------------------------------------
 
-MEDIA_KINDS = ["image", "video", "audio"]
-MEDIA_API_FORMATS = ["universal_adapter", "openai", "raw", "raw_post", "image_http_v1", "audio_http_v1", "suno_compatible", "openai_tts"]
-
 
 class MediaProviderBase(SQLModel):
-    kind: str = Field(index=True)            # image | video | audio
-    name: str = Field(index=True)            # user-supplied label, e.g. "fal-flux-pro"
+    kind: str = Field(index=True)  # image | video | audio
+    name: str = Field(index=True)  # user-supplied label, e.g. "fal-flux-pro"
     base_url: str
     api_key: Optional[str] = None
-    model_name: str                          # model id sent in payload
-    api_format: str = "openai"  # video uses universal_adapter; image/audio retain their current formats
-    params_json: Optional[str] = None        # default extra params JSON (size, steps, etc.)
+    model_name: str  # model id sent in payload
+    api_format: str = "universal_adapter"
+    params_json: Optional[str] = None  # default extra params JSON (size, steps, etc.)
     is_active: bool = False
     enabled: bool = True
     notes: Optional[str] = None
@@ -495,16 +287,6 @@ class MediaProvider(MediaProviderBase, table=True):
     id: str = Field(default_factory=gen_uuid, primary_key=True)
     created_at: datetime = Field(default_factory=now)
     updated_at: datetime = Field(default_factory=now)
-
-
-class MediaProviderCreate(MediaProviderBase):
-    pass
-
-
-class MediaProviderRead(MediaProviderBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
 
 
 # ---------------------------------------------------------------------------
@@ -556,41 +338,13 @@ class AppSetting(SQLModel, table=True):
 
 
 # ---------------------------------------------------------------------------
-# versions
-# ---------------------------------------------------------------------------
-
-class VersionBase(SQLModel):
-    project_id: str = Field(foreign_key="projects.id", index=True)
-    target_type: str    # project | character | episode | scene | shot | node
-    target_id: str
-    version_number: int
-    snapshot_json: str   # {"before": {...}, "after": {...}}
-    message: Optional[str] = None
-
-
-class Version(VersionBase, table=True):
-    __tablename__ = "versions"
-
-    id: str = Field(default_factory=gen_uuid, primary_key=True)
-    created_at: datetime = Field(default_factory=now)
-
-
-class VersionCreate(VersionBase):
-    pass
-
-
-class VersionRead(VersionBase):
-    id: str
-    created_at: datetime
-
-
-# ---------------------------------------------------------------------------
 # user_memory — cross-project, long-lived facts about the user (preferences,
 # voice/style, recurring naming conventions, model choices)
 # ---------------------------------------------------------------------------
 
+
 class UserMemoryBase(SQLModel):
-    kind: str = Field(index=True)   # preference | style | naming | model | fact
+    kind: str = Field(index=True)  # preference | style | naming | model | fact
     content: str
     source_project_id: Optional[str] = Field(default=None, index=True)
     hits: int = 0
@@ -601,14 +355,4 @@ class UserMemory(UserMemoryBase, table=True):
 
     id: str = Field(default_factory=gen_uuid, primary_key=True)
     created_at: datetime = Field(default_factory=now)
-    last_used_at: Optional[datetime] = None
-
-
-class UserMemoryCreate(UserMemoryBase):
-    pass
-
-
-class UserMemoryRead(UserMemoryBase):
-    id: str
-    created_at: datetime
     last_used_at: Optional[datetime] = None

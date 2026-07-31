@@ -87,7 +87,7 @@ def test_video_sound_control_follows_the_selected_protocol_capability() -> None:
     assert "rounded-md border border-white" not in toggle
     audio_settings = details[
         details.index("function videoNativeAudioSettings"):
-        details.index("function audioProviderModeFromFormat")
+        details.index("function audioProviderModeFromProvider")
     ]
     assert "supports_native_audio" in audio_settings
     assert ") === true" in audio_settings

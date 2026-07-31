@@ -33,5 +33,5 @@ def build_video_mode_system_reminder(
     if video_output_disabled:
         body = "当前请求按视觉预制作范围执行，输出文本说明和图片素材。"
     else:
-        body = "模型按节点字段、references 和 depends_on 组织制作方法。"
+        body = "模型按节点字段和 references 组织制作方法。"
     return f"[SYSTEM] 当前项目状态: {label}。{body}"

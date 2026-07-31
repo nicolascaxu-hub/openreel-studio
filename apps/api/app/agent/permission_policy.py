@@ -32,7 +32,6 @@ class ToolPermissionContext:
     tool_name: str
     state: dict[str, Any]
     user_message: str
-    requires_plan: bool = False
     tool_args: dict[str, Any] = field(default_factory=dict)
     via_tool_execute: bool = False
 
@@ -72,10 +71,6 @@ def plan_mode_allowed_tools() -> set[str]:
     return _registered_visible_policy_tools(allowed)
 
 
-def permission_policy_tool_sets() -> dict[str, set[str]]:
-    return {"plan_mode_allowed": plan_mode_allowed_tools()}
-
-
 def decide_tool_permission(ctx: ToolPermissionContext) -> PermissionDecision:
     """Decide whether the Agent may call a tool before execution."""
     state = ctx.state or {}
@@ -85,7 +80,7 @@ def decide_tool_permission(ctx: ToolPermissionContext) -> PermissionDecision:
             "ok": False,
             "error": f"{ctx.tool_name} 是 deferred 文件工具，Agent Loop 不能绕过 tool.search/tool.describe/tool.execute 直接调用。",
             "error_kind": "deferred_tool_must_use_tool_execute",
-            "hint": "读取上传文本时先 tool.search(category='file') / tool.describe，再 tool.execute；guide 规则正文使用 skill.project_mentor 的 guidance/guide_content。",
+            "hint": "读取上传文本时先 tool.search(category='file') / tool.describe，再 tool.execute；guide 规则正文使用对应 skill 的 guidance/guide_content。",
         })
 
     if is_plan_mode(state) and ctx.tool_name not in plan_mode_allowed_tools():

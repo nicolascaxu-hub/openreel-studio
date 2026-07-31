@@ -1,9 +1,9 @@
 """Internal media generation service used by node runners.
 
-This module is intentionally not an MCP tool registry surface. Public/legacy
-tool wrappers may delegate here, while `node.run` should call these functions
-directly so media generation is an internal service behind the node protocol.
+This module is not an MCP tool registry surface. `node.run` calls these
+functions directly as the internal media service behind the node protocol.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -193,18 +193,20 @@ async def generate_image(
             )
             asset_id = asset["id"]
             asset_ids.append(asset_id)
-        image_outputs.append({
-            "asset_id": asset_id,
-            "url": display_url,
-            "local_url": img.get("local_url"),
-            "local_path": img.get("local_path"),
-            "remote_url": img.get("remote_url"),
-            "n_index": idx,
-            "width": img.get("width"),
-            "height": img.get("height"),
-            "actual_size": img.get("actual_size"),
-            "actual_aspect_ratio": img.get("actual_aspect_ratio"),
-        })
+        image_outputs.append(
+            {
+                "asset_id": asset_id,
+                "url": display_url,
+                "local_url": img.get("local_url"),
+                "local_path": img.get("local_path"),
+                "remote_url": img.get("remote_url"),
+                "n_index": idx,
+                "width": img.get("width"),
+                "height": img.get("height"),
+                "actual_size": img.get("actual_size"),
+                "actual_aspect_ratio": img.get("actual_aspect_ratio"),
+            }
+        )
 
     primary = image_outputs[0] if image_outputs else {}
     return {
@@ -228,69 +230,14 @@ async def generate_image(
         "size_requested": result.get("size_requested") or size,
         "size_final": result.get("size_final") or size,
         "actual_size": primary.get("actual_size") or result.get("actual_size"),
-        "actual_aspect_ratio": primary.get("actual_aspect_ratio") or result.get("actual_aspect_ratio"),
+        "actual_aspect_ratio": primary.get("actual_aspect_ratio")
+        or result.get("actual_aspect_ratio"),
         "aspect_ratio": aspect_ratio,
         "quality": result.get("quality_final"),
         "quality_requested": result.get("quality_requested"),
         "downgraded": result.get("downgraded", False),
         "attempts": result.get("attempts") or [],
     }
-
-
-async def generate_first_frame(
-    project_id: str,
-    shot_id: str,
-    prompt: str,
-    node_id: str | None = None,
-    model: str | None = None,
-    n: int = 1,
-    aspect_ratio: str = "16:9",
-    size: str | None = None,
-    quality: str | None = None,
-    reference_images: list[str] | None = None,
-) -> dict:
-    result = await generate_image(
-        project_id=project_id,
-        prompt=prompt,
-        shot_id=shot_id,
-        node_id=node_id,
-        model=model,
-        n=n,
-        aspect_ratio=aspect_ratio,
-        size=size,
-        quality=quality,
-        reference_images=reference_images,
-    )
-    result["role"] = "first_frame"
-    return result
-
-
-async def generate_last_frame(
-    project_id: str,
-    shot_id: str,
-    prompt: str,
-    node_id: str | None = None,
-    model: str | None = None,
-    n: int = 1,
-    aspect_ratio: str = "16:9",
-    size: str | None = None,
-    quality: str | None = None,
-    reference_images: list[str] | None = None,
-) -> dict:
-    result = await generate_image(
-        project_id=project_id,
-        prompt=prompt,
-        shot_id=shot_id,
-        node_id=node_id,
-        model=model,
-        n=n,
-        aspect_ratio=aspect_ratio,
-        size=size,
-        quality=quality,
-        reference_images=reference_images,
-    )
-    result["role"] = "last_frame"
-    return result
 
 
 def _video_display_url(result: dict[str, Any]) -> str | None:
@@ -358,10 +305,16 @@ def _resumable_video_job(
         (output.get("aspect_ratio"), aspect_ratio),
         (output.get("resolution"), resolution),
     ):
-        if previous not in (None, "") and current not in (None, "") and str(previous) != str(current):
+        if (
+            previous not in (None, "")
+            and current not in (None, "")
+            and str(previous) != str(current)
+        ):
             return None
     previous_references = output.get("reference_images")
-    if isinstance(previous_references, list) and list(previous_references) != list(reference_images or []):
+    if isinstance(previous_references, list) and list(previous_references) != list(
+        reference_images or []
+    ):
         return None
 
     return {
@@ -493,7 +446,9 @@ async def _emit_media_progress_update(
             project_id=project_id,
         )
     except Exception:
-        logger.exception("media progress update failed node_id=%s job_id=%s", node_id, update.get("job_id"))
+        logger.exception(
+            "media progress update failed node_id=%s job_id=%s", node_id, update.get("job_id")
+        )
 
 
 def _video_output(
@@ -663,7 +618,11 @@ async def _background_video_poll(
     )
     result["reference_images"] = refs_provided
     result["resolved_reference_images"] = queued_result.get("resolved_reference_images") or []
-    result["resolved_media_references"] = queued_result.get("resolved_media_references") or result.get("resolved_media_references") or []
+    result["resolved_media_references"] = (
+        queued_result.get("resolved_media_references")
+        or result.get("resolved_media_references")
+        or []
+    )
     result["resumed_existing_job"] = bool(queued_result.get("resumed_existing_job"))
     result["reference_warnings"] = [
         *(
@@ -694,7 +653,9 @@ async def _background_video_poll(
                 )
                 return
         except Exception:
-            logger.exception("verify video job ownership failed node_id=%s job_id=%s", node_id, job_id)
+            logger.exception(
+                "verify video job ownership failed node_id=%s job_id=%s", node_id, job_id
+            )
             return
 
     asset_id = None
@@ -754,7 +715,9 @@ async def _background_video_poll(
                 project_id=project_id,
             )
         except Exception:
-            logger.exception("background video node update failed node_id=%s job_id=%s", node_id, job_id)
+            logger.exception(
+                "background video node update failed node_id=%s job_id=%s", node_id, job_id
+            )
 
 
 def _schedule_background_video_poll(**kwargs: Any) -> bool:
@@ -815,25 +778,33 @@ async def resume_persisted_video_poll(
         return False
 
     try:
-        duration_seconds = int(float(str(output.get("duration_seconds") or fields.get("duration_seconds") or 4)))
+        duration_seconds = int(
+            float(str(output.get("duration_seconds") or fields.get("duration_seconds") or 4))
+        )
     except (TypeError, ValueError):
         duration_seconds = 4
     aspect_ratio = output.get("aspect_ratio") or fields.get("aspect_ratio")
     resolution = output.get("resolution") or fields.get("resolution")
     refs = output.get("reference_images")
     if not isinstance(refs, list):
-        refs = fields.get("reference_images") if isinstance(fields.get("reference_images"), list) else []
+        refs = (
+            fields.get("reference_images")
+            if isinstance(fields.get("reference_images"), list)
+            else []
+        )
 
     queued_result = dict(output)
-    queued_result.update({
-        "ok": True,
-        "status": "running",
-        "job_id": job_id,
-        "provider": provider_name or model_name,
-        "model": model_name or provider_name,
-        "resumed_existing_job": True,
-        "recovered_after_restart": True,
-    })
+    queued_result.update(
+        {
+            "ok": True,
+            "status": "running",
+            "job_id": job_id,
+            "provider": provider_name or model_name,
+            "model": model_name or provider_name,
+            "resumed_existing_job": True,
+            "recovered_after_restart": True,
+        }
+    )
     resumed_output = _video_output(
         queued_result,
         asset_id=None,
@@ -1244,7 +1215,9 @@ async def _background_audio_poll(
                 project_id=project_id,
             )
         except Exception:
-            logger.exception("background audio node update failed node_id=%s job_id=%s", node_id, job_id)
+            logger.exception(
+                "background audio node update failed node_id=%s job_id=%s", node_id, job_id
+            )
 
 
 def _schedule_background_audio_poll(**kwargs: Any) -> None:
@@ -1350,334 +1323,3 @@ async def generate_audio(
         duration_seconds=duration_seconds,
         audio_format=audio_format,
     )
-
-
-async def generate_panorama(
-    project_id: str,
-    prompt: str,
-    aspect_ratio: str = "16:9",
-    scene_id: str | None = None,
-    node_id: str | None = None,
-    model: str | None = None,
-    n: int = 1,
-    reference_images: list[str] | None = None,
-    record_asset: bool = False,
-) -> dict:
-    """Generate a panoramic scene image intended for directional crop views."""
-    n_valid = _validate_n(n)
-    if n_valid is None:
-        return {
-            "ok": False,
-            "error": f"参数 n 必须是 1-{_MAX_N} 之间的整数，收到: {n!r}",
-            "status": "failed",
-        }
-
-    aspect_to_size = {
-        "16:9": "1792x1024",
-        "21:9": "1792x768",
-        "1:1": "1024x1024",
-    }
-    size = aspect_to_size.get(aspect_ratio, "1792x1024")
-
-    result = await generate_image_with_provider(
-        project_id=project_id,
-        prompt=prompt,
-        size=size,
-        model_name=model,
-        n=n_valid,
-        reference_images=reference_images,
-        save_locally=True,
-    )
-
-    refs_provided = list(reference_images) if reference_images else []
-
-    if not result.get("ok"):
-        asset_id = None
-        if record_asset:
-            asset = await register_asset(
-                project_id=project_id,
-                asset_type="scene_image",
-                name=f"panorama-{uuid.uuid4().hex[:8]}",
-                prompt=prompt,
-                model_name=model or _backend_label(),
-                metadata={
-                    "role": "panorama",
-                    "scene_id": scene_id,
-                    "aspect_ratio": aspect_ratio,
-                    "status": "queued",
-                    "backend": _backend_label(),
-                    "reference_images": refs_provided,
-                    "error": result.get("error"),
-                },
-                node_id=node_id,
-            )
-            asset_id = asset["id"]
-        return {
-            "ok": False,
-            "asset_id": asset_id,
-            "asset_ids": [asset_id] if asset_id else [],
-            "role": "panorama",
-            "status": "queued",
-            "scene_id": scene_id,
-            "n_requested": n_valid,
-            "n_succeeded": 0,
-            "error": result.get("error"),
-            "reference_images": refs_provided,
-        }
-
-    images = result.get("images") or []
-    asset_ids: list[str] = []
-    image_outputs: list[dict] = []
-    for idx, img in enumerate(images):
-        display_url = img.get("local_url") or img.get("remote_url") or img.get("url")
-        suffix = f"-{idx + 1}" if n_valid > 1 else ""
-        asset_id = None
-        if record_asset:
-            asset = await register_asset(
-                project_id=project_id,
-                asset_type="scene_image",
-                name=f"panorama-{uuid.uuid4().hex[:8]}{suffix}",
-                prompt=prompt,
-                model_name=result.get("model") or model or _backend_label(),
-                metadata={
-                    "role": "panorama",
-                    "scene_id": scene_id,
-                    "aspect_ratio": aspect_ratio,
-                    "status": "completed",
-                    "url": display_url,
-                    "local_url": img.get("local_url"),
-                    "local_path": img.get("local_path"),
-                    "remote_url": img.get("remote_url"),
-                    "size": size,
-                    "reference_images": refs_provided,
-                    "n_index": idx,
-                    "n_total": n_valid,
-                    "provider": result.get("provider"),
-                },
-                node_id=node_id,
-                url=display_url,
-                path=img.get("local_path"),
-            )
-            asset_id = asset["id"]
-            asset_ids.append(asset_id)
-        image_outputs.append({
-            "asset_id": asset_id,
-            "url": display_url,
-            "local_url": img.get("local_url"),
-            "local_path": img.get("local_path"),
-            "remote_url": img.get("remote_url"),
-            "n_index": idx,
-        })
-
-    primary = image_outputs[0] if image_outputs else {}
-    return {
-        "ok": True,
-        "asset_id": primary.get("asset_id"),
-        "asset_ids": asset_ids,
-        "role": "panorama",
-        "status": "completed",
-        "scene_id": scene_id,
-        "url": primary.get("url"),
-        "images": image_outputs,
-        "provider": result.get("provider"),
-        "model": result.get("model"),
-        "n_requested": n_valid,
-        "n_succeeded": len(image_outputs),
-        "reference_images": refs_provided,
-        "reference_warnings": result.get("reference_warnings") or [],
-    }
-
-
-async def crop_panorama(
-    project_id: str,
-    panorama_asset_id: str,
-    mode: str = "single",
-    direction: str | None = None,
-    node_id: str | None = None,
-) -> dict:
-    """Queue panorama crop view assets. Real image processing is still P3."""
-    if mode not in {"single", "4-view", "9-view"}:
-        mode = "single"
-
-    async with session_scope() as session:
-        source = await session.get(Asset, panorama_asset_id)
-        if not source:
-            return {"error": f"Panorama asset {panorama_asset_id} not found"}
-
-    views = {
-        "single": [direction or "front"],
-        "4-view": ["front", "back", "left", "right"],
-        "9-view": [
-            "tl", "tc", "tr",
-            "ml", "mc", "mr",
-            "bl", "bc", "br",
-        ],
-    }[mode]
-
-    crops = []
-    for direction_name in views:
-        asset = await register_asset(
-            project_id=project_id,
-            asset_type="scene_image",
-            name=f"panoview-{panorama_asset_id[:8]}-{direction_name}",
-            prompt=f"crop:{direction_name} of {panorama_asset_id}",
-            model_name=_backend_label(),
-            metadata={
-                "role": "panorama_view",
-                "panorama_id": panorama_asset_id,
-                "direction": direction_name,
-                "mode": mode,
-                "status": "queued",
-            },
-            node_id=node_id,
-        )
-        crops.append({"asset_id": asset["id"], "direction": direction_name})
-
-    return {
-        "panorama_id": panorama_asset_id,
-        "mode": mode,
-        "view_count": len(crops),
-        "views": crops,
-        "status": "queued",
-    }
-
-
-async def generate_story_template(
-    project_id: str,
-    segment_id: str,
-    prompt: str,
-    aspect_ratio: str = "16:9",
-    size: str | None = None,
-    node_id: str | None = None,
-    model: str | None = None,
-    n: int = 1,
-    quality: str | None = None,
-    reference_images: list[str] | None = None,
-    record_asset: bool = False,
-) -> dict:
-    """Generate a story-template visual board image for a segment."""
-    n_valid = _validate_n(n)
-    if n_valid is None:
-        return {
-            "ok": False,
-            "error": f"参数 n 必须是 1-{_MAX_N} 之间的整数，收到: {n!r}",
-            "status": "failed",
-        }
-
-    aspect_to_size = {
-        "16:9": "3840x2160",
-        "9:16": "2160x3840",
-        "1:1": "2160x2160",
-        "4:3": "2880x2160",
-        "3:4": "2160x2880",
-    }
-    requested_size = size or aspect_to_size.get(aspect_ratio, "3840x2160")
-    try:
-        generated = await generate_image_with_provider(
-            project_id=project_id,
-            prompt=prompt,
-            size=requested_size,
-            quality=quality,
-            model_name=model,
-            n=n_valid,
-            reference_images=reference_images,
-        )
-    except Exception as exc:
-        generated = {"ok": False, "error": f"image provider call failed: {exc}"}
-
-    refs_provided = list(reference_images) if reference_images else []
-
-    if not generated.get("ok"):
-        return {
-            "ok": False,
-            "role": "story_template",
-            "segment_id": segment_id,
-            "status": "failed",
-            "error": generated.get("error", "image generation failed"),
-            "error_kind": generated.get("error_kind"),
-            "http_code": generated.get("http_code"),
-            "provider_msg": generated.get("provider_msg"),
-            "endpoint": generated.get("endpoint"),
-            "provider": generated.get("provider"),
-            "model": generated.get("model"),
-            "attempts": generated.get("attempts") or [],
-            "n_requested": n_valid,
-            "n_succeeded": 0,
-            "reference_images": refs_provided,
-            "size_requested": generated.get("size_requested") or requested_size,
-            "size_final": generated.get("size_final") or requested_size,
-            "quality_requested": generated.get("quality_requested") or quality,
-            "quality_final": generated.get("quality_final"),
-            "downgraded": generated.get("downgraded", False),
-        }
-
-    images = generated.get("images") or []
-    asset_ids: list[str] = []
-    image_outputs: list[dict] = []
-    for idx, img in enumerate(images):
-        display_url = img.get("local_url") or img.get("remote_url") or img.get("url")
-        suffix = f"-{idx + 1}" if n_valid > 1 else ""
-        asset_id = None
-        if record_asset:
-            asset = await register_asset(
-                project_id=project_id,
-                asset_type="scene_image",
-                name=f"story-template-{(segment_id or uuid.uuid4().hex)[:8]}{suffix}",
-                prompt=prompt,
-                url=display_url,
-                path=img.get("local_path"),
-                model_name=model or _backend_label(),
-                metadata={
-                    "role": "story_template",
-                    "segment_id": segment_id,
-                    "aspect_ratio": aspect_ratio,
-                    "status": "completed",
-                    "backend": _backend_label(),
-                    "url": display_url,
-                    "local_url": img.get("local_url"),
-                    "local_path": img.get("local_path"),
-                    "remote_url": img.get("remote_url"),
-                    "size": generated.get("size_final") or requested_size,
-                    "size_requested": generated.get("size_requested") or requested_size,
-                    "reference_images": refs_provided,
-                    "n_index": idx,
-                    "n_total": n_valid,
-                    "provider": generated.get("provider"),
-                },
-                node_id=node_id,
-            )
-            asset_id = asset["id"]
-            asset_ids.append(asset_id)
-        image_outputs.append({
-            "asset_id": asset_id,
-            "url": display_url,
-            "local_url": img.get("local_url"),
-            "local_path": img.get("local_path"),
-            "remote_url": img.get("remote_url"),
-            "n_index": idx,
-        })
-
-    primary = image_outputs[0] if image_outputs else {}
-    return {
-        "ok": True,
-        "asset_id": primary.get("asset_id"),
-        "asset_ids": asset_ids,
-        "role": "story_template",
-        "segment_id": segment_id,
-        "status": "completed",
-        "url": primary.get("url"),
-        "images": image_outputs,
-        "provider": generated.get("provider"),
-        "model": generated.get("model"),
-        "n_requested": n_valid,
-        "n_succeeded": len(image_outputs),
-        "reference_images": refs_provided,
-        "reference_warnings": generated.get("reference_warnings") or [],
-        "size": generated.get("size_final") or requested_size,
-        "size_requested": generated.get("size_requested") or requested_size,
-        "size_final": generated.get("size_final") or requested_size,
-        "quality": generated.get("quality_final"),
-        "quality_requested": generated.get("quality_requested"),
-        "downgraded": generated.get("downgraded", False),
-        "attempts": generated.get("attempts") or [],
-    }

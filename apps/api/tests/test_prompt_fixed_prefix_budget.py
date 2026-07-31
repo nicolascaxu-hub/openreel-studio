@@ -41,7 +41,7 @@ def _fixed_prompt_snapshot() -> dict[str, object]:
         attachments=[],
     )
     prompt = assemble_split_result(ctx)
-    tools = registry.get_tools_for_agent_loop(namespaces=select_tool_namespaces(ctx))
+    tools = registry.get_tools_for_agent_loop()
     tools_json = json.dumps(tools, ensure_ascii=False, separators=(",", ":"))
     return {
         "prompt": prompt,
@@ -114,7 +114,6 @@ def test_core_tool_schema_descriptions_are_not_in_always_loaded_prefix() -> None
     assert "tool.describe" in tool_names
     assert "tool.execute" in tool_names
     assert "vision.view_image" in tool_names
-    assert "canvas.connect_nodes" not in tool_names
     assert '"description"' in tools_json
     parameter_json = json.dumps(
         [

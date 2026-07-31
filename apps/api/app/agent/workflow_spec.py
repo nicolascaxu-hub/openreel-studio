@@ -476,7 +476,7 @@ WorkflowStep.model_rebuild()
 
 
 def parse_workflow_spec(value: Any) -> WorkflowSpec:
-    """Parse only the public v2 contract; no legacy aliases are accepted."""
+    """Parse the public V2 workflow contract."""
     try:
         return WorkflowSpec.model_validate(value)
     except ValidationError as exc:

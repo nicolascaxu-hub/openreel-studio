@@ -119,27 +119,6 @@ def test_director_routes_are_registered() -> None:
     assert ("POST", "/api/projects/{project_id}/director/captures/{capture_id}/canvas") in routes
 
 
-def test_director_normalizes_legacy_single_camera_into_multi_camera_scene() -> None:
-    legacy_camera = {
-        "position": [2.0, 3.0, 7.0],
-        "target": [0.0, 1.0, 0.0],
-        "fov": 38.0,
-    }
-    normalized = normalize_director_state({
-        "scene": {"aspect_ratio": "16:9", "camera": legacy_camera, "objects": []},
-    })
-    scene = normalized["scene"]
-
-    assert scene["active_camera_id"] == "camera-main"
-    assert scene["cameras"] == [{"id": "camera-main", "name": "机位 1", **legacy_camera}]
-    assert scene["camera"] == legacy_camera
-    assert scene["viewport_camera"] == {
-        "position": [6.0, 6.0, 11.0],
-        "target": [0.0, 1.0, 0.0],
-        "fov": 45.0,
-    }
-
-
 def test_director_persists_and_validates_spatial_panorama_environment() -> None:
     scene = default_director_scene()
     scene["panorama"] = {
@@ -165,7 +144,7 @@ def test_director_persists_and_validates_spatial_panorama_environment() -> None:
         validate_director_scene(invalid)
 
 
-def test_director_normalizes_legacy_joint_angles_into_standard_rig_limits() -> None:
+def test_director_clamps_joint_angles_to_standard_rig_limits() -> None:
     scene = _scene()
     scene["objects"][0]["mannequin"] = {
         "joints": {
@@ -375,11 +354,6 @@ async def test_director_saves_all_camera_captures_atomically(
         for camera in scene["cameras"]:
             snapshot = json.loads(json.dumps(scene))
             snapshot["active_camera_id"] = camera["id"]
-            snapshot["camera"] = {
-                "position": camera["position"],
-                "target": camera["target"],
-                "fov": camera["fov"],
-            }
             items.append({
                 "title": camera["name"],
                 "camera_id": camera["id"],

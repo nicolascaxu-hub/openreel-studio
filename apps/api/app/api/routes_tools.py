@@ -194,11 +194,6 @@ async def read_config_file(mask_secrets: bool = True) -> dict[str, Any]:
     return await config_tools.config_read_file(mask_secrets=mask_secrets)
 
 
-@router.get("/config/summary")
-async def read_config_summary() -> dict[str, Any]:
-    return await config_tools.config_list_all()
-
-
 @router.get("/config/video-model-targets")
 async def read_video_model_targets() -> dict[str, Any]:
     return list_video_model_targets()

@@ -17,67 +17,12 @@ def test_confirmation_protocol_reads_only_structured_decision_metadata() -> None
     assert decision_action(metadata, "node_update") == ("confirm", "应用这个修订")
     assert decision_action(metadata, "node_delete") == ("", "")
 
-def test_build_pending_confirmation_uses_explicit_protocol_shape() -> None:
-    confirmation = build_pending_confirmation(
-        kind="reset",
-        risk="destructive",
-        actions=["confirm", "cancel"],
-        confirmation_id="confirm-1",
-        title="重置项目",
-        summary="清空当前项目。",
-        checksum="abc",
-        can_skip=False,
-        expires_at=123,
-    )
-
-    assert confirmation["id"] == "confirm-1"
-    assert confirmation["kind"] == "reset"
-    assert confirmation["risk"] == "destructive"
-    assert confirmation["actions"] == ["confirm", "cancel"]
-    assert confirmation["checksum"] == "abc"
-    assert confirmation["can_skip"] is False
-    assert confirmation["expires_at"] == 123
-    assert isinstance(confirmation["created_at"], int)
-
 def test_pending_confirmation_expiry_requires_explicit_expires_at() -> None:
     assert confirmation_expires_at(now=100, ttl_seconds=30) == 130
     assert is_pending_confirmation_expired({"scope": "full", "ts": 1}, now=100) is False
     assert is_pending_confirmation_expired({"expires_at": 99}, now=100) is True
     assert is_pending_confirmation_expired({"expires_at": "101"}, now=100) is False
     assert is_pending_confirmation_expired({"expires_at": "1970-01-01T00:01:39+00:00"}, now=100) is True
-
-def test_expired_pending_confirmation_patch_clears_only_expired_protocol_keys() -> None:
-    state = {
-        "_pending_reset_confirm": {
-            "scope": "full",
-            "reason": "old reset",
-            "expires_at": 90,
-            "ts": 10,
-        },
-        "pending_video_request": {"stage": "structure"},
-        "pending_plan": {
-            "id": "plan-1",
-            "expires_at": 1,
-        },
-    }
-
-    patch, expired = expired_pending_confirmation_patch(state, now=100)
-
-    assert patch == {"_pending_reset_confirm": None}
-    assert expired == [
-        {
-            "state_key": "_pending_reset_confirm",
-            "confirmation_kind": "reset_project",
-            "confirmation_id": None,
-            "risk": None,
-            "scope": "full",
-            "target": None,
-            "created_at": 10,
-            "expires_at": 90,
-            "version": None,
-            "target_node_id": None,
-        }
-    ]
 
 def test_generate_plan_keeps_node_first_core_surface() -> None:
     visible = _visible_tools("generate_plan")
@@ -87,7 +32,6 @@ def test_generate_plan_keeps_node_first_core_surface() -> None:
     assert "skill.search" in visible
     assert "skill.get" in visible
     assert "skill.video_production" not in visible
-    assert "canvas.connect_nodes" not in visible
     assert "plan.propose" not in visible
     assert "tool.search" in visible
     assert "node.draw_character" not in visible
@@ -167,19 +111,15 @@ def test_agent_tool_surface_matches_node_first_contract() -> None:
     assert registry.tool_exposure("task.list") == "core"
     assert registry.tool_exposure("task.update") == "core"
     assert registry.tool_exposure("task.complete") == "core"
-    assert registry.tool_exposure("canvas.connect_nodes") == "unregistered"
-    assert registry.tool_exposure("node.get_creation_guide") == "unregistered"
     assert registry.tool_exposure("tool.search") == "core"
     assert registry.tool_exposure("tool.describe") == "core"
     assert registry.tool_exposure("tool.execute") == "core"
     assert registry.tool_exposure("vision.view_image") == "core"
-    assert registry.tool_exposure("node.draw_character") == "unregistered"
 
     deferred_control = {
         "drama.parse_uploaded_script",
         "memory.compact_context",
         "memory.recall",
-        "project.create",
         "media.cancel_image_generation",
         "task.delete",
     }
@@ -189,14 +129,6 @@ def test_agent_tool_surface_matches_node_first_contract() -> None:
         assert tool_meta_tools._tier_of(spec) == 2, name
         assert name not in visible
 
-    hidden_control_plane = set(AGENT_HIDDEN_PROJECT_MODE_TOOL_NAMES)
-    for name in hidden_control_plane:
-        spec = registry.get(name)
-        assert spec is not None, name
-        assert tool_meta_tools._tier_of(spec) == 3, name
-        assert name not in visible
-
-
 def test_workflow_build_tool_surface_is_dedicated_to_workflow_files() -> None:
     ctx = PromptContext(
         project_id="workflow-build-tools",
@@ -205,7 +137,6 @@ def test_workflow_build_tool_surface_is_dedicated_to_workflow_files() -> None:
         collaboration_mode="workflow_build",
     )
     tools = registry.get_tools_for_agent_loop(
-        namespaces=select_tool_namespaces(ctx),
         profile=select_tool_profile(ctx),
     )
     visible = {
@@ -315,15 +246,15 @@ def test_node_update_schema_prefers_input_patch_and_keeps_backend_alias_hidden()
     assert "fields" not in patch_props
     assert "resolution" in patch_props["input_json"]["properties"]
     props = patch_props["input_json"]["properties"]
-    for key in ("references", "depends_on"):
-        items = props[key]["items"]
-        assert "oneOf" in items
-        assert {"type": "string"} in items["oneOf"]
+    items = props["references"]["items"]
+    assert "oneOf" in items
+    assert {"type": "string"} in items["oneOf"]
+    assert "depends_on" not in props
     assert "局部合并" in spec.description
 
 
 def test_agent_review_schema_keeps_structured_optional_arguments() -> None:
-    tools = registry.get_tools_for_agent_loop(namespaces=select_tool_namespaces(PromptContext()))
+    tools = registry.get_tools_for_agent_loop()
     review = next(tool for tool in tools if tool["function"]["name"] == "agent__review")
     props = review["function"]["parameters"]["properties"]
 
@@ -365,7 +296,7 @@ def test_registered_tool_schemas_do_not_expose_arrays_without_items() -> None:
 
 def test_agent_loop_tool_schemas_are_provider_safe_for_arrays() -> None:
     ctx = PromptContext(project_id="tool-schema-array-check", user_message="hello", state={})
-    tools = registry.get_tools_for_agent_loop(namespaces=select_tool_namespaces(ctx))
+    tools = registry.get_tools_for_agent_loop()
     errors: list[str] = []
     for tool in tools:
         fn = tool.get("function") or {}
@@ -533,7 +464,7 @@ def test_registered_tool_descriptions_are_present_and_concise() -> None:
 
 def test_core_tool_descriptions_follow_short_contract() -> None:
     ctx = PromptContext(project_id="core-tool-style", user_message="hello", state={})
-    tools = registry.get_tools_for_agent_loop(namespaces=select_tool_namespaces(ctx))
+    tools = registry.get_tools_for_agent_loop()
     old_contract_markers = ("边界：", "用法：", "示例：")
     too_long: list[str] = []
     old_style: list[str] = []
@@ -675,32 +606,6 @@ def test_node_read_tools_support_index_then_batch_detail_contract() -> None:
     assert "默认返回 20" in (list_spec.description or "")
     assert "limit=0" in (list_spec.description or "")
 
-def test_agent_visible_tool_descriptions_do_not_advertise_retired_shortcuts() -> None:
-    retired_markers = {
-        "assets.set_library_path",
-        "config.patch",
-        "config.write_file",
-        "drama.delete_",
-        "media.add_provider",
-        "media.generate_",
-        "mcp.list_servers",
-        "model.set_config",
-        "node.draw_",
-        "panel.",
-        "plan.approve",
-        "project.update_state",
-        "session.",
-        "task.get",
-    }
-    exposed_descriptions = "\n".join(
-        spec.description or ""
-        for spec in registry.list_tools()
-        if tool_meta_tools._tier_of(spec) != 3
-    )
-
-    for marker in retired_markers:
-        assert marker not in exposed_descriptions
-
 @pytest.mark.asyncio
 async def test_agent_can_request_context_compaction_via_deferred_tool() -> None:
     visible = _visible_tools(None)
@@ -712,12 +617,7 @@ async def test_agent_can_request_context_compaction_via_deferred_tool() -> None:
 
 def test_low_frequency_tools_are_deferred_and_reset_is_core() -> None:
     visible = _visible_tools(None)
-    assert "canvas.clear_all" not in visible
-    assert "project.create" not in visible
     assert "project.reset" in visible
-    assert "media.describe_image" not in visible
-    assert registry.get("media.describe_image") is None
-    assert registry.get("reference.manage") is None
     assert "tool.search" in visible
     assert "tool.describe" in visible
     assert "tool.execute" in visible
@@ -752,7 +652,6 @@ def test_agent_prompt_sections_use_current_video_mode_names() -> None:
     assert "image" in prompt_text
     assert "video" in prompt_text
     assert "image_to_video_method" not in prompt_text
-    assert "node.get_creation_guide" not in prompt_text
 
 def test_single_image_prompt_documents_reference_image_to_image_path() -> None:
     prompt_text = "\n".join(
@@ -797,7 +696,7 @@ def test_prompt_cache_sensitive_snapshot_for_blank_turn() -> None:
         attachments=[],
     )
     result = assemble_split_result(ctx)
-    tools = registry.get_tools_for_agent_loop(namespaces=select_tool_namespaces(ctx))
+    tools = registry.get_tools_for_agent_loop()
     core_tools = []
     for tool in tools:
         fn = tool.get("function") or {}
@@ -857,51 +756,3 @@ def test_prompt_cache_sensitive_snapshot_for_blank_turn() -> None:
         "tool.search",
         "vision.view_image",
     ]
-
-def test_agent_prompt_sections_do_not_advertise_retired_tool_names() -> None:
-    prompt_text = "\n".join(
-        [
-            core_rules.PROMPT,
-            memory_write.PROMPT,
-            plan_rule.PROMPT,
-            working_loop.PROMPT,
-            task_loop.PROMPT,
-        ]
-    )
-    retired_markers = {
-        "assets.set_library_path",
-        "config.patch",
-        "config.write_file",
-        "drama.delete_",
-        "media.add_provider",
-        "media.generate_",
-        "mcp.list_servers",
-        "model.set_config",
-        "node.draw_",
-        "panel.",
-        "plan.approve",
-        "project.update_state",
-        "session.",
-        "task.get",
-    }
-
-    for marker in retired_markers:
-        assert marker not in prompt_text
-
-def test_generation_prompt_bodies_do_not_advertise_retired_tool_names() -> None:
-    ctx = WorkerContext(workflow_mode="grid", grid="2*3")
-    prompt_text = "\n".join(
-        [
-            default_prompt_for("drama.generate_image_prompt", ctx),
-            default_prompt_for("drama.generate_segment_shots", ctx),
-        ]
-    )
-    retired_markers = {
-        "drama.generate_",
-        "media.generate_",
-        "node.draw_",
-        "session.",
-    }
-
-    for marker in retired_markers:
-        assert marker not in prompt_text

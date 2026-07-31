@@ -1,4 +1,5 @@
 """Task graph tools — CRUD + dependency management for persistent task DAG."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -185,7 +186,8 @@ async def task_list(
                 task_dict["match"] = {
                     key: value
                     for key, value in match.items()
-                    if key in {"mode", "matched_terms", "matched_patterns"} and value not in (None, "", [], {})
+                    if key in {"mode", "matched_terms", "matched_patterns"}
+                    and value not in (None, "", [], {})
                 }
                 filtered.append((task, task_dict))
         task_dict_by_id = {task.id: task_dict for task, task_dict in filtered}
@@ -210,8 +212,7 @@ async def task_list(
             "retry_count": t.retry_count,
             "max_retries": t.max_retries,
             "blocked_dependents": [
-                dep.id for dep in tasks
-                if t.id in dep.blocked_by and dep.status == "pending"
+                dep.id for dep in tasks if t.id in dep.blocked_by and dep.status == "pending"
             ][:8],
         }
         for t in tasks
@@ -244,13 +245,6 @@ async def task_list(
             "limit": parsed_limit,
         },
     }
-
-
-async def task_get(task_id: str) -> dict[str, Any]:
-    task = task_graph.get(task_id)
-    if not task:
-        return {"error": f"Task {task_id} not found"}
-    return task.to_dict()
 
 
 @register(
@@ -323,7 +317,9 @@ async def task_update(
         "工具调用成功且产物/状态确认后使用，并用 result_summary 写短结果。"
     ),
 )
-async def task_complete(task_id: str, project_id: str = "", result_summary: str = "") -> dict[str, Any]:
+async def task_complete(
+    task_id: str, project_id: str = "", result_summary: str = ""
+) -> dict[str, Any]:
     result = {"summary": result_summary} if result_summary else None
     resolved_task, resolved_source = _resolve_task_by_model_id(task_id, project_id)
     resolved_id = resolved_task.id if resolved_task else task_id
@@ -372,8 +368,3 @@ async def task_delete(task_id: str = "", project_id: str = "") -> dict[str, Any]
             }
         return {"ok": True, "deleted": result, "task_id": task_id}
     return {"ok": True, "deleted_count": result, "task_id": "__all__"}
-
-
-async def task_list_pending(project_id: str = "") -> dict[str, Any]:
-    tasks = task_graph.list_pending(project_id or None)
-    return {"tasks": [t.to_dict() for t in tasks], "count": len(tasks)}

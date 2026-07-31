@@ -544,7 +544,7 @@ async def test_media_is_rejected_when_target_does_not_declare_roles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_media_service_delegates_universal_adapter_provider(
+async def test_media_generation_service_delegates_universal_adapter_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider, provider_params = _provider(

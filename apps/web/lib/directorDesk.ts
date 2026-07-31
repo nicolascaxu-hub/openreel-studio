@@ -46,7 +46,6 @@ export interface DirectorPanoramaState {
 
 export interface DirectorSceneState {
   aspect_ratio: DirectorAspectRatio
-  camera: DirectorCameraPose
   cameras: DirectorCameraState[]
   active_camera_id: string
   viewport_camera: DirectorCameraPose
@@ -212,11 +211,6 @@ export function defaultDirectorScene(): DirectorSceneState {
   }
   return {
     aspect_ratio: "16:9",
-    camera: {
-      position: [...camera.position],
-      target: [...camera.target],
-      fov: camera.fov,
-    },
     cameras: [camera],
     active_camera_id: camera.id,
     viewport_camera: {
@@ -426,14 +420,11 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
   const source = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
-  const rawCamera = source.camera && typeof source.camera === "object" && !Array.isArray(source.camera)
-    ? source.camera as Record<string, unknown>
-    : {}
-  const legacyCamera = normalizeCameraPose(rawCamera, {
+  const defaultCamera: DirectorCameraPose = {
     position: [4.8, 3, 6.8],
     target: [0, 1, 0],
     fov: 45,
-  })
+  }
   const cameraIds = new Set<string>()
   const cameras = (Array.isArray(source.cameras) ? source.cameras : []).slice(0, MAX_DIRECTOR_CAMERAS).flatMap((item, index): DirectorCameraState[] => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return []
@@ -444,11 +435,11 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
     return [{
       id,
       name: String(raw.name || `机位 ${index + 1}`).trim().slice(0, 120) || `机位 ${index + 1}`,
-      ...normalizeCameraPose(raw, legacyCamera),
+      ...normalizeCameraPose(raw, defaultCamera),
     }]
   })
   if (cameras.length === 0) {
-    cameras.push({ id: "camera-main", name: "机位 1", ...legacyCamera })
+    cameras.push({ id: "camera-main", name: "机位 1", ...defaultCamera })
   }
   const requestedActiveCameraId = String(source.active_camera_id || "").trim()
   const activeCamera = cameras.find((item) => item.id === requestedActiveCameraId) || cameras[0]
@@ -469,11 +460,6 @@ export function normalizeDirectorScene(value: unknown): DirectorSceneState {
   const panoramaUrl = String(rawPanorama?.image_url || "").trim()
   return {
     aspect_ratio: ASPECT_RATIOS.has(aspectCandidate) ? aspectCandidate : "16:9",
-    camera: {
-      position: [...activeCamera.position],
-      target: [...activeCamera.target],
-      fov: activeCamera.fov,
-    },
     cameras,
     active_camera_id: activeCamera.id,
     viewport_camera: normalizeCameraPose(source.viewport_camera, viewportFallback),

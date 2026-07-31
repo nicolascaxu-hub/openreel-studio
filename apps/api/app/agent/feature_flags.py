@@ -3,6 +3,7 @@
 Defaults live in code so experiments have one documented registry. Runtime
 overrides come from config/runtime.jsonc app_settings and environment variables.
 """
+
 from __future__ import annotations
 
 import os
@@ -162,15 +163,3 @@ async def get_feature_states() -> dict[str, dict[str, Any]]:
 
     cfg = await get_store().get_runtime()
     return evaluate_feature_flags(cfg.app_settings)
-
-
-async def is_feature_enabled(name: str) -> bool:
-    states = await get_feature_states()
-    state = states.get(name)
-    return bool(state and state["enabled"])
-
-
-def is_feature_enabled_from_env(name: str, *, env: Mapping[str, str] | None = None) -> bool:
-    states = evaluate_feature_flags({}, env=env)
-    state = states.get(name)
-    return bool(state and state["enabled"])

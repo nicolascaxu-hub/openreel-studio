@@ -14,7 +14,6 @@ def test_video_mode_reminder_respects_visual_preproduction_scope() -> None:
 def test_context_policy_keeps_chat_history_visible_without_state_continuation() -> None:
     state = {"memory": {"facts": [{"content": "上一轮要做视频"}]}}
 
-    assert has_state_continuation_context(state) is False
     assert chat_history_visible_for_turn(state) is True
 
 @pytest.mark.parametrize(
@@ -25,15 +24,8 @@ def test_context_policy_keeps_chat_history_visible_without_state_continuation() 
         {"_pending_reset_confirm": {"scope": "full"}},
     ],
 )
-def test_context_policy_tracks_state_continuation_without_chat_history_for_pending_state(state: dict) -> None:
-    assert has_state_continuation_context(state) is True
+def test_context_policy_hides_chat_history_for_pending_state(state: dict) -> None:
     assert chat_history_visible_for_turn(state) is False
-
-def test_context_policy_ignores_legacy_active_execution_checklist() -> None:
-    state = {"active_plan_checklist": [{"status": "pending", "title": "继续执行"}]}
-
-    assert has_state_continuation_context(state) is False
-    assert chat_history_visible_for_turn(state) is True
 
 def test_project_reset_is_core_and_hides_internal_confirm_token() -> None:
     spec = registry.get("project.reset")
@@ -42,17 +34,6 @@ def test_project_reset_is_core_and_hides_internal_confirm_token() -> None:
     assert spec is not None
     assert "_confirm_token" not in (spec.schema.get("properties") or {})
     assert set((spec.schema.get("properties") or {}).keys()) == {"scope", "reason", "new_theme"}
-
-def test_project_reset_permission_allows_pending_plan_interrupt() -> None:
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="project.reset",
-            state={"pending_plan": {"id": "plan-1", "status": "pending"}},
-            user_message="重置项目",
-        )
-    )
-
-    assert decision.allowed is True
 
 @pytest.mark.asyncio
 async def test_tool_execute_rejects_core_project_reset_after_pending_confirmation() -> None:
@@ -167,89 +148,6 @@ async def test_full_reset_chat_archive_helper_marks_active_messages() -> None:
     assert count == 2
     assert all(row.archived is True for row in rows)
     assert added == rows
-
-def test_full_reset_context_keys_cover_model_visible_project_state() -> None:
-    required = {
-        "memory",
-        "project_mode",
-        "project_sub_mode",
-        "selected_video_mode",
-        "active_plan_checklist",
-        "pending_plan",
-        "plan_history",
-        "pending_video_request",
-        "agent_token_usage",
-        "_mentor_guides_loaded",
-        "_skills_loaded",
-        "_last_template_lookup",
-        "_last_agent_review",
-        "_pending_reset_confirm",
-        "_pending_tool_confirm",
-    }
-
-    assert required.issubset(set(drama_tools._FULL_RESET_CONTEXT_KEYS))
-
-def test_full_reset_state_cleanup_removes_prompt_visible_project_context() -> None:
-    state = {
-        "metadata": {
-            "title": "旧项目标题",
-            "genre": "国风动作",
-            "description": "旧项目说明",
-            "theme": "旧主题",
-            "world_setting": "旧世界观",
-        },
-        "active_plan_checklist": [
-            {"title": "旧任务：生成分镜", "status": "pending"}
-        ],
-        "pending_plan": {"id": "plan-old", "summary": "旧计划摘要"},
-        "memory": {
-            "facts": [
-                {"content": "旧用户要求生成两人牵手图", "pinned": True}
-            ]
-        },
-        "project_sub_mode": None,
-        "_pending_reset_confirm": {"scope": "full"},
-        "_pending_tool_confirm": {"target": "canvas.delete", "reason": "旧清空画布确认"},
-        "story_bible": {
-            "logline": "旧故事线",
-            "theme": "旧主题",
-            "tone": "旧调性",
-            "world_setting": "旧世界观",
-            "visual_style": "旧视觉",
-        },
-    }
-
-    for key in drama_tools._FULL_RESET_CONTEXT_KEYS:
-        state.pop(key, None)
-    meta = state.get("metadata") or {}
-    meta["title"] = drama_tools.UNTITLED_PROJECT_TITLE
-    for key in ("genre", "description", "logline", "theme", "world_setting"):
-        meta[key] = ""
-    state["metadata"] = meta
-    state["story_bible"] = {
-        "logline": "",
-        "theme": "",
-        "tone": "",
-        "world_setting": "",
-        "visual_style": "",
-    }
-
-    context = runtime_context.build(state)
-    context_json = json.dumps(state, ensure_ascii=False)
-
-    for leak in (
-        "旧项目标题",
-        "旧任务：生成分镜",
-        "旧计划摘要",
-        "旧用户要求生成两人牵手图",
-        "grid",
-        "old",
-        "旧故事线",
-        "旧清空画布确认",
-    ):
-        assert leak not in context
-        assert leak not in context_json
-    assert drama_tools.UNTITLED_PROJECT_TITLE in context
 
 
 def test_runtime_context_omits_canvas_summary_and_only_keeps_project_title() -> None:
@@ -366,136 +264,12 @@ def test_runtime_context_omits_node_refs_and_prompt_body() -> None:
     assert "LEAK_PROMPT_BODY" not in context
 
 
-def test_session_clear_state_patch_keeps_artifacts_but_drops_runtime_context() -> None:
-    pinned = {
-        "id": "fact-keep",
-        "kind": "preference",
-        "content": "固定风格偏好",
-        "pinned": True,
-    }
-    state = {
-        "active_plan_checklist": [{"title": "保留任务"}],
-        "active_workflow": {"kind": "template", "template_id": "old"},
-        "workflow_runtime": {"instances": {"old": {"steps": {"script": {"status": "completed"}}}}},
-        "workflow_input_values": {"plot": "旧剧情"},
-        "workflow": {"nodes": [{"id": "node-1"}]},
-        "session": {"focus": "old"},
-        "guide_loaded": {"node": True},
-        "_mentor_guides_loaded": {
-            "video_workflow": {
-                "topic": "video_workflow",
-                "guidance_summary": "旧视频工作流指南摘要",
-                "guidance_hash": "oldhash",
-            }
-        },
-        "_skills_loaded": {
-            "video_production": {
-                "skill": "video_production",
-                "summary": "旧视频 skill 摘要",
-                "guidance_hash": "oldskillhash",
-            }
-        },
-        "_skills_loaded": {
-            "video_production": {
-                "skill": "video_production",
-                "summary": "旧视频 skill 摘要",
-                "guidance_hash": "oldskillhash",
-            }
-        },
-        "memory": {
-            "facts": [
-                pinned,
-                {
-                    "id": "fact-drop",
-                    "kind": "summary",
-                    "content": "上一轮要生成两人牵手图",
-                    "pinned": False,
-                },
-            ]
-        },
-    }
-
-    patch, removed = routes_projects._session_clear_state_patch(
-        state,
-        cleared_at="2026-06-05T00:00:00",
-    )
-
-    assert removed == 1
-    assert patch == {
-        "session": {},
-        "guide_loaded": {},
-        "_mentor_guides_loaded": {},
-        "_skills_loaded": {},
-        "_last_template_lookup": None,
-        "_last_agent_review": None,
-        "active_workflow": None,
-        "workflow_runtime": {},
-        "workflow_input_values": {},
-        "memory": {"facts": [pinned]},
-        "agent_token_usage": None,
-        "context_cleared_at": "2026-06-05T00:00:00",
-    }
-    assert "active_plan_checklist" not in patch
-    assert "workflow" not in patch
-
-def test_session_clear_drops_runtime_context_and_preserves_project_artifacts() -> None:
-    state = {
-        "metadata": {"title": "旧项目"},
-        "active_plan_checklist": [
-            {
-                "step_id": "step-1",
-                "title": "生成段落分镜",
-                "tool": "node.run",
-                "expected_node_type": "image",
-                "status": "pending",
-            }
-        ],
-        "session": {"last_step": "旧聊天里失败的图片生成"},
-        "guide_loaded": {"old": True},
-        "_mentor_guides_loaded": {
-            "video_workflow": {
-                "topic": "video_workflow",
-                "guidance_summary": "旧视频工作流指南摘要",
-                "guidance_hash": "oldhash",
-            }
-        },
-        "memory": {
-            "facts": [
-                {
-                    "id": "fact-drop",
-                    "content": "上一轮用户要生成两人牵手图",
-                    "pinned": False,
-                }
-            ]
-        },
-    }
-
-    patch, removed = routes_projects._session_clear_state_patch(
-        state,
-        cleared_at="2026-06-05T00:00:00",
-    )
-    next_state = {**state, **patch}
-
-    assert removed == 1
-    assert has_state_continuation_context(next_state) is False
-    assert chat_history_visible_for_turn(next_state) is True
-
-    context = runtime_context.build(next_state)
-
-    assert "生成段落分镜" not in context
-    assert "旧聊天里失败的图片生成" not in context
-    assert "上一轮用户要生成两人牵手图" not in context
-    assert "旧视频工作流指南摘要" not in context
-    assert "旧视频 skill 摘要" not in context
-
 def test_runtime_context_omits_project_mentor_digest() -> None:
     context = runtime_context.build({
         "_mentor_guides_loaded": {
-            "video_workflow": {
-                "topic": "video_workflow",
-                "detail": "summary",
-                "has_full_guide": True,
-                "guidance_summary": "视频制作先收集主题、风格、时长和参考素材。",
+            "debugging": {
+                "topic": "debugging",
+                "guidance_summary": "先检查 trace、SSE 和工具结果。",
                 "guidance_hash": "abc123def456",
                 "references_count": 3,
                 "loaded_at": 1234567890,
@@ -504,9 +278,9 @@ def test_runtime_context_omits_project_mentor_digest() -> None:
     })
 
     assert "指南复用缓存" not in context
-    assert "video_workflow" not in context
+    assert "debugging" not in context
     assert "abc123def456" not in context
-    assert "视频制作先收集主题" not in context
+    assert "先检查 trace" not in context
     assert "loaded_at" not in context
     assert "1234567890" not in context
 
@@ -1119,30 +893,6 @@ def test_reset_canvas_events_prefers_clear_all() -> None:
 def test_full_reset_context_keys_clear_reference_assets() -> None:
     assert "reference_assets" in drama_tools._FULL_RESET_CONTEXT_KEYS
 
-def test_permission_policy_allows_node_creation_without_plan() -> None:
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.create",
-            state={},
-            user_message="做一个短剧视频",
-            requires_plan=True,
-        )
-    )
-
-    assert decision.allowed is True
-
-def test_permission_policy_tool_sets_follow_registry_exposure() -> None:
-    from app.agent import permission_policy
-
-    registered = registry.registered_tool_names()
-    hidden = registry.agent_hidden_tool_names()
-    for set_name, tool_names in permission_policy.permission_policy_tool_sets().items():
-        assert tool_names - registered == set(), set_name
-        assert tool_names & hidden == set(), set_name
-
-    policy_sets = permission_policy.permission_policy_tool_sets()
-    assert permission_policy.plan_mode_allowed_tools() == policy_sets["plan_mode_allowed"]
-
 def test_permission_policy_does_not_use_plan_submission_as_precondition() -> None:
     decision = decide_tool_permission(
         ToolPermissionContext(
@@ -1183,18 +933,6 @@ def test_permission_policy_does_not_use_read_only_semantic_intent_gate() -> None
     assert get_node.allowed is True
     assert read.allowed is True
 
-def test_permission_policy_allows_readonly_preparation_tools_during_pending_plan() -> None:
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.list",
-            state={"pending_plan": {"id": "plan-1"}},
-            user_message="继续",
-        )
-    )
-
-    assert decision.allowed is True
-    assert decision.result is None
-
 def test_permission_policy_does_not_use_destructive_semantic_intent_gate() -> None:
     decision = decide_tool_permission(
         ToolPermissionContext(
@@ -1206,271 +944,12 @@ def test_permission_policy_does_not_use_destructive_semantic_intent_gate() -> No
 
     assert decision.allowed is True
 
-def test_permission_policy_allows_active_checklist_autonomy() -> None:
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.create",
-            state={
-                "active_plan_checklist": [
-                    {
-                        "status": "pending",
-                        "title": "运行人物节点",
-                        "tool": "node.run",
-                        "expected_node_type": "character",
-                    }
-                ]
-            },
-            user_message="继续",
-        )
-    )
-
-    assert decision.allowed is True
-    assert decision.result is None
-
-def test_permission_policy_allows_current_checklist_step_and_read_tools() -> None:
-    state = {
-        "active_plan_checklist": [
-            {"status": "pending", "title": "运行人物节点", "tool": "node.run"}
-        ]
-    }
-    current = decide_tool_permission(
-        ToolPermissionContext(tool_name="node.run", state=state, user_message="继续")
-    )
-    read = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.list",
-            state=state,
-            user_message="继续",
-        )
-    )
-
-    assert current.allowed is True
-    assert read.allowed is True
 
 
-def test_permission_policy_allows_repair_of_prior_checklist_node() -> None:
-    state = {
-        "active_plan_checklist": [
-            {
-                "step": 14,
-                "status": "completed",
-                "title": "渲染人物图",
-                "tool": "node.run",
-                "actual_node_id": "failed-scene",
-            },
-            {
-                "step": 18,
-                "status": "pending",
-                "title": "创建分镜",
-                "tool": "node.create",
-                "expected_node_type": "image",
-            },
-        ]
-    }
-
-    update = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.update",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "failed-scene", "patch": {"input_json": {"resolution": "1k"}}},
-        )
-    )
-    rerun = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.run",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "failed-scene", "action": "render"},
-        )
-    )
-
-    assert update.allowed is True
-    assert rerun.allowed is True
 
 
-def test_permission_policy_allows_wrong_node_for_current_run_step() -> None:
-    state = {
-        "active_plan_checklist": [
-            {
-                "step": 12,
-                "status": "completed",
-                "tool": "node.create",
-                "actual_node_id": "character-1",
-            },
-            {
-                "step": 14,
-                "status": "pending",
-                "title": "渲染人物图",
-                "tool": "node.run",
-                "expected_node_ref_step": 12,
-                "expected_action": "render",
-            },
-        ]
-    }
-
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.run",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "scene-1", "action": "render"},
-        )
-    )
-
-    assert decision.allowed is True
-    assert decision.result is None
 
 
-def test_permission_policy_allows_render_when_current_step_is_default_run() -> None:
-    state = {
-        "active_plan_checklist": [
-            {
-                "step": 12,
-                "status": "completed",
-                "tool": "node.create",
-                "actual_node_id": "character-1",
-            },
-            {
-                "step": 13,
-                "status": "pending",
-                "title": "生成人物提示词",
-                "tool": "node.run",
-                "expected_node_ref_step": 12,
-                "expected_action": "__default__",
-            },
-        ]
-    }
-
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.run",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "character-1", "action": "render"},
-        )
-    )
-
-    assert decision.allowed is True
-    assert decision.result is None
-
-
-def test_permission_policy_allows_repair_of_future_pending_node() -> None:
-    state = {
-        "active_plan_checklist": [
-            {"step": 1, "status": "pending", "tool": "node.run", "actual_node_id": "current"},
-            {"step": 2, "status": "pending", "tool": "node.run", "actual_node_id": "future"},
-        ]
-    }
-
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.run",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "future"},
-        )
-    )
-
-    assert decision.allowed is True
-    assert decision.result is None
-
-
-def test_permission_policy_allows_repair_of_future_failed_node_before_current_pending() -> None:
-    state = {
-        "active_plan_checklist": [
-            {"step": 1, "status": "pending", "tool": "node.run", "actual_node_id": "current"},
-            {"step": 2, "status": "failed", "tool": "node.run", "actual_node_id": "future-failed"},
-        ]
-    }
-
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.update",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "future-failed", "patch": {"input_json": {"resolution": "1k"}}},
-        )
-    )
-
-    assert decision.allowed is True
-    assert decision.result is None
-
-
-def test_permission_policy_allows_later_pending_step_when_prior_step_failed() -> None:
-    state = {
-        "active_plan_checklist": [
-            {
-                "step": 17,
-                "status": "failed",
-                "title": "渲染场景图",
-                "tool": "node.run",
-                "actual_node_id": "scene-failed",
-                "expected_action": "render",
-            },
-            {
-                "step": 18,
-                "status": "pending",
-                "title": "创建分镜",
-                "tool": "node.create",
-                "expected_node_type": "image",
-            },
-        ]
-    }
-
-    decision = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.create",
-            state=state,
-            user_message="继续",
-            tool_args={"type": "image"},
-        )
-    )
-
-    assert decision.allowed is True
-    assert decision.result is None
-
-
-def test_permission_policy_allows_prior_failed_node_repair_before_later_pending() -> None:
-    state = {
-        "active_plan_checklist": [
-            {
-                "step": 17,
-                "status": "failed",
-                "title": "渲染场景图",
-                "tool": "node.run",
-                "actual_node_id": "scene-failed",
-                "expected_action": "render",
-            },
-            {
-                "step": 18,
-                "status": "pending",
-                "title": "创建分镜",
-                "tool": "node.create",
-                "expected_node_type": "image",
-            },
-        ]
-    }
-
-    update = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.update",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "scene-failed", "patch": {"input_json": {"resolution": "1k"}}},
-        )
-    )
-    rerun = decide_tool_permission(
-        ToolPermissionContext(
-            tool_name="node.run",
-            state=state,
-            user_message="继续",
-            tool_args={"node_id": "scene-failed", "action": "render"},
-        )
-    )
-
-    assert update.allowed is True
-    assert rerun.allowed is True
 
 def test_permission_denial_streak_blocks_after_repeated_same_reason() -> None:
     state = PermissionDenialState()
@@ -1503,29 +982,6 @@ def test_permission_denial_streak_resets_for_different_reason() -> None:
     assert state.key == ("node.create", "plan_pending_approval")
     assert state.count == 1
     assert blocked is False
-
-def test_pre_tool_use_hook_does_not_stop_on_active_checklist_autonomy() -> None:
-    state = PermissionDenialState()
-    hook_result = None
-    ctx = ToolPermissionContext(
-        tool_name="node.create",
-        state={
-            "active_plan_checklist": [
-                {"status": "pending", "title": "运行当前节点", "tool": "node.run"}
-            ]
-        },
-        user_message="继续",
-    )
-
-    for _ in range(3):
-        hook_result = run_pre_tool_use(ctx, state)
-        state = hook_result.denial_state
-
-    assert hook_result is not None
-    assert hook_result.allowed is True
-    assert hook_result.should_stop is False
-    assert hook_result.error_kind == ""
-    assert hook_result.result is None
 
 def test_permission_policy_allows_reset_tool_without_semantic_intent() -> None:
     decision = decide_tool_permission(

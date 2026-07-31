@@ -64,7 +64,6 @@ def test_orchestrator_tool_call_trace_keeps_delegation_task_without_runtime_stat
             },
             "_state": {"messages": ["huge"]},
             "_user_message": "用户原话",
-            "_requires_plan": False,
             "project_id": "project-1",
         },
     )

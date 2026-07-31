@@ -729,20 +729,8 @@ function applyObjectTransform(root: THREE.Object3D, object: DirectorObjectState)
   root.visible = object.visible
 }
 
-function cameraPose(camera: DirectorCameraState): DirectorCameraPose {
-  return {
-    position: [...camera.position],
-    target: [...camera.target],
-    fov: camera.fov,
-  }
-}
-
 function activeDirectorCamera(scene: DirectorSceneState): DirectorCameraState {
   return scene.cameras.find((item) => item.id === scene.active_camera_id) || scene.cameras[0]
-}
-
-function syncLegacyActiveCamera(scene: DirectorSceneState): void {
-  scene.camera = cameraPose(activeDirectorCamera(scene))
 }
 
 function createDirectorCameraRig(
@@ -1104,7 +1092,6 @@ function snapshotRuntimeScene(runtime: DirectorRuntime, base: DirectorSceneState
       fov: runtime.camera.fov,
     }
   }
-  syncLegacyActiveCamera(next)
   next.objects = next.objects.map((object) => {
     const root = runtime.objectRoots.get(object.id)
     if (!root) return object
@@ -1764,7 +1751,6 @@ export default function DirectorDesk({
       if (!current.scene.cameras.some((item) => item.id === cameraId)) return
       const sceneState = snapshotRuntimeScene(runtime, current.scene)
       sceneState.active_camera_id = cameraId
-      syncLegacyActiveCamera(sceneState)
       setLocalDirector({ ...current, scene: sceneState })
       setSelectedObjectId(null)
       setSelectedCameraId(cameraId)
@@ -2483,7 +2469,6 @@ export default function DirectorDesk({
     options: { recordHistory?: boolean; rebuildRigs?: boolean } = {},
   ) => {
     const current = directorRef.current
-    syncLegacyActiveCamera(scene)
     if (options.recordHistory !== false) {
       undoRef.current = [...undoRef.current.slice(-49), cloneDirectorScene(current.scene)]
       redoRef.current = []
@@ -2506,7 +2491,6 @@ export default function DirectorDesk({
     const runtime = runtimeRef.current
     const scene = runtime ? snapshotRuntimeScene(runtime, current.scene) : cloneDirectorScene(current.scene)
     scene.active_camera_id = cameraId
-    syncLegacyActiveCamera(scene)
     setSelectedObjectId(null)
     setSelectedCameraId(cameraId)
     setInspectorTab("camera")
@@ -2795,7 +2779,6 @@ export default function DirectorDesk({
       const captures = scene.cameras.map((camera) => {
         const snapshot = cloneDirectorScene(scene)
         snapshot.active_camera_id = camera.id
-        syncLegacyActiveCamera(snapshot)
         return {
           title: camera.name,
           camera_id: camera.id,

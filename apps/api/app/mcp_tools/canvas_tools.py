@@ -181,18 +181,7 @@ def _dependency_node_ids(
         containers.append(fields)
 
     for container in containers:
-        explicit_found = False
-        for key in ("depends_on", "references"):
-            value = container.get(key)
-            if isinstance(value, list):
-                raw_items.extend(value)
-                explicit_found = True
-            elif value:
-                raw_items.append(value)
-                explicit_found = True
-        if explicit_found:
-            continue
-        value = container.get("reference_images")
+        value = container.get("references")
         if isinstance(value, list):
             raw_items.extend(value)
         elif value:
@@ -224,19 +213,14 @@ def _dependency_node_ids(
 
 def _has_dependency_keys(input_data: dict[str, Any]) -> bool:
     for container in (input_data, input_data.get("fields") if isinstance(input_data.get("fields"), dict) else {}):
-        if any(key in container for key in ("depends_on", "references", "reference_images")):
+        if "references" in container:
             return True
     return False
 
 
-def _extract_surface(model_config_json: str | None, input_json: str | None = None) -> str:
+def _extract_surface(model_config_json: str | None) -> str:
     model_config = _as_dict(model_config_json)
     surface = model_config.get("surface") or model_config.get("_surface")
-    if surface in {"project_panel", "draft_canvas", "workflow_runtime"}:
-        return surface
-    # Compatibility for any early experimental writes that used input metadata.
-    input_data = _as_dict(input_json)
-    surface = input_data.get("surface") or input_data.get("_surface")
     if surface in {"project_panel", "draft_canvas", "workflow_runtime"}:
         return surface
     return "draft_canvas"
@@ -294,7 +278,7 @@ async def create_node(
                 "title": node.title,
                 "status": node.status,
                 "position": {"x": node.position_x, "y": node.position_y},
-                "surface": _extract_surface(node.model_config_json, node.input_json),
+                "surface": _extract_surface(node.model_config_json),
                 "prompt": node.prompt,
             }
 
@@ -308,8 +292,7 @@ async def update_node(node_id: str, patch: dict | str) -> dict:
     if not isinstance(patch, dict):
         return {"error": "patch must be a dict"}
 
-    # 别名兼容:调用方常用 output_data / input_data / model_config 这些"自然"字段名,
-    # 但 DB 列叫 *_json。统一映射,避免静默丢失产物(老 bug:output_data 写不进库)。
+    # Public patch fields map to the serialized database columns.
     aliases = {
         "output_data": "output_json",
         "input_data": "input_json",
@@ -697,7 +680,7 @@ async def list_nodes(project_id: str) -> list[dict]:
                 "supersedes_id": n.supersedes_id,
                 "prompt": n.prompt,
                 "links": _extract_links(n.input_json),
-                "surface": _extract_surface(n.model_config_json, n.input_json),
+                "surface": _extract_surface(n.model_config_json),
                 "model_config": _agent_visible_dict(n.model_config_json),
                 "workflow": _compact_workflow_summary(n.input_json),
                 "render_state": _render_state(n.type, n.input_json, n.output_json, n.status),
@@ -728,7 +711,7 @@ async def get_node(node_id: str) -> dict:
             "output": json.loads(node.output_json) if node.output_json else None,
             "model_config": _agent_visible_dict(node.model_config_json),
             "workflow": _compact_workflow_summary(node.input_json),
-            "surface": _extract_surface(node.model_config_json, node.input_json),
+            "surface": _extract_surface(node.model_config_json),
             "render_state": _render_state(node.type, node.input_json, node.output_json, node.status),
             "prompt": node.prompt,
             "error_message": node.error_message,
@@ -824,15 +807,6 @@ async def delete_nodes(
     }
 
 
-async def delete_node(node_id: str) -> dict:
-    async with session_scope() as session:
-        node = await session.get(WorkflowNode, node_id)
-        if not node:
-            return {"error": "Node not found", "error_kind": "node_not_found"}
-        project_id = node.project_id
-    return await delete_nodes(project_id, [node_id])
-
-
 async def delete_canvas(
     project_id: str,
     scope: str = "selected",
@@ -874,73 +848,3 @@ async def list_edges(project_id: str) -> list[dict]:
             }
             for e in result.all()
         ]
-
-
-async def layout_nodes(project_id: str) -> list[dict]:
-    async with session_scope() as session:
-        result = await session.exec(
-            select(WorkflowNode)
-            .where(WorkflowNode.project_id == project_id)
-            .order_by(WorkflowNode.created_at)
-        )
-        nodes = list(result.all())
-        updates = []
-        for i, node in enumerate(nodes):
-            node.position_x = 300
-            node.position_y = 50 + i * 150
-            session.add(node)
-            updates.append(
-                {"id": node.id, "position": {"x": node.position_x, "y": node.position_y}}
-            )
-        await session.commit()
-        return updates
-
-
-async def clear_all_nodes(project_id: str) -> dict:
-    """Delete all nodes and edges for a project (reset canvas)."""
-    return await delete_canvas(project_id=project_id, scope="all")
-
-
-async def cleanup_test_nodes(project_id: str | None = None) -> dict:
-    """Remove failed nodes that produced no output, plus orphaned edges.
-
-    If project_id is None, scans all projects (use sparingly).
-    Targets:
-      - status=failed AND (output_json IS NULL OR output_json='') — never produced anything
-      - edges referencing deleted nodes
-    """
-    async with session_scope() as session:
-        node_query = select(WorkflowNode).where(WorkflowNode.status == "failed")
-        if project_id:
-            node_query = node_query.where(WorkflowNode.project_id == project_id)
-
-        candidates = (await session.exec(node_query)).all()
-        deleted_ids: list[str] = []
-        for n in candidates:
-            if n.output_json and n.output_json.strip() not in ("", "null", "{}"):
-                continue
-            deleted_ids.append(n.id)
-
-        if not deleted_ids:
-            return {"ok": True, "deleted_nodes": 0, "deleted_edges": 0}
-
-        # Delete dependent edges first
-        edge_query = select(WorkflowEdge).where(
-            (WorkflowEdge.source_node_id.in_(deleted_ids))
-            | (WorkflowEdge.target_node_id.in_(deleted_ids))
-        )
-        edges = (await session.exec(edge_query)).all()
-        for e in edges:
-            await session.delete(e)
-
-        for n in candidates:
-            if n.id in deleted_ids:
-                await session.delete(n)
-
-        await session.commit()
-        return {
-            "ok": True,
-            "deleted_nodes": len(deleted_ids),
-            "deleted_edges": len(edges),
-            "ids": deleted_ids,
-        }

@@ -23,25 +23,12 @@ def safe_reference_mention_label(value: Any, fallback: str) -> str:
     return raw or str(fallback or "参考图").strip() or "参考图"
 
 
-def _legacy_reference_mention_label(value: Any, fallback: str) -> str:
-    """Return the pre-special-character label for persisted prompt compatibility."""
-    raw = re.sub(r"^[@#]+", "", str(value or fallback or "参考图").strip())
-    raw = re.sub(r"\.(?:png|jpe?g|webp|gif|bmp|svg)$", "", raw, flags=re.IGNORECASE)
-    raw = "".join(char for char in raw if char.isalnum() or char in {"_", "-"})
-    base = raw or fallback or "参考图"
-    if not re.search(r"(?:图|图片|照片|参考)$", base):
-        base = f"{base}图片"
-    return base[:18]
-
-
 def build_reference_mention_candidates(
     references: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     seen_refs: set[str] = set()
     used_mentions: set[str] = set()
-    used_legacy_mentions: set[str] = set()
-    legacy_mentions_by_ref: dict[str, str] = {}
     for item in references:
         ref = str(item.get("ref") or "").strip()
         if not ref or ref in seen_refs:
@@ -57,14 +44,6 @@ def build_reference_mention_candidates(
                 suffix += 1
             mention = f"{mention}{suffix}"
         used_mentions.add(mention)
-        legacy_mention = f"@{_legacy_reference_mention_label(label_source, fallback)}"
-        if legacy_mention in used_legacy_mentions:
-            suffix = 2
-            while f"{legacy_mention}{suffix}" in used_legacy_mentions:
-                suffix += 1
-            legacy_mention = f"{legacy_mention}{suffix}"
-        used_legacy_mentions.add(legacy_mention)
-        legacy_mentions_by_ref[ref] = legacy_mention
         result.append({
             "mention": mention,
             "label": label,
@@ -72,18 +51,6 @@ def build_reference_mention_candidates(
             "source": str(item.get("source") or "node").strip() or "node",
             "index": len(result) + 1,
         })
-    canonical_mentions = {
-        str(candidate.get("mention") or "").strip()
-        for candidate in result
-    }
-    for candidate in result:
-        legacy_mention = legacy_mentions_by_ref.get(str(candidate.get("ref") or "").strip(), "")
-        if (
-            legacy_mention
-            and legacy_mention != candidate["mention"]
-            and legacy_mention not in canonical_mentions
-        ):
-            candidate["aliases"] = [legacy_mention]
     return result
 
 
@@ -101,13 +68,6 @@ def parse_reference_mentions(
         mention: candidate
         for mention, candidate in canonical_entries
     }
-    for _mention, candidate in canonical_entries:
-        aliases = candidate.get("aliases")
-        alias_values = aliases if isinstance(aliases, list) else []
-        for alias in alias_values:
-            token = str(alias or "").strip()
-            if token:
-                token_entries.setdefault(token, candidate)
 
     occurrences: list[tuple[int, int, str, dict[str, Any]]] = []
     for mention, candidate in token_entries.items():
@@ -139,7 +99,6 @@ def parse_reference_mentions(
             continue
         matched_candidate_ids.add(candidate_id)
         stored_candidate = deepcopy(candidate)
-        stored_candidate.pop("aliases", None)
         stored_candidate["mention"] = token
         matched.append(stored_candidate)
     unknown: list[str] = []
@@ -218,12 +177,6 @@ def _reference_values(input_data: dict[str, Any]) -> list[str]:
                 value = item.get("ref") or item.get("reference") or item.get("value")
             else:
                 value = item
-            text = str(value or "").strip()
-            if text and text not in result:
-                result.append(text)
-        reference_images = container.get("reference_images")
-        values = reference_images if isinstance(reference_images, list) else [reference_images]
-        for value in values:
             text = str(value or "").strip()
             if text and text not in result:
                 result.append(text)

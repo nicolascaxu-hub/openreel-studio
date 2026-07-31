@@ -57,7 +57,6 @@ async def system_status() -> dict[str, Any]:
         "models": model_map,
         "default_fast_model": settings.DEFAULT_FAST_MODEL,
         "default_text_model": settings.DEFAULT_TEXT_MODEL,
-        "default_script_model": settings.DEFAULT_SCRIPT_MODEL,
         "default_review_model": settings.DEFAULT_REVIEW_MODEL,
         "providers_configured": providers,
         "tools_total": len(all_tools),

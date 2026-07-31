@@ -54,15 +54,6 @@ def test_workflow_audit_blocks_unknown_prompt_path() -> None:
     assert _finding_codes(report) == {"workflow_spec_invalid"}
 
 
-def test_workflow_audit_blocks_deleted_v1_fields() -> None:
-    workflow = _base_workflow()
-    workflow["steps"][0]["prompt_template"] = "旧字段"
-    report = audit_workflow_spec(workflow)
-
-    assert report["ok"] is False
-    assert _finding_codes(report) == {"workflow_spec_invalid"}
-
-
 def test_workflow_audit_blocks_cycle_before_runtime_changes() -> None:
     workflow = _base_workflow()
     workflow["steps"][0]["needs"] = ["final_video"]

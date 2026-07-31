@@ -70,7 +70,7 @@ async def test_asset_library_save_accepts_generated_asset_reference(monkeypatch,
         project = await session.get(Project, "project-1")
         project.state_json = json.dumps({
             "metadata": {"title": "测试短剧"},
-            "asset_library": {"project_root": str(project_root)},
+            "asset_library": {"root": str(project_root)},
         }, ensure_ascii=False)
         session.add(Asset(
             id="asset-generated-2",
@@ -135,8 +135,6 @@ async def test_asset_library_defaults_to_project_root_assets(monkeypatch, tmp_pa
     assert path_info["configured"] is True
     assert path_info["using_default"] is True
     assert Path(path_info["root"]) == tmp_path / "assets"
-    assert Path(path_info["project_root"]) == tmp_path / "assets"
-    assert Path(path_info["shared_root"]) == tmp_path / "assets"
 
     result = await asset_library_tools.assets_save_to_project(
         project_id="project-1",
@@ -167,7 +165,7 @@ async def test_asset_library_save_accepts_generated_node_public_id(monkeypatch, 
         project = await session.get(Project, "project-1")
         project.state_json = json.dumps({
             "metadata": {"title": "测试短剧"},
-            "asset_library": {"project_root": str(project_root)},
+            "asset_library": {"root": str(project_root)},
         }, ensure_ascii=False)
         session.add(WorkflowNode(
             id="8e6b1b8a-c4e1-4f8d-8e60-ec57c3300012",
@@ -262,7 +260,7 @@ async def test_asset_library_preview_route_is_scoped_to_configured_roots(monkeyp
     async with db_session.session_scope() as session:
         project = await session.get(Project, "project-1")
         project.state_json = json.dumps({
-            "asset_library": {"project_root": str(library_dir)},
+            "asset_library": {"root": str(library_dir)},
         }, ensure_ascii=False)
         session.add(project)
         await session.commit()
@@ -317,9 +315,8 @@ async def test_asset_library_preview_route_allows_default_project_root_assets(mo
 @pytest.mark.asyncio
 async def test_asset_library_categories_move_and_add_to_canvas(monkeypatch, tmp_path) -> None:
     await _setup_asset_db(monkeypatch, tmp_path)
-    project_root = tmp_path / "project-library"
     shared_root = tmp_path / "shared-library"
-    source_dir = shared_root / "characters" / "unsorted"
+    source_dir = shared_root / "人物" / "unsorted"
     source_dir.mkdir(parents=True, exist_ok=True)
     source_path = source_dir / "hero.png"
     source_path.write_bytes(
@@ -329,10 +326,7 @@ async def test_asset_library_categories_move_and_add_to_canvas(monkeypatch, tmp_
         project = await session.get(Project, "project-1")
         project.state_json = json.dumps({
             "metadata": {"title": "测试短剧"},
-            "asset_library": {
-                "project_root": str(project_root),
-                "shared_root": str(shared_root),
-            },
+            "asset_library": {"root": str(shared_root)},
         }, ensure_ascii=False)
         session.add(project)
         await session.commit()
@@ -363,13 +357,13 @@ async def test_asset_library_categories_move_and_add_to_canvas(monkeypatch, tmp_
     assert project_category["category"] == "第2集"
     assert "error" in invalid_category
 
-    legacy_items = await asset_library_tools.assets_list_shared(
+    current_items = await asset_library_tools.assets_list_shared(
         project_id="project-1",
         kind="character",
         category="unsorted",
     )
-    assert legacy_items["count"] == 1
-    assert legacy_items["items"][0]["title"] == "hero"
+    assert current_items["count"] == 1
+    assert current_items["items"][0]["title"] == "hero"
 
     moved = await asset_library_tools.assets_move_asset(
         project_id="project-1",

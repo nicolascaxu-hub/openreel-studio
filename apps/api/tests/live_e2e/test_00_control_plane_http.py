@@ -136,15 +136,6 @@ async def test_all_stream_slash_plan_and_reset_variants_are_authenticated_and_co
     assert slash["action"] == "execute"
     assert slash["ok"] is False
 
-    legacy_approve = await send_chat_request(api_client, project_id, "/plan approve")
-    _done(legacy_approve, status="failed")
-    slash = next(event for event in legacy_approve if event.get("type") == "slash_command")
-    assert slash["command"] == "plan"
-    assert slash["action"] == "approve"
-    assert slash["ok"] is False
-    assert slash["error"] == "legacy_plan_action_removed"
-    assert not any(event.get("type") == "agent_round" for event in legacy_approve)
-
     exit_plan = await send_chat_request(api_client, project_id, "/plan exit")
     _done(exit_plan)
     slash = next(event for event in exit_plan if event.get("type") == "slash_command")

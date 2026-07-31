@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import shutil
 import time
 import uuid
 from copy import deepcopy
@@ -73,30 +72,6 @@ def _template_file_path(template_id: str) -> Path:
     return path
 
 
-def _template_root(template_id: str, *, root: Path | None = None) -> Path:
-    normalized = normalize_template_id(template_id)
-    base = (root or workflow_template_library_root()).resolve()
-    path = (base / normalized).resolve()
-    if base not in path.parents and path != base:
-        raise WorkflowTemplateStoreError("invalid workflow template path")
-    return path
-
-
-def _versions_root(template_id: str, *, root: Path | None = None) -> Path:
-    path = _template_root(template_id, root=root) / "versions"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _version_path(template_id: str, version_id: str, *, root: Path | None = None) -> Path:
-    safe_version = _safe_version_id(version_id)
-    versions_root = _versions_root(template_id, root=root).resolve()
-    path = (versions_root / f"{safe_version}.json").resolve()
-    if versions_root not in path.parents and path != versions_root:
-        raise WorkflowTemplateStoreError("invalid workflow template version path")
-    return path
-
-
 def normalize_template_id(value: Any, *, fallback_name: str = "workflow_template") -> str:
     raw = str(value or "").strip().lower()
     if not raw:
@@ -119,8 +94,6 @@ def _template_exists(template_id: str) -> bool:
     for root in _template_roots():
         if (root / f"{normalized}.json").exists():
             return True
-        if (root / normalized / "manifest.json").exists():
-            return True
     return False
 
 
@@ -135,10 +108,6 @@ def delete_user_template(template_id: str) -> dict[str, Any]:
     if template_file.exists():
         template_file.unlink()
         deleted_paths.append(str(template_file))
-    legacy_root = _template_root(normalized)
-    if legacy_root.exists():
-        shutil.rmtree(legacy_root)
-        deleted_paths.append(str(legacy_root))
     if not deleted_paths:
         raise WorkflowTemplateStoreError(f"user workflow template not found: {normalized}")
     return {
@@ -162,14 +131,6 @@ def unique_template_id(preferred_id: Any = "", *, name: Any = "") -> str:
     return normalize_template_id(f"{base}_{uuid.uuid4().hex[:8]}")
 
 
-def _safe_version_id(value: Any = "") -> str:
-    raw = str(value or "").strip().lower().replace("-", "_")
-    safe = _SAFE_TEXT_RE.sub("_", raw).strip("_")
-    if safe and re.fullmatch(r"[a-z0-9_]{1,80}", safe):
-        return safe
-    return f"v{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
-
-
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -189,22 +150,6 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
-
-
-def _active_version_id(manifest: dict[str, Any], version_id: str = "") -> str:
-    wanted = str(version_id or "").strip()
-    if wanted:
-        return _safe_version_id(wanted)
-    active = str(manifest.get("active_version_id") or "").strip()
-    if active:
-        return _safe_version_id(active)
-    versions = manifest.get("versions")
-    if isinstance(versions, list) and versions:
-        latest = versions[-1] if isinstance(versions[-1], dict) else {}
-        latest_id = str(latest.get("version_id") or "").strip()
-        if latest_id:
-            return _safe_version_id(latest_id)
-    raise WorkflowTemplateStoreError("workflow template has no active version")
 
 
 def _summary_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -386,21 +331,6 @@ def _record_from_template_file(path: Path) -> dict[str, Any]:
     return {"manifest": manifest, "version": version, "summary": summary}
 
 
-def _record_from_manifest_path(manifest_path: Path) -> dict[str, Any]:
-    manifest = _load_json(manifest_path)
-    if manifest.get("kind") != "workflow_template":
-        raise WorkflowTemplateStoreError("invalid workflow template manifest")
-    version_id = _active_version_id(manifest)
-    template_id = str(manifest.get("template_id") or "")
-    root = manifest_path.parent.parent
-    version = _load_json(_version_path(template_id, version_id, root=root))
-    return {
-        "manifest": manifest,
-        "version": version,
-        "summary": _summary_from_manifest(manifest),
-    }
-
-
 def list_user_template_records() -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -415,22 +345,8 @@ def list_user_template_records() -> list[dict[str, Any]]:
                 records.append(record)
             except (OSError, ValueError, WorkflowAuditError):
                 continue
-        for manifest_path in sorted(root.glob("*/manifest.json")):
-            try:
-                record = _record_from_manifest_path(manifest_path)
-                template_id = str(record.get("summary", {}).get("id") or "")
-                if not template_id or template_id in seen:
-                    continue
-                seen.add(template_id)
-                records.append(record)
-            except (OSError, ValueError, WorkflowAuditError):
-                continue
     records.sort(key=_record_sort_key)
     return records
-
-
-def list_user_template_summaries() -> list[dict[str, Any]]:
-    return [deepcopy(record.get("summary") or {}) for record in list_user_template_records()]
 
 
 def load_user_template(template_id: str, version_id: str = "") -> dict[str, Any]:
@@ -458,28 +374,6 @@ def load_user_template(template_id: str, version_id: str = "") -> dict[str, Any]
             "audit": deepcopy(version.get("audit") or {}),
             "source": deepcopy(version.get("source") or {}),
         }
-    # Fallback for old manifest versions when a specific non-active version is requested.
-    if wanted_version:
-        for root in _template_roots():
-            manifest_path = root / normalized / "manifest.json"
-            if not manifest_path.exists():
-                continue
-            manifest = _load_json(manifest_path)
-            active_version = _active_version_id(manifest, wanted_version)
-            version = _load_json(_version_path(normalized, active_version, root=root))
-            summary = _summary_from_manifest(manifest)
-            canonical_workflow = workflow_spec_payload(version.get("workflow") or {})
-            return {
-                "manifest": manifest,
-                "version": version,
-                "summary": summary,
-                "workflow": canonical_workflow,
-                "sample_inputs": deepcopy(version.get("sample_inputs") or {}),
-                "preview": deepcopy(version.get("preview") or {}),
-                "self_check": deepcopy(version.get("self_check") or {}),
-                "audit": deepcopy(version.get("audit") or {}),
-                "source": deepcopy(version.get("source") or {}),
-            }
     raise WorkflowTemplateStoreError(f"workflow template file not found: {normalized}")
 
 
@@ -567,6 +461,10 @@ def save_user_template(
     }
 
 
+
+
+
+
 def promote_artifact_to_template(
     *,
     project_id: str,
@@ -590,81 +488,23 @@ def promote_artifact_to_template(
         "project_id": project_id,
         "artifact_ref": artifact_ref,
         "artifact_source": deepcopy(artifact.get("source") or {}),
-        **(deepcopy(source or {})),
+        **deepcopy(source or {}),
     }
+    preview = artifact.get("preview") if isinstance(artifact.get("preview"), dict) else {}
     return save_user_template(
         workflow=workflow,
-        template_id=template_id or workflow.get("id") or artifact.get("preview", {}).get("id") or "",
-        name=name or artifact.get("preview", {}).get("name") or workflow.get("name") or "",
-        description=description or artifact.get("preview", {}).get("description") or workflow.get("description") or "",
+        template_id=template_id or workflow.get("id") or preview.get("id") or "",
+        name=name or preview.get("name") or workflow.get("title") or "",
+        description=description or preview.get("description") or workflow.get("description") or "",
         category=category,
         applies_to=applies_to,
         version=version,
         source=source_payload,
         sample_inputs=artifact.get("sample_inputs") if isinstance(artifact.get("sample_inputs"), dict) else {},
         self_check=artifact.get("self_check") if isinstance(artifact.get("self_check"), dict) else {},
-        preview=artifact.get("preview") if isinstance(artifact.get("preview"), dict) else {},
+        preview=preview,
         replace_existing=replace_existing,
     )
-
-
-def clone_template_to_artifact(
-    *,
-    project_id: str,
-    template_id: str,
-    version_id: str = "",
-    source: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    from app.agent import canvas_workflow_templates, workflow_spec_artifacts
-
-    try:
-        loaded = load_user_template(template_id, version_id)
-    except WorkflowTemplateStoreError:
-        template = canvas_workflow_templates.get_template(template_id)
-        workflow = template.get("public_spec") if isinstance(template.get("public_spec"), dict) else template
-        sample_inputs: dict[str, Any] = {}
-        normalized = canvas_workflow_templates.normalize_inline_workflow(workflow, input_values=sample_inputs)
-        preview = workflow_spec_artifacts.workflow_spec_preview(workflow, normalized=normalized)
-        summary = {
-            **preview,
-            "id": workflow.get("id") or template_id,
-            "name": workflow.get("name") or preview.get("name") or template_id,
-            "active_version_id": workflow.get("active_version_id") or "",
-            "scope": workflow.get("scope") or "builtin",
-            "source": workflow.get("source") or "builtin_template",
-        }
-        self_check: dict[str, Any] = {}
-    else:
-        workflow = loaded["workflow"]
-        sample_inputs = loaded.get("sample_inputs") if isinstance(loaded.get("sample_inputs"), dict) else {}
-        normalized = canvas_workflow_templates.normalize_inline_workflow(workflow, input_values=sample_inputs)
-        preview = loaded.get("preview") if isinstance(loaded.get("preview"), dict) else {}
-        summary = loaded["summary"] if isinstance(loaded.get("summary"), dict) else {}
-        self_check = loaded.get("self_check") if isinstance(loaded.get("self_check"), dict) else {}
-    artifact = workflow_spec_artifacts.save_workflow_spec_artifact(
-        project_id=project_id,
-        workflow=workflow,
-        normalized=normalized,
-        self_check=self_check,
-        user_preview=preview,
-        sample_inputs=sample_inputs,
-        source={
-            "agent": "workflow_template_store",
-            "template_id": summary.get("id"),
-            "version_id": summary.get("active_version_id"),
-            "template_scope": summary.get("scope") or workflow.get("scope") or "",
-            **(deepcopy(source or {})),
-        },
-    )
-    return {
-        "ok": True,
-        "template_id": summary.get("id"),
-        "version_id": summary.get("active_version_id"),
-        "artifact_ref": artifact["artifact_ref"],
-        "preview": artifact["preview"],
-        "audit": artifact.get("audit") or {},
-        "self_check": artifact.get("self_check") or {},
-    }
 
 
 def export_template_package(template_id: str, version_id: str = "") -> dict[str, Any]:

@@ -1591,8 +1591,8 @@ body.openreel-video-editor-open .studio-pointer-aura {
   accent-color: var(--director-accent) !important;
 }
 
-/* Legacy semantic accents inside the director controls now share the same
-   selection blue. Red/green remain available for destructive/success states. */
+/* Director control accents share the same selection blue. Red/green remain
+   available for destructive/success states. */
 .openreel-director-desk [class^="text-cyan-"],
 .openreel-director-desk [class*=" text-cyan-"],
 .openreel-director-desk [class^="text-violet-"],

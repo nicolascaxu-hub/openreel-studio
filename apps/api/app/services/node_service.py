@@ -69,18 +69,7 @@ def _dependency_node_ids(input_data: dict[str, Any], node_lookup: dict[str, str]
     if isinstance(fields, dict):
         containers.append(fields)
     for container in containers:
-        explicit_found = False
-        for key in ("depends_on", "references"):
-            value = container.get(key)
-            if isinstance(value, list):
-                raw_items.extend(value)
-                explicit_found = True
-            elif value:
-                raw_items.append(value)
-                explicit_found = True
-        if explicit_found:
-            continue
-        value = container.get("reference_images")
+        value = container.get("references")
         if isinstance(value, list):
             raw_items.extend(value)
         elif value:
@@ -108,7 +97,7 @@ def _has_dependency_keys(input_data: dict[str, Any]) -> bool:
     fields = input_data.get("fields")
     if isinstance(fields, dict):
         containers.append(fields)
-    return any(any(key in container for key in ("depends_on", "references", "reference_images")) for container in containers)
+    return any("references" in container for container in containers)
 
 
 def canvas_edge_payloads(
@@ -117,7 +106,7 @@ def canvas_edge_payloads(
 ) -> list[dict[str, Any]]:
     """Return display edges with node-authored dependencies as the source of truth.
 
-    A target node that declares references/depends_on owns its incoming dependency
+    A target node that declares references owns its incoming dependency
     edges. This suppresses stale persisted edges such as A -> B after B was edited
     to depend on C.
     """

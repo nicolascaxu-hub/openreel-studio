@@ -2,7 +2,7 @@
 
 设计说明:
 - 启动时 LLM 只看到稳定核心工具的完整 schema
-- Tier 2 工具(memory/agent/scene/shot/asset/canvas/media/file 等)留在 deferred pool
+- Tier 2 工具(memory/agent/assets/media/file 等)留在 deferred pool
 - 模型需要时 search → describe → execute
 
 收益:
@@ -27,7 +27,6 @@ from app.mcp_tools.registry import _schema_from_handler, registry, ToolSpec
 # 低频工具通过 deferred 暴露；被节点协议吸收的旧辅助工具标记 hidden。
 _CATEGORIES: dict[str, set[str]] = {
     "guide": {"skill.project_mentor", "skill.story_template_method"},
-    "project": {"project.create"},
     "workflow": {
         "workflow.list_templates",
         "workflow.runtime_status",
@@ -38,7 +37,6 @@ _CATEGORIES: dict[str, set[str]] = {
     },
     "delete": set(),
     "query": {
-        "project.list",
         "events.query", "events.tail",
     },
     "assets": {
@@ -101,21 +99,17 @@ def _categories_of(name: str) -> list[str]:
 
 _STATIC_SEARCH_HINTS: dict[str, str] = {
     "project.reset": "reset full reset clear failed nodes destructive confirmation 重置项目 清空项目 清理失败节点",
-    "project.create": "new project blank project create project 新建项目 空白项目",
     "workflow.list_templates": "canvas workflow templates scaffold graph nodes dependencies reusable 画布 工作流 模板 骨架 节点 依赖",
     "workflow.runtime_status": "workflow runtime status active workflow saved inputs instance progress 工作流 运行态 状态 输入 胶囊 实例 进度",
     "workflow.run_step": "run specific workflow step execute one ready step fill inputs 指定步骤 运行 单步 填写输入",
     "workflow.run_next": "run next ready workflow step continue fill inputs dependency 下一步 继续运行 填写输入 依赖",
     "workflow.run_all": "run all remaining workflow steps execute full flow fill inputs 一键运行 全部 剩余步骤 填写输入",
     "skill.project_mentor": (
-        "guide project mentor video workflow T2V I2V storyboard shot images story template "
-        "text-to-video image-to-video keyframes first frame last frame multi reference @图片 uploaded image style reference asset library "
-        "revision audit trace debugging node repair rerun failed node plan source path production audit model_written "
-        "prompt_source dependency_missing pending_video_request agent architecture "
-        "项目规则 视频工作流 节点修订 制作审查 交付审查 "
-        "失败节点 原地修复 节点修复 重跑 视频执行计划 执行计划 排障 "
-        "文生视频 图生视频 首尾帧 多图参考 参考图 风格参考 宫格分镜 单张分镜 "
-        "人物图 场景图 分镜图 故事模板图 首帧图 尾帧图 通用制作流程 标准制作流程 通用视频制作流程"
+        "guide project mentor architecture agent loop permission trace debugging "
+        "revision audit node repair rerun failed node source path production audit "
+        "dependency_missing prompt compaction cache budget "
+        "项目架构 Agent循环 节点修订 制作审查 交付审查 "
+        "失败节点 原地修复 节点修复 重跑 排障 提示词压缩 缓存预算"
     ),
 	    "skill.story_template_method": (
 	        "story template story_template image_to_video optional method complex action blocking "
@@ -175,13 +169,9 @@ _DEFERRED_FAILURE_POLICY = (
 )
 _WORKFLOW_BUILD_ONLY_TOOLS = {
     "workflow.canvas.inspect",
-    "workflow.instantiate",
-    "workflow.materialize",
-    "workflow.materialize_artifact",
     "workflow.protocol_info",
     "workflow.spec.apply_patch",
     "workflow.spec.read",
-    "workflow.template.clone_to_artifact",
     "workflow.template.export",
     "workflow.template.promote",
     "workflow.template.read",
@@ -236,17 +226,12 @@ def _cached_project_mentor_result(
 ) -> dict[str, Any] | None:
     if target != "skill.project_mentor" or not isinstance(state, dict):
         return None
-    if kwargs.get("force_refresh") is True:
-        return None
     topic = str(kwargs.get("topic") or "overview").strip().lower()
     if not topic:
         return None
-    requested_detail = str(kwargs.get("detail") or "summary").strip().lower() or "summary"
     cache = state.get("_mentor_guides_loaded")
     cached = cache.get(topic) if isinstance(cache, dict) else None
     if not isinstance(cached, dict):
-        return None
-    if requested_detail == "full" and not cached.get("has_full_guide"):
         return None
     guidance_summary = str(cached.get("guidance_summary") or "").strip()
     if not guidance_summary:
@@ -254,18 +239,13 @@ def _cached_project_mentor_result(
     return {
         "ok": True,
         "topic": topic,
-        "detail": cached.get("detail") or requested_detail,
         "guidance": guidance_summary,
         "references": [],
         "references_count": int(cached.get("references_count") or 0),
         "reference_policy": "来自 guide cache；无源码路径可读，复用 guidance 和 guidance_hash。",
-        "has_full_guide": bool(cached.get("has_full_guide")),
         "from_guide_cache": True,
         "guidance_hash": cached.get("guidance_hash") or "",
-        "cache_policy": (
-            "当前项目已缓存该 project_mentor 指南；复用摘要/哈希。"
-            "只有用户明确要求刷新或本轮状态变化使缓存失效时才设置 force_refresh=true 重新读取。"
-        ),
+        "cache_policy": "当前项目已缓存该 project_mentor 指南；复用摘要和哈希。",
     }
 
 
@@ -464,7 +444,7 @@ async def tool_search(
 
     Query modes:
       - empty query                       list the visible deferred catalog
-      - select:project.create,system.models exact deferred tool lookup
+      - select:task.delete,system.models exact deferred tool lookup
       - discover:视频制作 skill              richer result with schema summary/example
       - normal keywords                    ranked lightweight result
       - regex/pattern                      match tool name/category/hints/schema text
@@ -674,7 +654,6 @@ async def tool_execute(
     input: dict[str, Any] | str | None = None,
     _state: dict[str, Any] | None = None,
     _user_message: str = "",
-    _requires_plan: bool = False,
 ) -> dict[str, Any]:
     """Execute one deferred Tier 2 tool after target-tool permission checks."""
     requested_target = (name or "").strip().replace("__", ".")
@@ -717,7 +696,6 @@ async def tool_execute(
             tool_name=target,
             state=_state or {},
             user_message=_user_message,
-            requires_plan=bool(_requires_plan),
             tool_args=_normalize_input(input),
             via_tool_execute=True,
         )

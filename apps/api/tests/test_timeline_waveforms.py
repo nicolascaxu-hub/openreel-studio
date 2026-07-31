@@ -39,7 +39,7 @@ def make_waveform_test_video(path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_real_pcm_waveform_tracks_signal_silence_and_gain(monkeypatch, tmp_path: Path) -> None:
+async def test_real_pcm_waveform_tracks_signal_and_silence(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(settings, "PROJECT_ROOT", str(tmp_path))
     source = tmp_path / "source.mkv"
     make_waveform_test_video(source)
@@ -72,6 +72,3 @@ async def test_real_pcm_waveform_tracks_signal_silence_and_gain(monkeypatch, tmp
     assert rms[:180].mean() == pytest.approx(0.3535, abs=0.02)
     assert np.abs(maximum[200:]).max() < 0.0001
     assert np.abs(minimum[200:]).max() < 0.0001
-
-    assert timeline_waveforms.gain_amplitude(-6.0) == pytest.approx(0.501187, rel=1e-5)
-    assert timeline_waveforms.gain_amplitude(-120.0) == 0.0

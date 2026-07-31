@@ -16,6 +16,7 @@ The agent should:
   - call save_fact for project-scoped decisions (世界观、人物关系、调性)
   - rely on the orchestrator to auto-inject active short-term context
 """
+
 from __future__ import annotations
 
 import json
@@ -48,6 +49,7 @@ def _message_model_visible(metadata: dict) -> bool:
 
 
 # ── Project-scoped memory ────────────────────────────────────────────
+
 
 def memory_summarization_messages(tail_messages: list[dict]) -> list[dict]:
     """Return only user-authored text eligible for durable memory extraction."""
@@ -95,24 +97,6 @@ async def memory_save_fact(
         return fact
 
 
-async def memory_pin_fact(project_id: str, fact_id: str, pinned: bool = True) -> dict:
-    """Pin/unpin a fact so it's never dropped during recall trimming."""
-    async with session_scope() as session:
-        project = await session.get(Project, project_id)
-        if not project:
-            return {"error": "Project not found"}
-        state = json.loads(project.state_json or "{}")
-        facts = state.get("memory", {}).get("facts", [])
-        for f in facts:
-            if f.get("id") == fact_id:
-                f["pinned"] = pinned
-                project.state_json = json.dumps(state, ensure_ascii=False)
-                session.add(project)
-                await session.commit()
-                return {"ok": True, "id": fact_id, "pinned": pinned}
-        return {"ok": False, "error": "fact not found"}
-
-
 async def memory_recall(
     project_id: str,
     kind: str | None = None,
@@ -133,23 +117,7 @@ async def memory_recall(
         # Pinned first, then most recent. Pinned never trimmed.
         pinned = [f for f in facts if f.get("pinned")]
         unpinned = [f for f in facts if not f.get("pinned")]
-        return pinned + unpinned[-max(0, limit - len(pinned)):]
-
-
-async def memory_forget(project_id: str, fact_id: str) -> dict:
-    async with session_scope() as session:
-        project = await session.get(Project, project_id)
-        if not project:
-            return {"error": "Project not found"}
-        state = json.loads(project.state_json or "{}")
-        facts = state.get("memory", {}).get("facts", [])
-        before = len(facts)
-        facts = [f for f in facts if f.get("id") != fact_id]
-        state.setdefault("memory", {})["facts"] = facts
-        project.state_json = json.dumps(state, ensure_ascii=False)
-        session.add(project)
-        await session.commit()
-        return {"removed": before - len(facts)}
+        return pinned + unpinned[-max(0, limit - len(pinned)) :]
 
 
 async def memory_summarize_conversation(
@@ -171,7 +139,7 @@ async def memory_summarize_conversation(
         "或明确表示以后复用的稳定事实。忽略助手草稿、助手推演、工具结果、失败方案、"
         "待确认方案、临时 intake 表单答案和普通创作请求。不要把助手生成的剧情、人物、"
         "场景、分段或提示词写成长期事实；项目产物由画布节点保存。"
-        "没有符合条件的事实就输出空数组 []。最多 6 条,输出 JSON 数组:[\"事实1\", \"事实2\"]。"
+        '没有符合条件的事实就输出空数组 []。最多 6 条,输出 JSON 数组:["事实1", "事实2"]。'
     )
     user = json.dumps(user_messages, ensure_ascii=False)
 
@@ -238,12 +206,14 @@ async def memory_compact_context(
         metadata = _message_metadata(m)
         if not _message_model_visible(metadata):
             continue
-        payload.append({
-            "role": m.role,
-            "content": m.content,
-            "_message_id": m.id,
-            "_metadata": metadata,
-        })
+        payload.append(
+            {
+                "role": m.role,
+                "content": m.content,
+                "_message_id": m.id,
+                "_metadata": metadata,
+            }
+        )
     active_tokens = estimate_tokens(payload)
     if not auto_compact_needed(payload):
         return {
@@ -283,20 +253,22 @@ async def memory_compact_context(
         token_budget=tail_token_budget,
     )
     preserved_ids = {
-        str(message.get("_message_id"))
-        for message in preserved_tail
-        if message.get("_message_id")
+        str(message.get("_message_id")) for message in preserved_tail if message.get("_message_id")
     }
     compacted_messages = [
         compacted_context_message(summary_text),
         compacted_context_ack_message(),
     ]
     for message in preserved_tail:
-        compacted_messages.append({
-            "role": str(message.get("role") or ""),
-            "content": str(message.get("content") or ""),
-            "_metadata": message.get("_metadata") if isinstance(message.get("_metadata"), dict) else {},
-        })
+        compacted_messages.append(
+            {
+                "role": str(message.get("role") or ""),
+                "content": str(message.get("content") or ""),
+                "_metadata": message.get("_metadata")
+                if isinstance(message.get("_metadata"), dict)
+                else {},
+            }
+        )
 
     async with session_scope() as session:
         archived_count = 0
@@ -311,16 +283,24 @@ async def memory_compact_context(
             content = str(message.get("content") or "")
             if role not in {"user", "assistant"} or not content:
                 continue
-            metadata = dict(message.get("_metadata") or {}) if isinstance(message.get("_metadata"), dict) else {}
-            metadata["kind"] = "compacted_context" if "<compacted_context" in content else "compacted_tail"
+            metadata = (
+                dict(message.get("_metadata") or {})
+                if isinstance(message.get("_metadata"), dict)
+                else {}
+            )
+            metadata["kind"] = (
+                "compacted_context" if "<compacted_context" in content else "compacted_tail"
+            )
             metadata["source"] = "memory.compact_context"
             metadata["transcript"] = str(transcript)
-            session.add(Message(
-                project_id=project_id,
-                role=role,
-                content=content,
-                metadata_json=json.dumps(metadata, ensure_ascii=False),
-            ))
+            session.add(
+                Message(
+                    project_id=project_id,
+                    role=role,
+                    content=content,
+                    metadata_json=json.dumps(metadata, ensure_ascii=False),
+                )
+            )
         await session.commit()
 
     return {
@@ -340,6 +320,7 @@ async def memory_compact_context(
 
 # ── User-scoped (cross-project) memory ───────────────────────────────
 
+
 async def memory_save_user_fact(
     content: str,
     kind: str = "preference",
@@ -349,9 +330,7 @@ async def memory_save_user_fact(
     async with session_scope() as session:
         # de-dup: same kind + identical content → merge (bump hits)
         result = await session.exec(
-            select(UserMemory).where(
-                UserMemory.kind == kind, UserMemory.content == content
-            )
+            select(UserMemory).where(UserMemory.kind == kind, UserMemory.content == content)
         )
         existing = result.first()
         if existing:
@@ -381,32 +360,9 @@ async def memory_recall_user(
         stmt = select(UserMemory)
         if kind:
             stmt = stmt.where(UserMemory.kind == kind)
-        stmt = stmt.order_by(UserMemory.last_used_at.desc().nullslast(),
-                              UserMemory.created_at.desc()).limit(limit)
+        stmt = stmt.order_by(
+            UserMemory.last_used_at.desc().nullslast(), UserMemory.created_at.desc()
+        ).limit(limit)
         result = await session.exec(stmt)
         items = list(result.all())
         return [i.model_dump() for i in items]
-
-
-async def memory_forget_user(memory_id: str) -> dict:
-    async with session_scope() as session:
-        item = await session.get(UserMemory, memory_id)
-        if not item:
-            return {"removed": 0}
-        await session.delete(item)
-        await session.commit()
-        return {"removed": 1, "id": memory_id}
-
-
-async def memory_record_user_hit(memory_id: str) -> dict:
-    """Mark a user memory as recently used; increments hits.
-    Called by the orchestrator when a memory is included in the system prompt."""
-    async with session_scope() as session:
-        item = await session.get(UserMemory, memory_id)
-        if not item:
-            return {"ok": False}
-        item.hits += 1
-        item.last_used_at = datetime.utcnow()
-        session.add(item)
-        await session.commit()
-        return {"ok": True, "hits": item.hits}

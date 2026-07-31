@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import uuid
 import asyncio
-import hashlib
 import json
 import re
 from copy import deepcopy
@@ -23,7 +22,6 @@ from app.agent.workflow_structured_output import (
     structured_output_instructions,
 )
 from app.agent.workflow_audit import WorkflowAuditError, audit_workflow_spec
-from app.agent.workflow_review import build_workflow_semantic_review_evidence
 from app.agent.workflow_repeat_scope import (
     workflow_item_metadata,
     workflow_repeat_group_id,
@@ -34,7 +32,9 @@ from app.agent.workflow_repeat_scope import (
 from app.db.session import session_scope
 from app.mcp_tools import canvas_tools
 from app.mcp_tools.registry import register
-from app.mcp_tools.workflow_conditions import workflow_step_condition_skipped as _workflow_step_condition_skipped
+from app.agent.workflow_condition_eval import (
+    workflow_step_condition_skipped as _workflow_step_condition_skipped,
+)
 from app.mcp_tools.workflow_reference_matching import (
     workflow_alias_equal as _workflow_alias_equal,
     workflow_context_get as _workflow_context_get,
@@ -132,7 +132,6 @@ _WORKFLOW_STEP_METADATA_KEYS = (
 _WORKFLOW_INPUT_RUNNERS = {"workflow_input", "input_form", "manual_input"}
 _WORKFLOW_RUNTIME_STATE_KEY = "workflow_runtime"
 _WORKFLOW_INPUT_VALUES_STATE_KEY = "workflow_input_values"
-_WORKFLOW_REPAIR_ATTEMPTS_STATE_KEY = "_workflow_repair_attempts"
 _WORKFLOW_RUNTIME_CONTENT_KEYS = (
     "content",
     "full_text",
@@ -222,70 +221,8 @@ async def _write_project_state_patch(project_id: str, patch: dict[str, Any]) -> 
         await ProjectService(session).update_project_state(project_id, patch)
 
 
-def _workflow_review_subject_key(source: dict[str, Any], workflow: dict[str, Any] | None = None) -> str:
-    if isinstance(source, dict):
-        for key in ("artifact_ref", "template_id"):
-            text = str(source.get(key) or "").strip()
-            if text:
-                return text
-    if isinstance(workflow, dict):
-        text = str(workflow.get("id") or workflow.get("name") or "").strip()
-        if text:
-            return text
-        digest = hashlib.sha1(json.dumps(workflow, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12]
-        return f"inline:{digest}"
-    return "workflow:unknown"
 
 
-async def _record_workflow_review_repair_attempt(
-    *,
-    project_id: str,
-    subject_key: str,
-    failed: bool,
-    status: str = "",
-    findings: list[Any] | None = None,
-) -> dict[str, Any]:
-    state = await _read_project_state(project_id)
-    store = state.get(_WORKFLOW_REPAIR_ATTEMPTS_STATE_KEY) if isinstance(state, dict) else None
-    if not isinstance(store, dict):
-        store = {}
-    records = store.get("records")
-    if not isinstance(records, dict):
-        records = {}
-    key = str(subject_key or "workflow:unknown").strip() or "workflow:unknown"
-    record = records.get(key) if isinstance(records.get(key), dict) else {}
-    count = int(record.get("failed_attempts") or 0)
-    if failed:
-        count += 1
-    else:
-        count = 0
-    record = {
-        "subject_key": key,
-        "failed_attempts": count,
-        "max_auto_repair_attempts": 2,
-        "repair_allowed": count <= 2,
-        "blocked": count > 2,
-        "last_status": str(status or "").strip(),
-        "last_finding_count": len(findings or []),
-        "updated_at": _utc_now_iso(),
-    }
-    records[key] = record
-    sorted_records = sorted(
-        records.values(),
-        key=lambda item: str(item.get("updated_at") or ""),
-        reverse=True,
-    )[:30]
-    store = {
-        "schema_version": "workflow_repair_attempts_v1",
-        "updated_at": record["updated_at"],
-        "records": {
-            str(item.get("subject_key") or index): item
-            for index, item in enumerate(sorted_records)
-            if isinstance(item, dict)
-        },
-    }
-    await _write_project_state_patch(project_id, {_WORKFLOW_REPAIR_ATTEMPTS_STATE_KEY: store})
-    return record
 
 
 def _workflow_run_authorization_error(source: dict[str, Any], audit: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2526,31 +2463,15 @@ def _merge_workflow_dependency_refs(
                 for item in existing_refs
                 if (item["ref"], item["role"]) not in previous_keys
             ]
-        elif workflow.get("template_id") or workflow.get("instance_id"):
-            # Existing workflow nodes predate managed_references. Their stored
-            # references were executor-generated, so migrate them as one set.
-            existing_refs = []
         workflow["managed_references"] = dep_refs
         fields["workflow"] = workflow
-        if workflow.get("template_id") or workflow.get("instance_id"):
-            # Resolved media references are derived from managed references on
-            # every run. Remove legacy persisted copies so deleted dependencies
-            # cannot remain as sticky media inputs.
-            fields.pop("reference_images", None)
     merged_refs = _dedupe_workflow_references([*existing_refs, *dep_refs])
     if merged_refs:
         fields["references"] = merged_refs
-        fields["depends_on"] = _unique_nonempty_strings(
-            [item["ref"] for item in merged_refs if item.get("ref")]
-        )
     elif replace_managed:
-        # Keep explicit empty dependency keys so edge synchronization removes
-        # previously projected workflow edges.
         fields["references"] = []
-        fields["depends_on"] = []
     else:
         fields.pop("references", None)
-        fields.pop("depends_on", None)
     return fields
 
 
@@ -4200,237 +4121,8 @@ async def _workflow_template_from_spec(
     return template, None
 
 
-@register(
-    "workflow.state_evidence",
-    description="返回工作流运行态、画布节点和依赖边的后端只读证据。",
-    tags=["workflow", "read"],
-    search_hint=(
-        "workflow backend state evidence runtime canvas nodes edges dependency debug review "
-        "工作流 后端证据 运行态 画布节点 依赖边 审查 排障"
-    ),
-    usage_hints=[
-        "审查工作流运行结果、画布映射或依赖边是否正确时使用。",
-        "template_id 和 instance_id 可选；为空时返回当前项目相关工作流状态。",
-    ],
-    schema={
-        "type": "object",
-        "properties": {
-            "project_id": {"type": "string"},
-            "template_id": {"type": "string"},
-            "instance_id": {"type": "string"},
-        },
-        "required": ["project_id"],
-    },
-)
-async def workflow_state_evidence(
-    project_id: str,
-    template_id: str = "",
-    instance_id: str = "",
-) -> dict[str, Any]:
-    if not project_id:
-        return {"ok": False, "error": "project_id is required", "error_kind": "missing_project_id"}
-    from app.agent.workflow_state_evidence import build_workflow_state_evidence
-
-    async with session_scope() as session:
-        return await build_workflow_state_evidence(
-            project_id,
-            session,
-            template_id=template_id,
-            instance_id=instance_id,
-        )
 
 
-@register(
-    "workflow.semantic_review",
-    description="用压缩证据对 workflow spec 做只读语义审查。",
-    tags=["workflow", "review", "read"],
-    search_hint=(
-        "workflow semantic review evidence audit dry-run visible outputs dependencies "
-        "工作流 语义审查 证据 audit dry-run 可见产物 依赖 输入 prompt"
-    ),
-    usage_hints=[
-        "用于 deterministic audit 通过后，检查流程是否真正符合用户目标。",
-        "audit 失败时直接返回阻塞证据，不调用 reviewer。",
-        "传 template_id、artifact_ref 或 inline workflow 三选一；inputs 作为样例输入和动态展开依据。",
-    ],
-    is_read_only=True,
-    is_concurrency_safe=False,
-    schema={
-        "type": "object",
-        "properties": {
-            "project_id": {"type": "string"},
-            "template_id": {"type": "string"},
-            "artifact_ref": {"type": "string"},
-            "workflow": {"type": "object", "additionalProperties": True},
-            "inputs": {"type": "object", "additionalProperties": True},
-            "context": {"type": "object", "additionalProperties": True},
-            "user_goal": {"type": "string"},
-            "review_goal": {"type": "string"},
-            "max_steps": {"type": "integer"},
-        },
-        "required": ["project_id"],
-    },
-)
-async def workflow_semantic_review(
-    project_id: str,
-    template_id: str = "",
-    artifact_ref: str = "",
-    workflow: dict[str, Any] | None = None,
-    inputs: dict[str, Any] | None = None,
-    context: dict[str, Any] | None = None,
-    user_goal: str = "",
-    review_goal: str = "",
-    max_steps: int = 3,
-) -> dict[str, Any]:
-    if not project_id:
-        return {"ok": False, "error": "project_id is required", "error_kind": "missing_project_id"}
-
-    input_values = _dimension_input_values(inputs if isinstance(inputs, dict) else {}, context)
-    source: dict[str, Any] = {}
-    raw_workflow: dict[str, Any] | None = workflow if isinstance(workflow, dict) else None
-    normalized: dict[str, Any] | None = None
-
-    try:
-        if raw_workflow is not None:
-            normalized = canvas_workflow_templates.normalize_inline_workflow(
-                raw_workflow,
-                input_values=input_values,
-            )
-            source = {"kind": "inline_workflow"}
-        elif artifact_ref:
-            artifact = workflow_spec_artifacts.load_workflow_spec_artifact(project_id, artifact_ref)
-            raw_workflow = artifact.get("workflow") if isinstance(artifact.get("workflow"), dict) else {}
-            artifact_inputs = artifact.get("sample_inputs") if isinstance(artifact.get("sample_inputs"), dict) else {}
-            if not input_values:
-                input_values = dict(artifact_inputs)
-            else:
-                input_values = {**artifact_inputs, **input_values}
-            normalized = canvas_workflow_templates.normalize_inline_workflow(
-                raw_workflow,
-                input_values=input_values,
-            )
-            source = {"kind": "artifact", "artifact_ref": artifact_ref}
-        else:
-            template = canvas_workflow_templates.get_template(
-                template_id,
-                input_values=input_values,
-            )
-            raw_workflow = template.get("public_spec") if isinstance(template.get("public_spec"), dict) else template
-            normalized = template
-            source = {
-                "kind": "template",
-                "template_id": str(template.get("id") or template_id or "").strip(),
-                "scope": str(template.get("scope") or "").strip(),
-            }
-    except FileNotFoundError as exc:
-        return {"ok": False, "error": str(exc), "error_kind": "workflow_spec_artifact_not_found"}
-    except (ValueError, json.JSONDecodeError) as exc:
-        return {"ok": False, "error": str(exc), "error_kind": "workflow_spec_artifact_error"}
-    except canvas_workflow_templates.WorkflowTemplateError as exc:
-        return {
-            "ok": False,
-            "error": str(exc),
-            "error_kind": "workflow_template_error",
-            "available_templates": _light_template_catalog(limit=12)[0],
-        }
-
-    audit = audit_workflow_spec(raw_workflow or {}, normalized=normalized, sample_inputs=input_values)
-    evidence = build_workflow_semantic_review_evidence(
-        workflow=raw_workflow or {},
-        normalized=normalized,
-        audit=audit,
-        input_values=input_values,
-        user_goal=user_goal,
-        source=source,
-    )
-    subject_key = _workflow_review_subject_key(source, raw_workflow)
-    if not audit.get("ok"):
-        repair_policy = await _record_workflow_review_repair_attempt(
-            project_id=project_id,
-            subject_key=subject_key,
-            failed=True,
-            status=str(audit.get("status") or "blocked"),
-            findings=audit.get("findings") if isinstance(audit.get("findings"), list) else [],
-        )
-        return {
-            "ok": True,
-            "status": "blocked",
-            "review_skipped": True,
-            "skip_reason": "deterministic_audit_failed",
-            "source": source,
-            "audit": evidence.get("audit") or {},
-            "evidence": evidence,
-            "repair_policy": repair_policy,
-            **({
-                "terminal": True,
-                "suggested_next": "report_blocked_to_user",
-            } if repair_policy.get("blocked") else {}),
-            "review_result": {
-                "status": "blocked",
-                "passed": False,
-                "safe_to_run": False,
-                "safe_to_submit": False,
-                "findings": audit.get("findings") if isinstance(audit.get("findings"), list) else [],
-            },
-        }
-
-    from app.mcp_tools.agent_tools import agent_review
-
-    effective_review_goal = (
-        str(review_goal or "").strip()
-        or "检查 workflow 是否语义上满足用户目标、输入定义清晰、依赖与可见产物正确。"
-    )
-    review = await agent_review(
-        project_id=project_id,
-        review_goal=effective_review_goal,
-        user_request=str(user_goal or ""),
-        work_summary=(
-            f"Workflow {evidence.get('workflow', {}).get('name') or evidence.get('workflow', {}).get('id') or ''} "
-            f"has {evidence.get('workflow', {}).get('step_count') or 0} expanded step(s), "
-            f"{len(evidence.get('visible_outputs') or [])} visible output step(s), "
-            f"audit status {audit.get('status')}."
-        ),
-        review_profile="workflow_semantic",
-        evidence=evidence,
-        custom_checklist=evidence.get("semantic_checklist") if isinstance(evidence.get("semantic_checklist"), list) else [],
-        focus=[
-            "workflow inputs",
-            "step coverage",
-            "dependency semantics",
-            "visible canvas outputs",
-            "prompt feasibility",
-            "dry-run final outputs",
-        ],
-        max_steps=max(1, min(int(max_steps or 3), 6)),
-    )
-    review_result = review.get("result") if isinstance(review.get("result"), dict) else {}
-    review_status = str(review.get("review_status") or review_result.get("status") or "reviewed").strip()
-    findings = review_result.get("findings") if isinstance(review_result.get("findings"), list) else []
-    review_failed = review_status in {"revise_required", "blocked"} or bool(
-        review_result and review_result.get("safe_to_run") is False and findings
-    )
-    repair_policy = await _record_workflow_review_repair_attempt(
-        project_id=project_id,
-        subject_key=subject_key,
-        failed=review_failed,
-        status=review_status,
-        findings=findings,
-    )
-    return {
-        "ok": bool(review.get("ok", True)),
-        "status": review_status,
-        "source": source,
-        "audit": evidence.get("audit") or {},
-        "evidence": evidence,
-        "repair_policy": repair_policy,
-        "review_result": review_result,
-        "review": review,
-        **({
-            "terminal": True,
-            "suggested_next": "report_blocked_to_user",
-        } if repair_policy.get("blocked") else {}),
-        "next_action": "若 review_result 为 revise_required 或 blocked，使用 workflow.spec.apply_patch 修订；通过后再保存或运行。",
-    }
 
 
 async def workflow_preview(
@@ -5130,58 +4822,6 @@ async def _materialize_workflow_step(
         "node": node,
         "created": True,
     }
-
-
-async def workflow_materialize_step(
-    project_id: str,
-    step_id: str,
-    template_id: str = "",
-    workflow: dict[str, Any] | None = None,
-    artifact_ref: str = "",
-    title: str = "",
-    inputs: dict[str, Any] | None = None,
-    context: dict[str, Any] | None = None,
-    ui_overrides: dict[str, Any] | None = None,
-    instance_id: str = "",
-    origin_x: float = 120,
-    origin_y: float = 120,
-    spacing_x: float = 360,
-    spacing_y: float = 240,
-) -> dict[str, Any]:
-    if not project_id:
-        return {"ok": False, "error": "project_id is required", "error_kind": "missing_project_id"}
-    inputs = await _workflow_inputs_with_saved_values(
-        project_id=project_id,
-        template_id=template_id,
-        workflow=workflow,
-        artifact_ref=artifact_ref,
-        instance_id=instance_id,
-        inputs=inputs,
-    )
-    template, error = await _workflow_template_from_spec(
-        project_id=project_id,
-        template_id=template_id,
-        workflow=workflow,
-        artifact_ref=artifact_ref,
-        inputs=inputs,
-        context=context,
-    )
-    if error:
-        return error
-    assert template is not None
-    return await _materialize_workflow_step(
-        project_id=project_id,
-        template=template,
-        step_id=step_id,
-        inputs=inputs,
-        instance_id=instance_id,
-        title=title,
-        origin_x=origin_x,
-        origin_y=origin_y,
-        spacing_x=spacing_x,
-        spacing_y=spacing_y,
-        ui_overrides=ui_overrides,
-    )
 
 
 def _resolve_workflow_target_steps(template: dict[str, Any], step_id: str) -> list[dict[str, Any]]:
@@ -7890,33 +7530,6 @@ async def workflow_list_templates(
     }
 
 
-@register(
-    "workflow.instantiate",
-    description="把已选择的工作流模板实例化成画布 draft 节点和依赖边；不生成内容、不运行节点。",
-    tags=["workflow", "write"],
-    search_hint=(
-        "instantiate canvas workflow scaffold create draft nodes edges dependencies template short video "
-        "实例化 画布 工作流 搭建 骨架 创建 节点 连线 依赖 短剧 短视频"
-    ),
-    usage_hints=[
-        "已选择或复用模板时实例化；后续按节点用 skill 和 agent/node 工具补内容。",
-        "简单单节点任务继续直接用 node.create/node.update/node.run。",
-    ],
-    schema={
-        "type": "object",
-        "properties": {
-            "project_id": {"type": "string"},
-            "template_id": {"type": "string"},
-            "title": {"type": "string"},
-            "inputs": {"type": "object", "additionalProperties": True},
-            "context": {"type": "object", "additionalProperties": True},
-            "origin_x": {"type": "number"},
-            "origin_y": {"type": "number"},
-            "spacing_x": {"type": "number"},
-            "spacing_y": {"type": "number"},
-        },
-    },
-)
 async def workflow_instantiate(
     project_id: str,
     template_id: str = "",
@@ -8102,54 +7715,6 @@ async def workflow_template_read(
     return payload
 
 
-@register(
-    "workflow.template.clone_to_artifact",
-    description="把内置或用户模板克隆为当前项目 workflow spec artifact；用于复用或作为 patch 基线。",
-    tags=["workflow", "artifact", "read"],
-    search_hint=(
-        "clone reusable workflow template to project artifact patch baseline "
-        "模板 克隆 artifact 复用 微调 基线"
-    ),
-    usage_hints=[
-        "用于把内置或用户模板作为当前项目 artifact 基线。",
-        "小改动可先 clone_to_artifact，再基于 artifact_ref 生成 patch revision。",
-    ],
-    schema={
-        "type": "object",
-        "properties": {
-            "project_id": {"type": "string"},
-            "template_id": {"type": "string"},
-            "version_id": {"type": "string"},
-            "source": {"type": "object", "additionalProperties": True},
-        },
-        "required": ["template_id"],
-    },
-)
-async def workflow_template_clone_to_artifact(
-    project_id: str,
-    template_id: str,
-    version_id: str = "",
-    source: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    if not project_id:
-        return {"ok": False, "error": "project_id is required", "error_kind": "missing_project_id"}
-    try:
-        cloned = workflow_template_store.clone_template_to_artifact(
-            project_id=project_id,
-            template_id=template_id,
-            version_id=version_id,
-            source=source,
-        )
-    except workflow_template_store.WorkflowTemplateStoreError as exc:
-        return {"ok": False, "error": str(exc), "error_kind": "workflow_template_error"}
-    except WorkflowAuditError as exc:
-        return {"ok": False, "error": str(exc), "error_kind": "workflow_audit_failed", "audit": exc.report}
-    except canvas_workflow_templates.WorkflowTemplateError as exc:
-        return {"ok": False, "error": str(exc), "error_kind": "workflow_spec_error"}
-    return {
-        **cloned,
-        "hint": "返回的 artifact_ref 可用于复用物化，或作为后续微调基线。",
-    }
 
 
 def _latest_workflow_instance_id(
@@ -8480,36 +8045,6 @@ async def workflow_template_export(
     }
 
 
-@register(
-    "workflow.materialize",
-    description="校验并物化一个 openreel.workflow.v2 文档；仅用于已有 V2 spec，搭建或修改请使用 Workflow Build Mode。",
-    tags=["workflow", "write"],
-    search_hint="materialize workflow v2 canvas draft nodes edges 物化 工作流 画布 节点 连线",
-    usage_hints=[
-        "workflow 必须是完整的 openreel.workflow.v2 文档；旧字段、未知字段和包装对象会被拒绝。",
-        "inputs 只提供本次运行值，不会写回可复用 spec。",
-    ],
-    schema={
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "project_id": {"type": "string"},
-            "workflow": {
-                "type": "object",
-                "description": "完整 openreel.workflow.v2 文档。",
-                "additionalProperties": True,
-            },
-            "title": {"type": "string"},
-            "inputs": {"type": "object", "additionalProperties": True},
-            "origin_x": {"type": "number"},
-            "origin_y": {"type": "number"},
-            "spacing_x": {"type": "number"},
-            "spacing_y": {"type": "number"},
-        },
-        "required": ["workflow"],
-    },
-)
-
 async def workflow_materialize(
     project_id: str,
     workflow: dict[str, Any],
@@ -8559,35 +8094,6 @@ async def workflow_materialize(
     )
 
 
-@register(
-    "workflow.materialize_artifact",
-    description="按 workflow spec artifact_ref 物化画布 draft 节点和依赖边；不把完整 spec 放进主上下文。",
-    tags=["workflow", "write"],
-    search_hint=(
-        "materialize workflow spec artifact_ref compiler output canvas graph nodes edges "
-        "物化 工作流 spec artifact 引用 编译结果 画布 节点 连线"
-    ),
-    usage_hints=[
-        "已有 artifact_ref 后使用；主 Agent 不需要读取完整 spec。",
-        "planner 已完成时，把 planner 输出放入 context；缺少集合时结果会返回 deferred_groups。",
-        "物化只创建 draft 节点和依赖边，不生成内容、不运行节点。",
-    ],
-    schema={
-        "type": "object",
-        "properties": {
-            "project_id": {"type": "string"},
-            "artifact_ref": {"type": "string"},
-            "title": {"type": "string"},
-            "inputs": {"type": "object", "additionalProperties": True},
-            "context": {"type": "object", "additionalProperties": True},
-            "origin_x": {"type": "number"},
-            "origin_y": {"type": "number"},
-            "spacing_x": {"type": "number"},
-            "spacing_y": {"type": "number"},
-        },
-        "required": ["artifact_ref"],
-    },
-)
 async def workflow_materialize_artifact(
     project_id: str,
     artifact_ref: str,

@@ -792,7 +792,7 @@ function workflowMetadataFromInput(input: Record<string, unknown> | undefined): 
   const fields = fieldsFromInput(input)
   const workflow = parseObjectJson(fields?.workflow ?? input.workflow)
   const refs = workflowReferenceList(fields?.references ?? input.references)
-  const dependsOn = stringList(fields?.depends_on ?? input.depends_on ?? workflow?.depends_on)
+  const dependsOn = stringList(workflow?.depends_on)
   const prompt = firstText(
     fields?.prompt,
     fields?.content,
@@ -813,7 +813,7 @@ function workflowMetadataFromInput(input: Record<string, unknown> | undefined): 
 function workflowMetadataFromPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const explicitInput = parseObjectJson(payload.input_json ?? payload.input)
   if (explicitInput) return workflowMetadataFromInput(explicitInput)
-  if (payload.workflow || payload.references || payload.depends_on || payload.fields) {
+  if (payload.workflow || payload.references || payload.fields) {
     return workflowMetadataFromInput(payload)
   }
   return {}

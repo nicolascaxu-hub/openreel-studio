@@ -9,6 +9,7 @@ Each .py module declares NAME (str) or ALIASES (list[str]), optionally PROMPT
 (static text) and / or build(ctx: WorkerContext) -> str. build() takes priority
 over PROMPT when both are present.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,8 +19,6 @@ from app.db.models import Project, WorkflowNode
 from app.db.session import session_scope
 from app.prompts._section import (
     WorkerContext,
-    all_tool_names,
-    get_section,
     render,
 )
 
@@ -66,26 +65,8 @@ async def resolve_prompt(
     return default_prompt_for(tool_name, ctx)
 
 
-# Backwards-compatible mapping for prompt_tools.py — now lists every tool that
-# has a registered .py section, instead of pointing at .md files.
-DEFAULT_PROMPT_FILES: dict[str, str] = {
-    name: f"{name}.py" for name in all_tool_names()
-}
-
-
-def load_prompt_file(filename: str) -> str:
-    """Deprecated — kept for any external caller that still loads raw files.
-
-    Always returns empty string now; .py modules expose content via build/PROMPT.
-    """
-    return ""
-
-
 __all__ = [
-    "DEFAULT_PROMPT_FILES",
     "WorkerContext",
     "default_prompt_for",
-    "get_section",
-    "load_prompt_file",
     "resolve_prompt",
 ]

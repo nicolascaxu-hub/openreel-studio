@@ -13,7 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import routes_projects, routes_uploads
 from app.config_store.schema import MediaProviderEntry
-from app.db.models import Asset, Project, WorkflowNode
+from app.db.models import Project, WorkflowNode
 from app.mcp_tools import canvas_tools, node_universal
 from app.services import media_generation
 from app.services import media_history
@@ -517,65 +517,6 @@ def test_canvas_workflow_summary_keeps_reviewable_metadata():
     }
 
 
-def test_canvas_edge_payloads_prefer_node_authored_dependencies():
-    script = SimpleNamespace(
-        id="script-1",
-        project_id="proj-1",
-        input_json=json.dumps({"content": "剧本"}, ensure_ascii=False),
-    )
-    red = SimpleNamespace(
-        id="red-1",
-        project_id="proj-1",
-        input_json=json.dumps({"depends_on": ["node:script-1"]}, ensure_ascii=False),
-    )
-    blue = SimpleNamespace(
-        id="blue-1",
-        project_id="proj-1",
-        input_json=json.dumps({"references": [{"ref": "script-1", "role": "context"}]}, ensure_ascii=False),
-    )
-    green = SimpleNamespace(
-        id="green-1",
-        project_id="proj-1",
-        input_json=json.dumps({"references": [{"nodeId": "script-1", "role": "context"}]}, ensure_ascii=False),
-    )
-    empty = SimpleNamespace(
-        id="empty-1",
-        project_id="proj-1",
-        input_json=json.dumps({"depends_on": [], "references": [], "reference_images": []}, ensure_ascii=False),
-    )
-
-    class FakeEdge:
-        def __init__(self, source: str, target: str):
-            self.id = f"edge-{source}-{target}"
-            self.project_id = "proj-1"
-            self.source_node_id = source
-            self.target_node_id = target
-            self.label = None
-
-        def model_dump(self):
-            return {
-                "id": self.id,
-                "project_id": self.project_id,
-                "source_node_id": self.source_node_id,
-                "target_node_id": self.target_node_id,
-                "label": self.label,
-            }
-
-    payloads = canvas_edge_payloads(
-        [script, red, blue, green, empty],
-        [
-            FakeEdge("script-1", "red-1"),
-            FakeEdge("script-1", "red-1"),
-            FakeEdge("red-1", "blue-1"),
-            FakeEdge("red-1", "green-1"),
-            FakeEdge("script-1", "empty-1"),
-        ],
-    )
-
-    pairs = {(edge["source_node_id"], edge["target_node_id"]) for edge in payloads}
-    assert pairs == {("script-1", "red-1"), ("script-1", "blue-1"), ("script-1", "green-1")}
-    assert len(payloads) == 3
-
 
 def test_canvas_edge_payloads_resolve_public_node_reference_ids():
     source = SimpleNamespace(
@@ -615,7 +556,7 @@ def test_canvas_edge_payloads_resolve_display_id_zero_reference():
         id="target-internal-id",
         display_id=1,
         project_id="proj-1",
-        input_json=json.dumps({"depends_on": ["node:0"]}, ensure_ascii=False),
+        input_json=json.dumps({"references": [{"ref": "node:0", "role": "context"}]}, ensure_ascii=False),
     )
 
     payloads = canvas_edge_payloads([source, target], [])
@@ -630,44 +571,6 @@ def test_canvas_edge_payloads_resolve_display_id_zero_reference():
         "_derived": "node_dependencies",
     }]
 
-
-def test_canvas_edge_payloads_ignore_reference_image_cache_when_refs_exist():
-    character = SimpleNamespace(
-        id="character-node",
-        display_id=1,
-        project_id="proj-1",
-        input_json=json.dumps({"content": "人物"}, ensure_ascii=False),
-    )
-    current_storyboard = SimpleNamespace(
-        id="storyboard-current",
-        display_id=6,
-        project_id="proj-1",
-        input_json=json.dumps({"content": "当前段分镜"}, ensure_ascii=False),
-    )
-    stale_storyboard = SimpleNamespace(
-        id="storyboard-stale",
-        display_id=4,
-        project_id="proj-1",
-        input_json=json.dumps({"content": "旧分镜"}, ensure_ascii=False),
-    )
-    target = SimpleNamespace(
-        id="video-node",
-        display_id=9,
-        project_id="proj-1",
-        input_json=json.dumps(
-            {
-                "references": [{"ref": "node:6", "role": "visual_reference"}],
-                "depends_on": ["node:6"],
-                "reference_images": ["node:1", "node:4"],
-            },
-            ensure_ascii=False,
-        ),
-    )
-
-    payloads = canvas_edge_payloads([character, current_storyboard, stale_storyboard, target], [])
-
-    pairs = {(edge["source_node_id"], edge["target_node_id"]) for edge in payloads}
-    assert pairs == {("storyboard-current", "video-node")}
 
 
 @pytest.mark.asyncio
@@ -1044,203 +947,7 @@ async def test_node_update_prompt_reopens_failed_video_node(monkeypatch):
     assert result["error_message"] is None
 
 
-def test_manual_image_edge_writes_visual_reference_for_text_and_image_targets():
-    source = WorkflowNode(id="image-source", project_id="proj-1", display_id=7, type="image", title="参考图")
-    text_target = WorkflowNode(id="text-target", project_id="proj-1", type="text", title="文字")
-    image_target = WorkflowNode(
-        id="image-target",
-        project_id="proj-1",
-        type="image",
-        title="图片",
-        input_json=json.dumps({
-            "render_state": "fresh",
-            "reference_images": [],
-            "fields": {"depends_on": [], "references": [], "reference_images": []},
-        }, ensure_ascii=False),
-    )
 
-    assert routes_projects._add_edge_dependency(text_target, source) is True
-    assert routes_projects._add_edge_dependency(image_target, source) is True
-
-    text_input = json.loads(text_target.input_json or "{}")
-    image_input = json.loads(image_target.input_json or "{}")
-    expected_ref = {"ref": "node:7", "role": "visual_reference"}
-    assert text_input["depends_on"] == ["node:7"]
-    assert text_input["references"] == [expected_ref]
-    assert text_input["reference_images"] == ["node:7"]
-    assert image_input["depends_on"] == ["node:7"]
-    assert image_input["references"] == [expected_ref]
-    assert image_input["reference_images"] == ["node:7"]
-    assert image_input["fields"]["depends_on"] == ["node:7"]
-    assert image_input["fields"]["references"] == [expected_ref]
-    assert image_input["fields"]["reference_images"] == ["node:7"]
-    assert image_input["render_state"] == "stale"
-
-    image_input["references"].append({"ref": "node:7", "role": "source_image"})
-    image_input["reference_images"] = ["node:7"]
-    image_input["fields"] = {
-        "depends_on": ["node:7"],
-        "references": [
-            {"ref": "node:7", "role": "visual_reference"},
-            {"ref": "node:7", "role": "source_image"},
-        ],
-        "reference_images": ["node:7"],
-    }
-    image_target.input_json = json.dumps(image_input, ensure_ascii=False)
-    assert routes_projects._remove_edge_dependency(image_target, source) is True
-    image_input = json.loads(image_target.input_json or "{}")
-    assert image_input["depends_on"] == []
-    assert image_input["references"] == []
-    assert image_input["reference_images"] == []
-    assert image_input["fields"]["depends_on"] == []
-    assert image_input["fields"]["references"] == []
-    assert image_input["fields"]["reference_images"] == []
-    assert node_universal._coerce_reference_values(
-        image_input.get("references"),
-        image_input.get("depends_on"),
-        image_input.get("reference_images"),
-        include_roles=node_universal._MEDIA_REFERENCE_ROLES,
-        exclude_roles=node_universal._DIRECT_IMAGE_SOURCE_ROLES,
-    ) == []
-    assert node_universal._coerce_reference_values(
-        image_input["fields"].get("references"),
-        image_input["fields"].get("depends_on"),
-        image_input["fields"].get("reference_images"),
-        include_roles=node_universal._MEDIA_REFERENCE_ROLES,
-        exclude_roles=node_universal._DIRECT_IMAGE_SOURCE_ROLES,
-    ) == []
-
-    legacy_target = WorkflowNode(
-        id="legacy-target",
-        project_id="proj-1",
-        type="image",
-        title="旧引用",
-        input_json=json.dumps({
-            "depends_on": ["node:image-source"],
-            "references": [{"ref": "node:image-source", "role": "visual_reference"}],
-            "reference_images": ["node:image-source"],
-        }, ensure_ascii=False),
-    )
-    assert routes_projects._remove_edge_dependency(legacy_target, source) is True
-    legacy_input = json.loads(legacy_target.input_json or "{}")
-    assert legacy_input["depends_on"] == []
-    assert legacy_input["references"] == []
-    assert legacy_input["reference_images"] == []
-    assert node_universal._coerce_reference_values(
-        image_input.get("references"),
-        image_input["fields"].get("references"),
-        include_roles=node_universal._DIRECT_IMAGE_SOURCE_ROLES,
-    ) == []
-    assert image_input["render_state"] == "stale"
-
-
-@pytest.mark.asyncio
-async def test_batch_delete_nodes_cleans_derived_dependencies_without_edges(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'delete-nodes.db'}", echo=False, future=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    session_local = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    monkeypatch.setattr(routes_projects.project_media_history, "register_nodes_outputs", lambda *_args, **_kwargs: [])
-
-    try:
-        async with session_local() as session:
-            session.add(Project(id="proj-delete", title="删除测试", state_json="{}"))
-            session.add(WorkflowNode(
-                id="source-node",
-                project_id="proj-delete",
-                display_id=1,
-                type="image",
-                title="源图",
-            ))
-            session.add(WorkflowNode(
-                id="second-source",
-                project_id="proj-delete",
-                display_id=2,
-                type="text",
-                title="源文本",
-            ))
-            session.add(WorkflowNode(
-                id="target-node",
-                project_id="proj-delete",
-                display_id=3,
-                type="video",
-                title="下游视频",
-                input_json=json.dumps({
-                    "depends_on": ["node:1", "node:2", "node:external"],
-                    "references": [
-                        {"ref": "node:1", "role": "visual_reference"},
-                        {"ref": "node:2", "role": "context"},
-                        {"ref": "node:external", "role": "context"},
-                    ],
-                    "reference_images": ["node:1", "node:external"],
-                    "fields": {
-                        "depends_on": ["node:1", "node:2"],
-                        "references": [{"ref": "node:1", "role": "visual_reference"}],
-                        "reference_images": ["node:1"],
-                    },
-                }, ensure_ascii=False),
-            ))
-            session.add(Asset(
-                id="asset-source",
-                project_id="proj-delete",
-                node_id="source-node",
-                type="video",
-                name="源资产",
-            ))
-            await session.commit()
-
-            result = await routes_projects._delete_project_canvas_nodes(
-                "proj-delete",
-                ["1", "second-source"],
-                session,
-            )
-
-            assert result["deleted_nodes"] == 2
-            assert result["deleted_asset_records"] == 1
-            assert result["cleaned_dependency_nodes"] == 1
-            assert await session.get(WorkflowNode, "source-node") is None
-            assert await session.get(WorkflowNode, "second-source") is None
-            assert await session.get(Asset, "asset-source") is None
-            target = await session.get(WorkflowNode, "target-node")
-            assert target is not None
-            target_input = json.loads(target.input_json or "{}")
-            assert target_input["depends_on"] == ["node:external"]
-            assert target_input["references"] == [{"ref": "node:external", "role": "context"}]
-            assert target_input["reference_images"] == ["node:external"]
-            assert target_input["fields"]["depends_on"] == []
-            assert target_input["fields"]["references"] == []
-            assert target_input["fields"]["reference_images"] == []
-    finally:
-        await engine.dispose()
-
-
-def test_project_node_detail_payload_publicizes_reference_node_ids():
-    source_id = "11111111-1111-4111-8111-111111111111"
-    node = WorkflowNode(
-        id="22222222-2222-4222-8222-222222222222",
-        project_id="proj-1",
-        display_id=8,
-        type="image",
-        title="目标图",
-        status="idle",
-        input_json=json.dumps({
-            "depends_on": [f"node:{source_id}"],
-            "references": [{"ref": f"node:{source_id}", "role": "visual_reference"}],
-            "reference_images": [f"node:{source_id}"],
-            "fields": {
-                "references": [{"ref": f"node:{source_id}", "role": "visual_reference"}],
-            },
-        }, ensure_ascii=False),
-        output_json=json.dumps({"source_node_id": source_id}, ensure_ascii=False),
-    )
-
-    payload = routes_projects._node_detail_payload(node, {source_id: "7"})
-
-    assert payload["input"]["depends_on"] == ["node:7"]
-    assert payload["input"]["references"] == [{"ref": "node:7", "role": "visual_reference"}]
-    assert payload["input"]["reference_images"] == ["node:7"]
-    assert payload["input"]["fields"]["references"] == [{"ref": "node:7", "role": "visual_reference"}]
-    assert payload["output"]["source_node_id"] == "7"
 
 
 @pytest.mark.asyncio
@@ -1291,50 +998,6 @@ async def test_completed_fusion_stage_clears_previous_error_diagnostics(monkeypa
     assert "diagnostics" not in stage
     assert updates[-1]["output_data"] == fusion
 
-
-@pytest.mark.asyncio
-async def test_merge_stage_into_fusion_preserves_legacy_nested_output_on_render_fail(monkeypatch):
-    updates: list[dict] = []
-
-    async def fake_get_node(node_id: str):
-        assert node_id == "image-1"
-        return {
-            "id": node_id,
-            "type": "image",
-            "project_id": "project-1",
-            "output": {
-                "type": "image",
-                "status": "completed",
-                "result": {
-                    "output": {
-                        "url": "/api/media/project-1/legacy.png",
-                    },
-                },
-            },
-        }
-
-    async def fake_update_node(node_id: str, patch: dict):
-        updates.append(patch)
-        return {"id": node_id}
-
-    monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
-    monkeypatch.setattr(node_universal.canvas_tools, "update_node", fake_update_node)
-
-    fusion = await node_universal._merge_stage_into_fusion(
-        "image-1",
-        "image",
-        status="failed",
-        error="bad response body",
-        prompt="测试",
-        size="1080x1920",
-    )
-
-    stage = fusion["stages"][0]
-    assert stage["name"] == "图片"
-    assert stage["status"] == "failed"
-    assert stage["url"] == "/api/media/project-1/legacy.png"
-    assert stage["error"] == "bad response body"
-    assert updates and updates[-1]["output_data"] == fusion
 
 
 @pytest.mark.asyncio
@@ -1444,7 +1107,12 @@ def _png_header(width: int, height: int) -> bytes:
 
 @pytest.mark.asyncio
 async def test_image_provider_rejects_downloaded_wrong_aspect_ratio(monkeypatch, tmp_path):
-    provider = SimpleNamespace(name="fake-image", model_name="fake-model", api_format="openai")
+    provider = SimpleNamespace(
+        name="fake-image",
+        model_name="fake-model",
+        api_format="image_http_v1",
+        params_json=json.dumps({"image_protocol_id": "openai_images_generations"}),
+    )
 
     async def fake_get_active_provider(kind: str):
         assert kind == "image"
@@ -2825,7 +2493,7 @@ async def test_video_reference_resolver_maps_aliases_to_completed_image_nodes(mo
 
 
 @pytest.mark.asyncio
-async def test_text_runner_preserves_tree_dependency_fields():
+async def test_text_runner_preserves_references():
     result = await node_universal._run_text_node(
         "proj-1",
         "node-1",
@@ -2833,7 +2501,6 @@ async def test_text_runner_preserves_tree_dependency_fields():
             "title": "故事设定",
             "content": "雨夜决斗。",
             "references": ["image-1"],
-            "depends_on": ["text-0"],
         },
     )
 
@@ -2842,7 +2509,6 @@ async def test_text_runner_preserves_tree_dependency_fields():
         "title": "故事设定",
         "content": "雨夜决斗。",
         "references": ["image-1"],
-        "depends_on": ["text-0"],
     }
 
 
@@ -2908,12 +2574,7 @@ async def test_text_runner_uses_node_model_override(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_workflow_runtime_skill_payload_prefers_compiled_prompt_template(monkeypatch):
-    async def fake_load_skill(workflow: dict):
-        raise AssertionError("compiled prompt_template should avoid full skill loading")
-
-    monkeypatch.setattr(node_universal, "_load_workflow_text_skill", fake_load_skill)
-
+async def test_workflow_runtime_skill_payload_prefers_compiled_prompt_template():
     payload = await node_universal._workflow_runtime_skill_payload(
         {"primary_skill": "script_writing", "skill_category": "prompt", "skill_scope": "builtin"},
         {"prompt_template": "SYSTEM: 写剧本", "rendered_prompt_template": "SYSTEM: 写剧本"},
@@ -2927,34 +2588,6 @@ async def test_workflow_runtime_skill_payload_prefers_compiled_prompt_template(m
         "content_mode": "compiled_prompt_template",
         "load_error": None,
     }
-
-
-@pytest.mark.asyncio
-async def test_workflow_runtime_skill_payload_loads_skill_only_as_legacy_fallback(monkeypatch):
-    calls: list[dict] = []
-
-    async def fake_load_skill(workflow: dict):
-        calls.append(workflow)
-        return {
-            "ok": True,
-            "name": "legacy_prompt",
-            "category": "prompt",
-            "scope": "user",
-            "content": "旧节点提示词写法",
-        }
-
-    monkeypatch.setattr(node_universal, "_load_workflow_text_skill", fake_load_skill)
-
-    payload = await node_universal._workflow_runtime_skill_payload(
-        {"primary_skill": "legacy_prompt", "skill_category": "prompt", "skill_scope": "user"},
-        {"prompt_template": "", "rendered_prompt_template": ""},
-    )
-
-    assert len(calls) == 1
-    assert payload["name"] == "legacy_prompt"
-    assert payload["content"] == "旧节点提示词写法"
-    assert payload["content_mode"] == "fallback_skill_content"
-
 
 @pytest.mark.asyncio
 async def test_node_run_workflow_text_node_uses_one_shot_llm(monkeypatch):
@@ -3018,9 +2651,6 @@ async def test_node_run_workflow_text_node_uses_one_shot_llm(monkeypatch):
             nodes[node_id]["output"] = patch["output_data"]
         return {"id": node_id, **patch}
 
-    async def fake_load_skill(workflow: dict):
-        raise AssertionError("prompt_template nodes should not reload full prompt skill at runtime")
-
     async def fake_call_llm(**kwargs):
         llm_calls.append(kwargs)
         assert kwargs["task_type"] == "workflow_text_generation"
@@ -3043,7 +2673,6 @@ async def test_node_run_workflow_text_node_uses_one_shot_llm(monkeypatch):
     monkeypatch.setattr(node_universal, "_node_public_id_map", fake_public_id_map)
     monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
     monkeypatch.setattr(node_universal.canvas_tools, "update_node", fake_update_node)
-    monkeypatch.setattr(node_universal, "_load_workflow_text_skill", fake_load_skill)
     monkeypatch.setattr(node_universal, "_call_workflow_text_llm", fake_call_llm)
 
     result = await node_universal.node_run(project_id="proj-1", node_id="script-1")
@@ -3203,9 +2832,6 @@ async def test_node_run_workflow_image_node_renders_existing_prompt_without_llm(
             nodes[node_id]["output"] = patch["output_data"]
         return {"id": node_id, **patch}
 
-    async def fake_load_skill(workflow: dict):
-        raise AssertionError("image workflow nodes should not load prompt skills at node.run time")
-
     async def fake_call_llm(**kwargs):
         llm_calls.append(kwargs)
         raise AssertionError("image workflow nodes should not call LLM at node.run time")
@@ -3224,7 +2850,6 @@ async def test_node_run_workflow_image_node_renders_existing_prompt_without_llm(
     monkeypatch.setattr(node_universal, "_node_public_id_map", fake_public_id_map)
     monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
     monkeypatch.setattr(node_universal.canvas_tools, "update_node", fake_update_node)
-    monkeypatch.setattr(node_universal, "_load_workflow_text_skill", fake_load_skill)
     monkeypatch.setattr(node_universal, "_call_workflow_text_llm", fake_call_llm)
     monkeypatch.setattr(node_universal, "_render_image_node_once", fake_render)
     monkeypatch.setattr(node_universal, "_merge_stage_into_fusion", fake_merge)
@@ -4091,7 +3716,7 @@ async def test_merge_stage_into_fusion_recovers_failed_media_from_composite_url(
                     {
                         "name": "结果",
                         "status": "completed",
-                        "composite_url": "/api/media/project/legacy-composite.png",
+                        "composite_url": "/api/media/project/current-composite.png",
                     },
                 ],
             },
@@ -4116,7 +3741,7 @@ async def test_merge_stage_into_fusion_recovers_failed_media_from_composite_url(
     stage = fusion["stages"][0]
     assert stage["name"] == "图片"
     assert stage["status"] == "failed"
-    assert stage["url"] == "/api/media/project/legacy-composite.png"
+    assert stage["url"] == "/api/media/project/current-composite.png"
     assert stage["error"] == "bad response body"
     assert updates and updates[-1]["output_data"] == fusion
 

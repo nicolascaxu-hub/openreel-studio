@@ -30,16 +30,14 @@ from app.agent.event_stream import event_stream
 from app.agent.reset_flow import reset_project_event
 from app.agent.feature_flags import get_feature_states
 from app.agent.project_state_io import (
+    patch_project_state,
     read_project_state as _read_state,
     write_project_state as _write_state,
 )
 from app.db.models import Message, WorkflowNode
 from app.db.session import session_scope
 from app.mcp_tools.drama_tools import reset_project
-from app.mcp_tools.project_tools import (
-    project_get_state,
-    project_update_state,
-)
+from app.mcp_tools.project_tools import project_get_state
 
 
 @dataclass(frozen=True)
@@ -53,20 +51,6 @@ _COMMANDS = {"plan", "workflow", "reset", "doctor", "help"}
 _PLAN_EXIT_ACTIONS = {"exit", "default", "off", "quit", "退出", "关闭"}
 _WORKFLOW_EXIT_ACTIONS = {"exit", "default", "off", "quit", "退出", "关闭"}
 _PLAN_EXECUTE_ACTIONS = {"execute", "run", "apply", "执行", "实施"}
-_PLAN_LEGACY_ACTIONS = {
-    "approve",
-    "reject",
-    "clear",
-    "pending",
-    "get",
-    "status",
-    "批准",
-    "拒绝",
-    "清除",
-    "清空",
-    "查看",
-    "状态",
-}
 
 
 def parse_slash_command(message: str) -> SlashCommand | None:
@@ -151,7 +135,7 @@ def _slash_command_streams_to_agent(command: SlashCommand) -> bool:
     action = command.args[0].lower().strip()
     if action in _PLAN_EXECUTE_ACTIONS:
         return True
-    if action in _PLAN_EXIT_ACTIONS or action in _PLAN_LEGACY_ACTIONS:
+    if action in _PLAN_EXIT_ACTIONS:
         return False
     return True
 
@@ -163,7 +147,7 @@ async def _workflow_events(
     action = (command.args[0].lower() if command.args else "").strip()
 
     if not action:
-        await project_update_state(project_id, collaboration_mode_patch(MODE_WORKFLOW_BUILD))
+        await patch_project_state(project_id, collaboration_mode_patch(MODE_WORKFLOW_BUILD))
         text = "已进入工作流搭建模式。这个模式聚焦工作流搭建、修改、检查和保存；生成视频请退出后运行工作流。发送 `/workflow exit` 退出。"
         await _emit_text(project_id, command, text, ok=True)
         yield {"type": "mode_updated", "ok": True, "mode": MODE_WORKFLOW_BUILD, "collaboration_mode": MODE_WORKFLOW_BUILD}
@@ -173,7 +157,7 @@ async def _workflow_events(
         return
 
     if action in _WORKFLOW_EXIT_ACTIONS:
-        await project_update_state(project_id, collaboration_mode_patch(MODE_DEFAULT))
+        await patch_project_state(project_id, collaboration_mode_patch(MODE_DEFAULT))
         text = "已退出工作流搭建模式，回到默认制作模式。"
         await _emit_text(project_id, command, text, ok=True)
         yield {"type": "mode_updated", "ok": True, "mode": MODE_DEFAULT, "collaboration_mode": MODE_DEFAULT}
@@ -198,7 +182,7 @@ async def _plan_events(
     action = (command.args[0].lower() if command.args else "").strip()
 
     if not action:
-        await project_update_state(project_id, collaboration_mode_patch(MODE_PLAN))
+        await patch_project_state(project_id, collaboration_mode_patch(MODE_PLAN))
         text = "已进入 Plan Mode。这个模式只读取、审查和提问，不会修改或生成项目内容。发送 `/plan exit` 退出。"
         await _emit_text(project_id, command, text, ok=True)
         yield {"type": "mode_updated", "ok": True, "mode": MODE_PLAN, "collaboration_mode": MODE_PLAN}
@@ -208,27 +192,13 @@ async def _plan_events(
         return
 
     if action in _PLAN_EXIT_ACTIONS:
-        await project_update_state(project_id, collaboration_mode_patch(MODE_DEFAULT))
+        await patch_project_state(project_id, collaboration_mode_patch(MODE_DEFAULT))
         text = "已退出 Plan Mode，回到默认执行模式。"
         await _emit_text(project_id, command, text, ok=True)
         yield {"type": "mode_updated", "ok": True, "mode": MODE_DEFAULT, "collaboration_mode": MODE_DEFAULT}
         yield {"type": "slash_command", "command": "plan", "action": "exit", "ok": True}
         yield {"type": "text_delta", "content": text}
         yield {"type": "done", "status": "completed"}
-        return
-
-    if action in _PLAN_LEGACY_ACTIONS:
-        text = "这个旧计划命令已经下线。可用：/plan、/plan <目标>、/plan execute、/plan exit。"
-        await _emit_text(project_id, command, text, ok=False)
-        yield {
-            "type": "slash_command",
-            "command": "plan",
-            "action": action,
-            "ok": False,
-            "error": "legacy_plan_action_removed",
-        }
-        yield {"type": "text_delta", "content": text}
-        yield {"type": "done", "status": "failed"}
         return
 
     if action in _PLAN_EXECUTE_ACTIONS:
@@ -245,7 +215,7 @@ async def _plan_events(
         return
 
     plan_prompt = " ".join(command.args).strip()
-    await project_update_state(project_id, collaboration_mode_patch(MODE_PLAN))
+    await patch_project_state(project_id, collaboration_mode_patch(MODE_PLAN))
     yield {"type": "mode_updated", "ok": True, "mode": MODE_PLAN, "collaboration_mode": MODE_PLAN}
     async for event in orchestrator.stream(
         project_id=project_id,
@@ -284,7 +254,7 @@ async def _plan_execute_events(
         yield {"type": "done", "status": "failed"}
         return
 
-    await project_update_state(project_id, collaboration_mode_patch(MODE_DEFAULT))
+    await patch_project_state(project_id, collaboration_mode_patch(MODE_DEFAULT))
     yield {"type": "mode_updated", "ok": True, "mode": MODE_DEFAULT, "collaboration_mode": MODE_DEFAULT}
     yield {
         "type": "slash_command",

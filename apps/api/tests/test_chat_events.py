@@ -3,8 +3,6 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from app.agent import slash_commands
-from app.agent.slash_commands import slash_command_events
 from app.api.chat_events import event_to_sse, normalize_chat_event, validate_chat_event
 from app.api.routes_chat import _to_sse
 
@@ -33,44 +31,6 @@ def test_proposed_plan_rejects_missing_plan() -> None:
                 "project_id": "project-1",
             }
         )
-
-
-@pytest.mark.asyncio
-async def test_legacy_plan_action_is_rejected_before_agent(monkeypatch: pytest.MonkeyPatch) -> None:
-    streamed_to_agent = False
-
-    class Orchestrator:
-        async def stream(self, **_: object):
-            nonlocal streamed_to_agent
-            streamed_to_agent = True
-            yield {"type": "agent_round"}
-
-    async def fake_save_message(*_: object, **__: object) -> None:
-        return None
-
-    async def fake_emit_text(*_: object, **__: object) -> None:
-        return None
-
-    monkeypatch.setattr(slash_commands, "_save_message", fake_save_message)
-    monkeypatch.setattr(slash_commands, "_emit_text", fake_emit_text)
-    monkeypatch.setattr(slash_commands, "_emit_control_plane_event", lambda *args, **kwargs: None)
-
-    events = [
-        event
-        async for event in slash_command_events(
-            "project-1",
-            "/plan approve",
-            orchestrator=Orchestrator(),
-        )
-    ]
-
-    assert streamed_to_agent is False
-    slash = next(event for event in events if event.get("type") == "slash_command")
-    assert slash["command"] == "plan"
-    assert slash["action"] == "approve"
-    assert slash["ok"] is False
-    assert slash["error"] == "legacy_plan_action_removed"
-    assert events[-1] == {"type": "done", "status": "failed"}
 
 
 def test_unknown_chat_event_remains_compatible() -> None:

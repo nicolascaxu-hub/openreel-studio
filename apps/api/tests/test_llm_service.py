@@ -190,7 +190,7 @@ async def test_unmapped_workflow_task_uses_configured_agent_provider(monkeypatch
     db = _FakeDb([None, agent_loop_config])
     monkeypatch.setattr(llm_service, "_lookup_llm_provider", fake_lookup_provider)
 
-    cfg = await llm_service._resolve_config("outline_generation", db, None)
+    cfg = await llm_service._resolve_config("text_generation", db, None)
 
     assert db.calls == 2
     assert provider_names == ["configured-agent"]
@@ -205,7 +205,7 @@ async def test_unconfigured_hosted_default_fails_before_litellm_auth(monkeypatch
     monkeypatch.setattr(llm_service, "_resolve_env_key_for_default", lambda model: None)
 
     with pytest.raises(llm_service.LLMConfigurationError, match="Configure an Agent or model-tier LLM"):
-        await llm_service._resolve_config("outline_generation", db, None)
+        await llm_service._resolve_config("text_generation", db, None)
 
 
 @pytest.mark.asyncio
