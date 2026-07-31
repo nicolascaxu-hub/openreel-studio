@@ -256,13 +256,20 @@ def test_node_update_schema_prefers_input_patch_and_keeps_backend_alias_hidden()
     assert "局部合并" in spec.description
 
 
-def test_node_get_requires_explicit_full_generated_text_read() -> None:
+def test_node_get_exposes_bounded_text_content_window() -> None:
     spec = registry.get("node.get")
-    include_content = spec.schema["properties"]["include_content"]
+    properties = spec.schema["properties"]
 
-    assert include_content["type"] == "boolean"
-    assert "当前用户" in include_content["description"]
-    assert "include_content=true" in spec.description
+    assert "include_content" not in properties
+    assert properties["content_offset"]["type"] == "integer"
+    assert properties["content_offset"]["minimum"] == 0
+    assert "0-based" in properties["content_offset"]["description"]
+    assert properties["content_limit"]["type"] == "integer"
+    assert properties["content_limit"]["minimum"] == 0
+    assert properties["content_limit"]["maximum"] == 32_000
+    assert "默认 8000" in properties["content_limit"]["description"]
+    assert "最大 32000" in properties["content_limit"]["description"]
+    assert "content_page.next_offset" in spec.description
 
 
 def test_agent_review_schema_keeps_structured_optional_arguments() -> None:

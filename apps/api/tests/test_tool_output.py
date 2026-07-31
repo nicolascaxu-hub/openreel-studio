@@ -44,6 +44,42 @@ def test_tool_output_envelope_keeps_small_result_inline(tmp_path, monkeypatch) -
     assert trace["tool_result_raw_chars"] >= len('{"ok":true}')
 
 
+def test_node_get_default_budget_keeps_requested_content_window_inline(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(context_compact, "tool_results_dir", lambda: tmp_path)
+    result = {
+        "id": "0",
+        "type": "text",
+        "title": "长剧本",
+        "status": "completed",
+        "input": {"generation": {"status": "completed"}},
+        "output": {"text_runner": "bounded_generation"},
+        "content_page": {
+            "source": "output.content",
+            "content": "正文" * 4_000,
+            "offset": 0,
+            "limit": 8_000,
+            "returned_chars": 8_000,
+            "total_chars": 20_000,
+            "truncated": True,
+            "next_offset": 8_000,
+        },
+    }
+
+    envelope = build_tool_output_envelope(
+        result,
+        project_id="project",
+        run_id="run",
+        iteration=1,
+        tool_name="node.get",
+    )
+
+    model_result = json.loads(envelope["model_visible"]["content"])["result"]
+    assert envelope["model_visible"]["compacted"] is False
+    assert model_result["content_page"]["content"] == "正文" * 4_000
+    assert model_result["content_page"]["next_offset"] == 8_000
+    assert envelope["raw_artifact"] is None
+
+
 def test_tool_output_strips_subagent_private_diagnostics_from_model_context(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(context_compact, "tool_results_dir", lambda: tmp_path)
 

@@ -852,6 +852,46 @@ def test_node_get_summary_reads_text_content_from_nested_fields() -> None:
     assert summary["input"]["duration_seconds"] == 30
 
 
+def test_node_get_summary_preserves_content_page_continuation() -> None:
+    result = {
+        "id": "0",
+        "type": "text",
+        "title": "长剧本",
+        "status": "completed",
+        "input": {"generation": {"status": "completed"}},
+        "output": {"text_runner": "bounded_generation"},
+        "content_page": {
+            "source": "output.content",
+            "content": "正" * 2_000,
+            "offset": 8_000,
+            "limit": 2_000,
+            "returned_chars": 2_000,
+            "total_chars": 24_000,
+            "truncated": True,
+            "next_offset": 10_000,
+            "available": True,
+            "included": True,
+            "budget_exhausted": False,
+        },
+    }
+
+    summary = context_compact.summarize_tool_result_for_context("node.get", result)
+
+    assert summary["content_page"] == {
+        "source": "output.content",
+        "offset": 8_000,
+        "limit": 2_000,
+        "returned_chars": 2_000,
+        "total_chars": 24_000,
+        "truncated": True,
+        "next_offset": 10_000,
+        "available": True,
+        "included": True,
+        "budget_exhausted": False,
+        "content_preview": ("正" * 1_400) + "...<truncated>",
+    }
+
+
 def test_list_run_tool_result_artifacts_matches_debug_relative_paths(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(context_compact, "tool_results_dir", lambda: tmp_path)
     artifact = tmp_path / "project-1" / "run-1" / "result.json"

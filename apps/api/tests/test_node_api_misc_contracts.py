@@ -599,8 +599,8 @@ async def test_node_get_accepts_batch_node_ids(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_node_get_redacts_generated_long_text_unless_explicitly_requested(monkeypatch):
-    content = "完整剧本正文" * 240
+async def test_node_get_pages_text_content_once_with_model_selected_window(monkeypatch):
+    content = "完整剧本正文" * 2_000
 
     async def fake_get_node(node_id: str):
         return {
@@ -628,27 +628,76 @@ async def test_node_get_redacts_generated_long_text_unless_explicitly_requested(
     monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
     monkeypatch.setattr(node_universal, "_node_public_id_map", fake_public_id_map)
 
-    compact = await node_universal.node_get(
+    first = await node_universal.node_get(
         project_id="proj-1",
         node_id="script-1",
     )
-    full = await node_universal.node_get(
+    second = await node_universal.node_get(
         project_id="proj-1",
         node_id="script-1",
-        include_content=True,
+        content_offset=8_000,
+        content_limit=1_200,
     )
 
-    assert "content" not in compact["input"]
-    assert "content" not in compact["output"]
-    assert compact["content_access"] == {
+    assert "content" not in first["input"]
+    assert "content" not in first["output"]
+    assert first["content_page"] == {
+        "content": content[:8_000],
+        "offset": 0,
+        "limit": 8_000,
+        "returned_chars": 8_000,
+        "total_chars": len(content),
+        "truncated": True,
+        "next_offset": 8_000,
         "available": True,
-        "content_chars": len(content),
-        "included": False,
-        "hint": "仅当当前用户需要查看或分析完整正文时，用 node.get(include_content=true)。",
+        "included": True,
+        "budget_exhausted": False,
+        "hint": "Continue with content_offset=next_offset and content_limit when more content is needed.",
+        "source": "output.content",
     }
-    assert full["input"]["content"] == content
-    assert full["output"]["content"] == content
-    assert "content_access" not in full
+    assert "content" not in second["input"]
+    assert "content" not in second["output"]
+    assert second["content_page"]["content"] == content[8_000:9_200]
+    assert second["content_page"]["offset"] == 8_000
+    assert second["content_page"]["limit"] == 1_200
+    assert second["content_page"]["next_offset"] == 9_200
+
+
+@pytest.mark.asyncio
+async def test_node_get_shares_content_budget_across_batch(monkeypatch):
+    contents = {
+        "a": "甲" * 6_000,
+        "b": "乙" * 6_000,
+    }
+
+    async def fake_get_node(node_id: str):
+        return {
+            "id": node_id,
+            "project_id": "proj-1",
+            "type": "text",
+            "title": node_id,
+            "status": "completed",
+            "input": {"content": contents[node_id]},
+            "output": None,
+        }
+
+    async def fake_public_id_map(project_id: str):
+        return {}
+
+    monkeypatch.setattr(node_universal.canvas_tools, "get_node", fake_get_node)
+    monkeypatch.setattr(node_universal, "_node_public_id_map", fake_public_id_map)
+
+    result = await node_universal.node_get(
+        project_id="proj-1",
+        node_ids=["a", "b"],
+    )
+
+    assert result["ok"] is True
+    assert result["nodes"][0]["content_page"]["returned_chars"] == 6_000
+    assert result["nodes"][0]["content_page"]["next_offset"] is None
+    assert result["nodes"][1]["content_page"]["returned_chars"] == 2_000
+    assert result["nodes"][1]["content_page"]["next_offset"] == 2_000
+    assert sum(node["content_page"]["returned_chars"] for node in result["nodes"]) == 8_000
 
 
 @pytest.mark.asyncio

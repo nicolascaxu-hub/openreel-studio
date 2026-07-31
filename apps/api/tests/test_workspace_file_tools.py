@@ -78,6 +78,41 @@ async def test_workspace_read_pages_large_text_even_when_full_read_limit_is_smal
     assert second["next_offset"] == 204
 
 
+def test_text_content_window_uses_bounded_character_pages() -> None:
+    content = "甲" * 40_000
+
+    first = file_tools.text_content_window(content)
+    second = file_tools.text_content_window(
+        content,
+        offset=first["next_offset"],
+        limit=1_200,
+    )
+    metadata_only = file_tools.text_content_window(content, limit=0)
+    clamped = file_tools.text_content_window(content, limit=100_000)
+
+    assert first == {
+        "content": "甲" * 8_000,
+        "offset": 0,
+        "limit": 8_000,
+        "returned_chars": 8_000,
+        "total_chars": 40_000,
+        "truncated": True,
+        "next_offset": 8_000,
+        "available": True,
+        "included": True,
+        "budget_exhausted": False,
+        "hint": "Continue with content_offset=next_offset and content_limit when more content is needed.",
+    }
+    assert second["content"] == "甲" * 1_200
+    assert second["offset"] == 8_000
+    assert second["next_offset"] == 9_200
+    assert metadata_only["content"] == ""
+    assert metadata_only["next_offset"] == 0
+    assert metadata_only["budget_exhausted"] is True
+    assert clamped["limit"] == 32_000
+    assert clamped["returned_chars"] == 32_000
+
+
 @pytest.mark.asyncio
 async def test_project_read_text_pages_uploaded_large_file(monkeypatch, tmp_path: Path) -> None:
     storage = tmp_path / "storage"

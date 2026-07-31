@@ -656,6 +656,28 @@ def _summarize_media_node_result(result: dict[str, Any]) -> dict[str, Any]:
         input_payload = {**fields_payload, **input_payload}
     if input_payload:
         payload["input"] = input_payload
+    content_page = result.get("content_page")
+    if isinstance(content_page, dict):
+        compact_page = _copy_present(
+            content_page,
+            (
+                "source",
+                "offset",
+                "limit",
+                "returned_chars",
+                "total_chars",
+                "truncated",
+                "next_offset",
+                "available",
+                "included",
+                "budget_exhausted",
+            ),
+        )
+        page_content = content_page.get("content")
+        if page_content not in (None, ""):
+            compact_page["content_preview"] = _truncate_text(page_content, 1_400)
+        if compact_page:
+            payload["content_page"] = compact_page
     attempts = result.get("node_render_attempts")
     if isinstance(attempts, list) and attempts:
         compact_attempts: list[dict[str, Any]] = []

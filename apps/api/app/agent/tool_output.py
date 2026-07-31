@@ -18,6 +18,13 @@ from app.agent.tool_observation import (
 )
 
 TOOL_OUTPUT_VERSION = "tool_output_v1"
+NODE_GET_CONTEXT_BUDGET_CHARS = 40_000
+
+
+def _default_context_budget(tool_name: str) -> int:
+    if tool_name == "node.get":
+        return NODE_GET_CONTEXT_BUDGET_CHARS
+    return context_compact.TOOL_RESULT_CONTEXT_BUDGET_CHARS
 
 
 def build_tool_output_envelope(
@@ -27,8 +34,13 @@ def build_tool_output_envelope(
     run_id: str,
     iteration: int,
     tool_name: str,
-    budget_chars: int = context_compact.TOOL_RESULT_CONTEXT_BUDGET_CHARS,
+    budget_chars: int | None = None,
 ) -> dict[str, Any]:
+    budget_chars = (
+        _default_context_budget(tool_name)
+        if budget_chars is None
+        else max(1, int(budget_chars))
+    )
     model_content_parts = _model_content_parts(result)
     result_for_context = _strip_model_private_fields(_strip_model_content(result))
     raw_json = json.dumps(result_for_context, ensure_ascii=False, default=str)

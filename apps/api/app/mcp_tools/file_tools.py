@@ -23,6 +23,8 @@ TEXT_FULL_READ_MAX_BYTES = 200_000
 TEXT_WINDOW_DEFAULT_LINES = 200
 TEXT_WINDOW_MAX_LINES = 1_000
 TEXT_WINDOW_MAX_CHARS = 80_000
+TEXT_CONTENT_WINDOW_DEFAULT_CHARS = 8_000
+TEXT_CONTENT_WINDOW_MAX_CHARS = 32_000
 
 
 def _root() -> Path:
@@ -117,6 +119,58 @@ def _start_line(value: int) -> int:
     except (TypeError, ValueError):
         parsed = 0
     return max(1, parsed if parsed > 0 else 1)
+
+
+def text_content_window_limit(value: Any = None) -> int:
+    """Normalize a model-selected character budget for one text-content response."""
+    if value is None:
+        return TEXT_CONTENT_WINDOW_DEFAULT_CHARS
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return TEXT_CONTENT_WINDOW_DEFAULT_CHARS
+    if parsed < 0:
+        return TEXT_CONTENT_WINDOW_DEFAULT_CHARS
+    return min(parsed, TEXT_CONTENT_WINDOW_MAX_CHARS)
+
+
+def text_content_window(
+    text: str,
+    *,
+    offset: int = 0,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Return a bounded character window with deterministic continuation metadata."""
+    content = str(text or "")
+    total_chars = len(content)
+    try:
+        requested_offset = int(offset)
+    except (TypeError, ValueError):
+        requested_offset = 0
+    requested_offset = max(0, requested_offset)
+    start = min(requested_offset, total_chars)
+    normalized_limit = text_content_window_limit(limit)
+    end = min(total_chars, start + normalized_limit)
+    window = content[start:end]
+    has_more = end < total_chars
+    next_offset = end if has_more else None
+    return {
+        "content": window,
+        "offset": start,
+        "limit": normalized_limit,
+        "returned_chars": len(window),
+        "total_chars": total_chars,
+        "truncated": bool(start > 0 or has_more),
+        "next_offset": next_offset,
+        "available": total_chars > 0,
+        "included": bool(window),
+        "budget_exhausted": normalized_limit == 0 and start < total_chars,
+        "hint": (
+            "Continue with content_offset=next_offset and content_limit when more content is needed."
+            if next_offset is not None
+            else None
+        ),
+    }
 
 
 def _full_text_payload(

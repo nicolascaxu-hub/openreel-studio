@@ -763,7 +763,7 @@ _STANDARD_USAGE_BY_NAME: dict[str, str] = {
         "搭框架/低风险可用 nodes，复杂媒体 prompt 或大量节点分批。"
     ),
     "node.get": (
-        "精确读取节点详情；生成型长文本默认不返回正文，当前用户确需查看/分析正文才传 include_content=true；"
+        "精确读取节点详情；文本正文默认返回 8000 字符窗口，按 content_page.next_offset 分页；"
         "多个节点一次传 node_ids，只有一个节点才传 node_id。"
     ),
     "node.list": "默认返回 20 个节点索引；需要更多传 limit，完整索引用 limit=0；详情批量 node.get。",
@@ -1444,7 +1444,8 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
         tags=["node", "read"],
       description=(
           "读取节点完整信息(input / output / prompt / status / surface / links)。"
-          "带 fields.generation 的长文本默认隐藏正文；仅在当前用户需要查看或分析正文时传 include_content=true。"
+          "文本正文只在 content_page 返回一次，默认最多 8000 字符；"
+          "需要后续内容时传 content_offset=content_page.next_offset 和 content_limit。"
           "已知节点编号 id 时传 node_id/node_ids；只记得标题/描述/错误时传 query 或 regex 先取候选详情。"
       ),
       schema={
@@ -1480,9 +1481,16 @@ def _register_builtins(target: ToolRegistry | None = None) -> ToolRegistry:
                     "type": "integer",
                     "description": "query/regex 查询最多读取多少个详情；默认 20，0 为全部。",
                 },
-              "include_content": {
-                  "type": "boolean",
-                  "description": "仅当前用户需要查看或分析 fields.generation 生成的完整长正文时设 true；默认 false。",
+              "content_offset": {
+                  "type": "integer",
+                  "description": "文本正文起始字符偏移，0-based；默认 0。",
+                  "minimum": 0,
+              },
+              "content_limit": {
+                  "type": "integer",
+                  "description": "本次调用共享的正文字符预算；默认 8000，0 只返回正文元数据，最大 32000。",
+                  "minimum": 0,
+                  "maximum": 32000,
               },
           },
         },

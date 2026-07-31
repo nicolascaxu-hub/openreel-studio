@@ -73,7 +73,7 @@ applies_to: 写剧本 剧本 故事正文 分段故事 分集故事 script writi
 }
 ```
 
-`source_message_count` 要覆盖素材消息和当前保存要求；“上一轮给素材、本轮要求保存”时通常填 `2`。随后调用 `node.run`。原始素材和生成后的长正文不放进 Agent 的工具参数；runner 从创建时捕获的用户消息读取素材，并且只在正文完整生成后写入 `fields.content`。成功返回已经代表原子写入完成，不再用 `node.get` 读取长正文做重复验证。之后只有当前用户要求查看或分析完整正文时，才使用 `node.get(include_content=true)`；默认读取只返回长度和生成状态。
+`source_message_count` 要覆盖素材消息和当前保存要求；“上一轮给素材、本轮要求保存”时通常填 `2`。随后调用 `node.run`。原始素材和生成后的长正文不放进 Agent 的工具参数；runner 从创建时捕获的用户消息读取素材，并且只在正文完整生成后写入 `fields.content`。成功返回已经代表原子写入完成，不再用 `node.get` 读取长正文做重复验证。之后需要查看或分析正文时使用 `node.get`；正文只在 `content_page` 返回一次，默认窗口最多 8000 字符，按 `content_page.next_offset` 继续分页，`content_limit=0` 只读正文元数据。
 
 ## 检查点
 

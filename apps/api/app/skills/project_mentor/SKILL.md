@@ -64,9 +64,10 @@ maintain separate canvas/panel state before work appears.
   `node.run`. The count covers the source message and current save request
   (usually 2 for a follow-up request); the runner captures those message ids and
   atomically saves only a complete result. A successful run is final and does
-  not need `node.get` verification. Generated long-text reads omit the body by
-  default; use `node.get(include_content=true)` only when the current user asks
-  to view or analyze that full text.
+  not need `node.get` verification. Text bodies are returned once in
+  `content_page`, with an 8,000-character default window. Continue with
+  `content_offset=content_page.next_offset` and a bounded `content_limit`;
+  `content_limit=0` returns body metadata only.
 - Tool errors are observations. Read `error_kind`, `hint`, and
   `model_feedback`; repair the specific node or field before retrying.
 - System prompt stays short. Detailed workflow, examples, and debugging advice

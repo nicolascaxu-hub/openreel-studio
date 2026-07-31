@@ -28,7 +28,7 @@ from app.config import settings
 from app.db.models import Asset, Message, WorkflowNode
 from app.db.session import session_scope
 from app.llm_limits import LONG_TEXT_MAX_OUTPUT_TOKENS
-from app.mcp_tools import canvas_tools
+from app.mcp_tools import canvas_tools, file_tools
 from app.mcp_tools.query_match import invalid_regex_response, match_text, search_blob
 from app.services import media_generation, media_history
 from app.services.llm_service import LLMOutputTruncatedError, LLMService
@@ -105,44 +105,63 @@ async def _resolve_agent_node_id(project_id: str, node_id: Any) -> str:
         return await resolve_internal_node_id(session, project_id, node_id)
 
 
-def _redact_generated_text_content(payload: dict[str, Any]) -> dict[str, Any]:
-    input_fields = payload.get("input")
-    if not isinstance(input_fields, dict):
-        input_fields = payload.get("input_json")
-    if not isinstance(input_fields, dict):
-        return payload
-    generation = input_fields.get("generation")
-    if not isinstance(generation, dict):
+def _page_text_node_content(
+    payload: dict[str, Any],
+    *,
+    content_offset: int = 0,
+    content_limit: int | None = None,
+) -> dict[str, Any]:
+    if payload.get("type") != "text":
         return payload
 
-    content_chars = 0
-    redacted = dict(payload)
-    for key in ("input", "input_json", "output", "output_json"):
-        value = redacted.get(key)
-        if not isinstance(value, dict) or "content" not in value:
+    paged = dict(payload)
+    candidates: list[tuple[str, str]] = []
+    for key in ("output", "output_json", "input", "input_json"):
+        value = paged.get(key)
+        if not isinstance(value, dict):
             continue
         compact = dict(value)
-        content_chars = max(content_chars, len(str(compact.pop("content", "") or "")))
-        redacted[key] = compact
-    redacted["content_access"] = {
-        "available": content_chars > 0,
-        "content_chars": content_chars,
-        "included": False,
-        "hint": "仅当当前用户需要查看或分析完整正文时，用 node.get(include_content=true)。",
-    }
-    return redacted
+        if "content" in compact:
+            candidates.append((f"{key}.content", str(compact.pop("content", "") or "")))
+            paged[key] = compact
+
+    source = None
+    content = ""
+    for candidate_source, candidate_content in candidates:
+        if source is None:
+            source = candidate_source
+            content = candidate_content
+        if candidate_content:
+            source = candidate_source
+            content = candidate_content
+            break
+
+    page = file_tools.text_content_window(
+        content,
+        offset=content_offset,
+        limit=content_limit,
+    )
+    page["source"] = source
+    paged["content_page"] = page
+    return paged
 
 
 async def _model_visible_node(
     node: dict[str, Any],
     project_id: str = "",
     *,
-    include_generated_text_content: bool = True,
+    page_text_content: bool = False,
+    content_offset: int = 0,
+    content_limit: int | None = None,
 ) -> dict[str, Any]:
     id_map = await _node_public_id_map(project_id or str(node.get("project_id") or ""))
     payload = model_visible_node_payload(node, id_map)
-    if not include_generated_text_content:
-        payload = _redact_generated_text_content(payload)
+    if page_text_content:
+        payload = _page_text_node_content(
+            payload,
+            content_offset=content_offset,
+            content_limit=content_limit,
+        )
     internal_id = str(node.get("id") or "")
     if internal_id:
         payload["_canvas_id"] = internal_id
@@ -2185,7 +2204,8 @@ async def _node_get_one(
     node_id: str,
     project_id: str = "",
     *,
-    include_content: bool = False,
+    content_offset: int = 0,
+    content_limit: int | None = None,
 ) -> dict:
     resolved_node_id = await _resolve_agent_node_id(project_id, node_id)
     if not resolved_node_id:
@@ -2216,7 +2236,9 @@ async def _node_get_one(
     return await _model_visible_node(
         node,
         project_id or str(node.get("project_id") or ""),
-        include_generated_text_content=include_content,
+        page_text_content=True,
+        content_offset=content_offset,
+        content_limit=content_limit,
     )
 
 
@@ -2229,8 +2251,10 @@ async def node_get(
     pattern: str | list[str] | None = None,
     case_sensitive: bool = False,
     limit: int | None = NODE_LIST_DEFAULT_LIMIT,
-    include_content: bool = False,
+    content_offset: int = 0,
+    content_limit: int | None = None,
 ) -> dict:
+    remaining_content_chars = file_tools.text_content_window_limit(content_limit)
     ids = _normalize_node_id_list(node_id, node_ids)
     if not ids and (query or regex or pattern):
         return await _node_get_by_query(
@@ -2240,7 +2264,8 @@ async def node_get(
             pattern=pattern,
             case_sensitive=case_sensitive,
             limit=limit,
-            include_content=include_content,
+            content_offset=content_offset,
+            content_limit=remaining_content_chars,
         )
     if not ids:
         return {
@@ -2253,7 +2278,8 @@ async def node_get(
         result = await _node_get_one(
             ids[0],
             project_id=project_id,
-            include_content=include_content,
+            content_offset=content_offset,
+            content_limit=remaining_content_chars,
         )
         if (
             isinstance(result, dict)
@@ -2279,12 +2305,19 @@ async def node_get(
         result = await _node_get_one(
             item_id,
             project_id=project_id,
-            include_content=include_content,
+            content_offset=content_offset,
+            content_limit=remaining_content_chars,
         )
         if isinstance(result, dict) and (result.get("error") or result.get("ok") is False):
             errors.append(result)
         elif isinstance(result, dict):
             nodes.append(result)
+            page = result.get("content_page")
+            if isinstance(page, dict):
+                remaining_content_chars = max(
+                    0,
+                    remaining_content_chars - int(page.get("returned_chars") or 0),
+                )
 
     if not nodes:
         return {
@@ -2377,7 +2410,8 @@ async def _node_get_by_query(
     pattern: str | list[str] | None,
     case_sensitive: bool,
     limit: int | None,
-    include_content: bool,
+    content_offset: int,
+    content_limit: int,
 ) -> dict[str, Any]:
     candidates = await _node_query_candidates(
         project_id=project_id,
@@ -2402,16 +2436,24 @@ async def _node_get_by_query(
         }
     nodes: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
+    remaining_content_chars = content_limit
     for item_id in ids:
         result = await _node_get_one(
             item_id,
             project_id=project_id,
-            include_content=include_content,
+            content_offset=content_offset,
+            content_limit=remaining_content_chars,
         )
         if isinstance(result, dict) and (result.get("error") or result.get("ok") is False):
             errors.append(result)
         elif isinstance(result, dict):
             nodes.append(result)
+            page = result.get("content_page")
+            if isinstance(page, dict):
+                remaining_content_chars = max(
+                    0,
+                    remaining_content_chars - int(page.get("returned_chars") or 0),
+                )
     return {
         "ok": bool(nodes),
         "status": "partial" if errors else "ok",
