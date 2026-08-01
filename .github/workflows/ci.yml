@@ -37,7 +37,7 @@ jobs:
         working-directory: apps/api
         env:
           PYTHONPATH: .
-        run: uv run pytest -q
+        run: uv run --extra dev pytest -q
 
       - name: Build packaged API runtime
         run: >-
