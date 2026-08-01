@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { copyDirectoryTree, directoryStats } from "./web-runtime-contract.mjs";
+
+const require = createRequire(import.meta.url);
+const { mapStandaloneJunctionTarget } = require("./windows-symlink-junction.cjs");
 
 function temporaryDirectory(testContext) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "openreel-web-runtime-"));
@@ -65,4 +69,59 @@ test("copyDirectoryTree dereferences directory links into a self-contained runti
     '{"name":"linked"}',
   );
   assert.equal(directoryStats(destination).links, 0);
+});
+
+test("Windows junction targets are remapped into the standalone dependency mirror", () => {
+  const pathApi = path.win32;
+  const repositoryRoot = "D:\\a\\openreel-studio\\openreel-studio";
+  const standaloneRoot = pathApi.join(repositoryRoot, "apps", "web", ".next", "standalone");
+  const packageTarget =
+    "\\\\?\\D:\\a\\openreel-studio\\openreel-studio\\node_modules\\.pnpm\\next@15.5.18\\node_modules\\next";
+  const linkPath = pathApi.join(
+    standaloneRoot,
+    "apps",
+    "web",
+    "node_modules",
+    "next",
+  );
+
+  assert.equal(
+    mapStandaloneJunctionTarget(
+      packageTarget,
+      linkPath,
+      { repositoryRoot, standaloneRoot },
+      pathApi,
+    ),
+    pathApi.join(
+      standaloneRoot,
+      "node_modules",
+      ".pnpm",
+      "next@15.5.18",
+      "node_modules",
+      "next",
+    ),
+  );
+});
+
+test("relative Windows symlink targets resolve from the destination link directory", () => {
+  const pathApi = path.win32;
+  const repositoryRoot = "D:\\repo";
+  const standaloneRoot = pathApi.join(repositoryRoot, "apps", "web", ".next", "standalone");
+  const linkPath = pathApi.join(
+    standaloneRoot,
+    "apps",
+    "web",
+    "node_modules",
+    "next",
+  );
+
+  assert.equal(
+    mapStandaloneJunctionTarget(
+      ".\\react",
+      linkPath,
+      { repositoryRoot, standaloneRoot },
+      pathApi,
+    ),
+    pathApi.join(standaloneRoot, "apps", "web", "node_modules", "react"),
+  );
 });
