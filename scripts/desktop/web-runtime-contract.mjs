@@ -111,6 +111,46 @@ function readPackage(packageDirectory) {
   return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 }
 
+export function copyDirectoryTree(sourceRoot, destinationRoot, options = {}) {
+  const exclude = options.exclude ?? (() => false);
+
+  const visit = (source, destination, relative, ancestors) => {
+    if (relative && exclude(relative)) {
+      return;
+    }
+
+    const sourceStat = fs.statSync(source);
+    if (sourceStat.isDirectory()) {
+      const canonicalSource = fs.realpathSync(source);
+      if (ancestors.has(canonicalSource)) {
+        throw new Error(`Directory link cycle while staging runtime: ${source}`);
+      }
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(canonicalSource);
+      fs.mkdirSync(destination, { recursive: true });
+      for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+        const entryRelative = relative ? `${relative}/${entry.name}` : entry.name;
+        visit(
+          path.join(source, entry.name),
+          path.join(destination, entry.name),
+          entryRelative,
+          nextAncestors,
+        );
+      }
+      return;
+    }
+
+    if (!sourceStat.isFile()) {
+      throw new Error(`Unsupported runtime entry while staging: ${source}`);
+    }
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(source, destination);
+    fs.chmodSync(destination, sourceStat.mode);
+  };
+
+  visit(sourceRoot, destinationRoot, "", new Set());
+}
+
 export function collectRuntimePackages(rootNodeModulesDirectory) {
   assertDirectory(
     rootNodeModulesDirectory,
@@ -164,29 +204,23 @@ export function collectRuntimePackages(rootNodeModulesDirectory) {
 
 function copyPackage(packageInfo) {
   const destination = packagePath(targetNodeModulesDir, packageInfo.name);
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.cpSync(packageInfo.source, destination, {
-    recursive: true,
-    dereference: true,
-    filter(source) {
-      const relative = path.relative(packageInfo.source, source);
-      return relative !== "node_modules" && !relative.startsWith(`node_modules${path.sep}`);
+  copyDirectoryTree(packageInfo.source, destination, {
+    exclude(relative) {
+      return relative === "node_modules" || relative.startsWith("node_modules/");
     },
   });
 }
 
 function copyStandaloneApplication() {
-  fs.cpSync(standaloneDir, targetDir, {
-    recursive: true,
-    filter(source) {
-      const relative = path.relative(standaloneDir, source);
+  copyDirectoryTree(standaloneDir, targetDir, {
+    exclude(relative) {
       const excludedDirectories = [
         "node_modules",
-        path.join("apps", "web", "node_modules"),
+        "apps/web/node_modules",
       ];
-      return !excludedDirectories.some(
+      return excludedDirectories.some(
         (excluded) =>
-          relative === excluded || relative.startsWith(`${excluded}${path.sep}`),
+          relative === excluded || relative.startsWith(`${excluded}/`),
       );
     },
   });

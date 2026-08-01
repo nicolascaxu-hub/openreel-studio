@@ -18,6 +18,7 @@
     "desktop:stage:web": "node scripts/desktop/stage-web.mjs",
     "desktop:verify:web": "node scripts/desktop/verify-web-stage.mjs",
     "desktop:smoke:web": "node scripts/desktop/smoke-web-stage.mjs",
+    "desktop:test:packaging": "node --test scripts/desktop/*.test.mjs",
     "desktop:package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/build-windows.ps1",
     "desktop:package:linux": "bash scripts/desktop/build-unix.sh linux",
     "desktop:package:mac": "bash scripts/desktop/build-unix.sh mac",
