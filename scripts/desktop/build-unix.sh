@@ -10,7 +10,6 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 api_dist="$root/dist/openreel-api"
 api_stage="$root/apps/desktop/dist/resources/api/openreel-api"
-web_stage="$root/apps/desktop/dist/resources/web"
 installer_dir="$root/dist/installers"
 spec="$root/packaging/pyinstaller/openreel-api.spec"
 
@@ -93,10 +92,10 @@ pnpm --filter web build
 
 step "Stage web runtime for Electron"
 pnpm desktop:stage:web
-if [[ ! -f "$web_stage/apps/web/server.js" ]]; then
-  echo "Staged web server.js was not found under apps/desktop/dist/resources/web." >&2
-  exit 1
-fi
+
+step "Verify and smoke-test staged web runtime"
+pnpm desktop:verify:web
+pnpm desktop:smoke:web
 
 step "Package FastAPI runtime with PyInstaller"
 rm -rf "$api_dist"
@@ -142,6 +141,9 @@ rm -rf "$smoke_root"
 
 step "Build $target desktop package"
 pnpm --filter desktop "package:$target"
+
+step "Check installer size budgets"
+node scripts/desktop/check-installer-size.mjs --target "$target"
 
 step "Installer output"
 if [[ -d "$installer_dir" ]]; then

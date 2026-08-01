@@ -85,7 +85,7 @@ def _run_packaging_smoke() -> None:
     from app.agent.prompt_assembler import PromptContext, assemble_split_result
     from app.agent.workflow_spec_prompt_contract import WORKFLOW_SPEC_V2_GUIDE
     from app.config_store.schema import MediaProviderEntry
-    from app.services import media_operations, subprocess_utils
+    from app.services import llm_service, media_operations, subprocess_utils
     from app.services.video_target_catalog import load_video_target_catalog
 
     if not WORKFLOW_SPEC_V2_GUIDE.strip():
@@ -105,6 +105,8 @@ def _run_packaging_smoke() -> None:
         raise RuntimeError("Windows media subprocesses are not configured to hide command windows")
     if not callable(media_operations.split_video_tracks):
         raise RuntimeError("video split operation was not bundled")
+    if not callable(llm_service.litellm.acompletion) or not llm_service.litellm.model_cost:
+        raise RuntimeError("LiteLLM client runtime data was not bundled")
     if not load_video_target_catalog().get("targets"):
         raise RuntimeError("UMA video target catalog was not bundled")
 

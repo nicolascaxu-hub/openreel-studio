@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API tests and desktop bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('apps/api/uv.lock', 'vendor/universal-model-adapter/uv.lock') }}
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Test API
+        working-directory: apps/api
+        env:
+          PYTHONPATH: .
+        run: uv run pytest -q
+
+      - name: Build packaged API runtime
+        run: >-
+          uv run --project apps/api --with pyinstaller
+          pyinstaller packaging/pyinstaller/openreel-api.spec --noconfirm
+
+      - name: Verify packaged API runtime
+        run: |
+          smoke_root="$RUNNER_TEMP/openreel-packaging-smoke"
+          mkdir -p "$smoke_root"
+          OPENREEL_USER_DATA_DIR="$smoke_root" \
+            PROJECT_ROOT="$smoke_root" \
+            OPENREEL_PACKAGING_SMOKE=1 \
+            dist/openreel-api/openreel-api
+          test ! -e dist/openreel-api/openreel-api/_internal/litellm/proxy
+          bundle_bytes="$(du -sb dist/openreel-api/openreel-api | cut -f1)"
+          test "$bundle_bytes" -le $((400 * 1024 * 1024))
+
+  desktop-runtime:
+    name: Desktop runtime contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check workspaces
+        run: pnpm -r typecheck
+
+      - name: Test desktop shell
+        run: pnpm --filter desktop test
+
+      - name: Build web application
+        env:
+          INTERNAL_API_BASE_URL: http://127.0.0.1:7860
+          NEXT_PUBLIC_API_BASE_URL: ""
+          NEXT_PUBLIC_BASE_PATH: ""
+        run: pnpm --filter web build
+
+      - name: Stage and verify desktop web runtime
+        run: |
+          pnpm desktop:stage:web
+          pnpm desktop:verify:web
+          pnpm desktop:smoke:web
+
+      - name: Check documentation and patches
+        run: |
+          pnpm docs:check
+          git diff --check

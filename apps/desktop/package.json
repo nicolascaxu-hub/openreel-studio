@@ -3,6 +3,7 @@
   "version": "0.1.15",
   "private": true,
   "description": "OpenReel Studio desktop shell",
+  "desktopName": "openreel-studio.desktop",
   "homepage": "https://github.com/yutianxiao6/openreel-studio",
   "author": {
     "name": "OpenReel Studio Contributors",
@@ -28,6 +29,10 @@
       "output": "../../dist/installers",
       "buildResources": "build"
     },
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
     "files": [
       "package.json",
       "src/**/*",
@@ -77,6 +82,7 @@
         "deb"
       ],
       "category": "AudioVideo",
+      "syncDesktopName": true,
       "maintainer": "OpenReel Studio Contributors <yutianxiao6@users.noreply.github.com>",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },

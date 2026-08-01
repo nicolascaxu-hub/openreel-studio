@@ -9,7 +9,6 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $ApiDist = Join-Path $Root "dist\openreel-api"
 $ApiStage = Join-Path $Root "apps\desktop\dist\resources\api\openreel-api"
-$WebStage = Join-Path $Root "apps\desktop\dist\resources\web"
 $InstallerDir = Join-Path $Root "dist\installers"
 $Spec = Join-Path $Root "packaging\pyinstaller\openreel-api.spec"
 $SymlinkJunctionPreload = Join-Path $Root "scripts\desktop\windows-symlink-junction.cjs"
@@ -59,9 +58,8 @@ try {
     $env:NODE_OPTIONS = $PreviousNodeOptions
   }
   Invoke-Native "Stage web runtime for Electron" "pnpm" @("desktop:stage:web")
-  if (-not (Test-Path (Join-Path $WebStage "apps\web\server.js"))) {
-    throw "Staged web server.js was not found under apps\desktop\dist\resources\web."
-  }
+  Invoke-Native "Verify staged web runtime" "pnpm" @("desktop:verify:web")
+  Invoke-Native "Smoke-test staged web runtime" "pnpm" @("desktop:smoke:web")
 
   if (Test-Path $ApiDist) {
     Remove-Item $ApiDist -Recurse -Force
@@ -131,6 +129,11 @@ try {
   }
 
   Invoke-Native "Build Windows NSIS installer" "pnpm" @("--filter", "desktop", "package:win")
+  Invoke-Native "Check Windows installer size budget" "node" @(
+    "scripts/desktop/check-installer-size.mjs",
+    "--target",
+    "windows"
+  )
 
   Write-Step "Installer output"
   if (Test-Path $InstallerDir) {

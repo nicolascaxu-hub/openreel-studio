@@ -75,7 +75,11 @@ $requiredPaths = @(
   "apps\api\app\desktop_server.py",
   "apps\desktop\package.json",
   "packaging\pyinstaller\openreel-api.spec",
-  "scripts\desktop\stage-web.mjs"
+  "scripts\desktop\stage-web.mjs",
+  "scripts\desktop\web-runtime-contract.mjs",
+  "scripts\desktop\verify-web-stage.mjs",
+  "scripts\desktop\smoke-web-stage.mjs",
+  "scripts\desktop\check-installer-size.mjs"
 )
 
 foreach ($relative in $requiredPaths) {

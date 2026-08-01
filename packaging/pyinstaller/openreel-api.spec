@@ -14,7 +14,9 @@ datas = [
     (str(API_DIR / "app" / "prompts"), "app/prompts"),
     (str(API_DIR / "app" / "agent" / "prompts"), "app/agent/prompts"),
 ]
-datas += collect_data_files("litellm")
+# The desktop app calls LiteLLM as a client library and never serves LiteLLM's
+# separate proxy dashboard. Keep the provider/tokenizer data, but omit that UI.
+datas += collect_data_files("litellm", excludes=["proxy/**"])
 datas += collect_data_files("universal_model_adapter")
 
 for protocol_dir_name in (
@@ -59,6 +61,7 @@ hiddenimports += collect_submodules("app.prompts")
 hiddenimports += collect_submodules("universal_model_adapter")
 hiddenimports.append("app.agent.workflow_spec_prompt_contract")
 hiddenimports = sorted(set(hiddenimports))
+strip_binaries = sys.platform.startswith("linux")
 
 a = Analysis(
     [str(API_DIR / "app" / "desktop_server.py")],
@@ -83,7 +86,7 @@ exe = EXE(
     name="openreel-api",
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=strip_binaries,
     upx=False,
     console=sys.platform != "win32",
     disable_windowed_traceback=False,
@@ -97,7 +100,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    strip=False,
+    strip=strip_binaries,
     upx=False,
     upx_exclude=[],
     name="openreel-api",
